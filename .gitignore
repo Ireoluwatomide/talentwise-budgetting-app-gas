@@ -1,6 +1,6 @@
 .idea
 .clasp.json
-.clasp-local.json
+.clasp.local.json
 
 dist/
 build/

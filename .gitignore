@@ -1,0 +1,9 @@
+.idea
+.clasp.json
+.clasp-local.json
+
+dist/
+build/
+node_modules/
+
+qodana.yaml

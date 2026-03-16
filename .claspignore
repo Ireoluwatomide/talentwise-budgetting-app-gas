@@ -1,0 +1,6 @@
+# Ignore all files by default
+**/**
+
+# Unignore the files google apps script needs to function
+!appsscript.json
+!src/**

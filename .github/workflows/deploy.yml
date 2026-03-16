@@ -1,0 +1,80 @@
+name: Deploy with Clasp
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  deploy-to-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install clasp
+        run: |
+          npm install -g @google/clasp@3.2.0
+          clasp --version
+
+      - name: Configure clasp credentials
+        run: |
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          cat ~/.clasprc.json | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          t = d.get('tokens', {}).get('default', {})
+          print('token ok' if t.get('access_token') else 'MISSING access_token')
+          print('root keys:', list(d.keys()))
+          "
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Push and deploy to Dev
+        run: |
+          cp .clasp-dev.json .clasp.json
+          clasp push -f
+          clasp deploy --description "Dev Release"
+
+  deploy-to-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install clasp
+        run: |
+          npm install -g @google/clasp@3.2.0
+          clasp --version
+
+      - name: Configure clasp credentials
+        run: |
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          cat ~/.clasprc.json | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          t = d.get('tokens', {}).get('default', {})
+          print('token ok' if t.get('access_token') else 'MISSING access_token')
+          print('root keys:', list(d.keys()))
+          "
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Push and deploy to Prod
+        run: |
+          cp .clasp-prod.json .clasp.json
+          clasp push -f
+          clasp deploy --description "Production Release"

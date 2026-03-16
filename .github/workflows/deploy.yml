@@ -26,7 +26,7 @@ jobs:
 
       - name: Configure clasp credentials
         run: |
-          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          echo "$CLASPRC_JSON" | base64 -d > ~/.clasprc.json
           cat ~/.clasprc.json | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
@@ -62,7 +62,7 @@ jobs:
 
       - name: Configure clasp credentials
         run: |
-          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          echo "$CLASPRC_JSON" | base64 -d > ~/.clasprc.json
           cat ~/.clasprc.json | python3 -c "
           import sys, json
           d = json.load(sys.stdin)

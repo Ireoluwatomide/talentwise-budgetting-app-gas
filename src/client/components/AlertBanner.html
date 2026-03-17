@@ -1,61 +1,172 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      AlertBanner.html — Over-Budget & Bill-Due Alert Banners
 
-     PURPOSE:
-       Renders contextual alert banners between the header and the tab strip.
-       Two separate alert zones:
-         1. #alerts-budget — over-budget and approaching-limit banners (from Goals)
-         2. #alerts-bills  — upcoming bill due-date warnings (from Bills)
-
-       Both zones are empty divs whose innerHTML is set dynamically by
-       updateAlertBanners() — called from renderAll() in utils.js.
-
-     ALERT TYPES:
-       .alert-danger  → category spending EXCEEDS the budget limit (red)
-       .alert-warning → category spending > 85% of limit (amber)
-       .alert-warning → bills due within 5 days (amber, same style)
-
-     INCLUDED VIA:
-       <?!= include('src/client/components/AlertBanner') ?> in the main page template
+     Two empty div zones, populated dynamically by updateAlertBanners().
+     Sits between the header and the tab strip in Index.html.
      ───────────────────────────────────────────────────────────────────────── -->
 
-<!-- Budget goal alert zone — populated by updateAlertBanners() -->
+<!-- Budget goal alert zone -->
 <div id="alerts-budget"></div>
 
-<!-- Bill due-date alert zone — populated by updateAlertBanners() -->
+<!-- Bill due-date alert zone -->
 <div id="alerts-bills"></div>
 
 <script>
+    // Spending threshold that triggers a "approaching limit" warning.
+    // 85% matches the prototype and the server-side Goals.checkBudgetAlerts().
+    var ALERT_THRESHOLD = 0.85;
+
+    // How many days ahead to warn about upcoming bills.
+    var BILLS_WARN_DAYS = 5;
+
     /**
      * updateAlertBanners()
      *
-     * TODO: Called from renderAll() each time state changes.
-     *       Regenerates all alert banner HTML from current AppState.
+     * Regenerates both alert zones from the current AppState.
+     * Called from renderAll() on every state mutation.
      *
-     * ── Budget Goal Alerts ──────────────────────────────────────────────────
-     * TODO: For each goal in AppState.goals:
-     *   1. Sum all expense transactions for goal.category in the current month
-     *   2. If spent > goal.monthly_limit → render .alert-danger banner:
-     *        "⚠ Over budget on [Category]: spent [fmt(spent)], limit [fmt(limit)]"
-     *   3. If spent / goal.monthly_limit > ALERT_THRESHOLD (0.85) → render .alert-warning:
-     *        "⚡ Approaching limit on [Category]: [pct(spent, limit)]% used"
-     *   4. Otherwise → no banner for this category
-     * TODO: Set #alerts-budget innerHTML to all generated banners joined together
-     * TODO: If no alerts, set #alerts-budget innerHTML to '' (empty, no visual noise)
+     * ── Budget goal alerts ────────────────────────────────────────────────────
+     * Compares each goal's monthly_limit against actual expense spending
+     * for the current month. Produces danger (over) or warning (approaching) banners.
      *
-     * ── Bill Due Alerts ─────────────────────────────────────────────────────
-     * TODO: Filter AppState.bills for unpaid bills due within 5 days of today
-     *       (same logic as Bills.getUpcomingBills(5) but on client-side state)
-     *       Today's day: new Date().getDate()
-     *       Days until due: bill.due_day >= today ? bill.due_day - today
-     *                                              : (31 - today) + bill.due_day
-     * TODO: If any such bills exist, render a single .alert-warning banner:
-     *        "⚠ Bills due soon: [Name] (₦Amount), [Name] (₦Amount)"
-     *        Each bill name+amount in the list is styled as <strong>
-     * TODO: Set #alerts-bills innerHTML accordingly
+     * ── Bill due-date alerts ──────────────────────────────────────────────────
+     * Scans AppState.bills for unpaid bills due within BILLS_WARN_DAYS days.
+     * Produces a single consolidated warning listing all due-soon bills.
      */
     function updateAlertBanners() {
-        // TODO: Implement budget alert section
-        // TODO: Implement bills alert section
+        _updateBudgetAlerts();
+        _updateBillAlerts();
+    }
+
+    // ── Budget alerts ──────────────────────────────────────────────────────────
+
+    function _updateBudgetAlerts() {
+        var budgetEl = document.getElementById('alerts-budget');
+        if (!budgetEl) return;
+
+        var goals = AppState.goals || [];
+        if (goals.length === 0) {
+            budgetEl.innerHTML = '';
+            return;
+        }
+
+        // Build a spending map for the current month: { category: totalSpent }
+        var spendMap = _buildSpendMap();
+        var html = '';
+
+        goals.forEach(function(goal) {
+            var limit = parseFloat(goal.monthly_limit) || 0;
+            if (limit <= 0) return; // skip goals with no limit set
+
+            var spent = spendMap[goal.category] || 0;
+            var ratio = limit > 0 ? spent / limit : 0;
+
+            if (spent > limit) {
+                // Over budget — danger banner
+                html += (
+                    '<div class="alert alert-danger">' +
+                    '⚠ Over budget on <strong>' + _esc(goal.category) + '</strong>: ' +
+                    'spent ' + fmt(spent) + ', limit ' + fmt(limit) +
+                    ' (' + pct(spent, limit) + '% used)' +
+                    '</div>'
+                );
+            } else if (ratio >= ALERT_THRESHOLD) {
+                // Approaching limit — warning banner
+                html += (
+                    '<div class="alert alert-warning">' +
+                    '⚡ Approaching limit on <strong>' + _esc(goal.category) + '</strong>: ' +
+                    pct(spent, limit) + '% of ' + fmt(limit) + ' used' +
+                    '</div>'
+                );
+            }
+        });
+
+        budgetEl.innerHTML = html;
+    }
+
+    // ── Bill alerts ────────────────────────────────────────────────────────────
+
+    function _updateBillAlerts() {
+        var billsEl = document.getElementById('alerts-bills');
+        if (!billsEl) return;
+
+        var bills = AppState.bills || [];
+        if (bills.length === 0) {
+            billsEl.innerHTML = '';
+            return;
+        }
+
+        var today    = new Date().getDate();
+        var dueSoon  = [];
+
+        bills.forEach(function(bill) {
+            // Skip already-paid bills
+            if (bill.paid === true || bill.paid === 'true' || bill.paid === 1) return;
+
+            var dueDay = parseInt(bill.due_day, 10);
+            if (isNaN(dueDay)) return;
+
+            // Days until due — wrap around end of month
+            var daysUntil = dueDay >= today
+                ? dueDay - today
+                : (31 - today) + dueDay;
+
+            if (daysUntil <= BILLS_WARN_DAYS) {
+                dueSoon.push({ bill: bill, daysUntil: daysUntil });
+            }
+        });
+
+        if (dueSoon.length === 0) {
+            billsEl.innerHTML = '';
+            return;
+        }
+
+        // Sort by most urgent first
+        dueSoon.sort(function(a, b) { return a.daysUntil - b.daysUntil; });
+
+        var listParts = dueSoon.map(function(item) {
+            var label = item.daysUntil === 0
+                ? 'due today'
+                : 'in ' + item.daysUntil + 'd';
+            return '<strong>' + _esc(item.bill.name) + '</strong> (' + fmt(item.bill.amount) + ', ' + label + ')';
+        });
+
+        billsEl.innerHTML = (
+            '<div class="alert alert-warning">' +
+            '⏰ Bills due soon: ' + listParts.join(' · ') +
+            '</div>'
+        );
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /**
+     * _buildSpendMap()
+     * Sums expense transactions by category for the current month.
+     * Returns { categoryName: totalAmount }.
+     */
+    function _buildSpendMap() {
+        var map = {};
+        var txs = (AppState.transactions && AppState.transactions[curKey()]) || [];
+
+        txs.forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            var cat = tx.category || 'Other';
+            map[cat] = (map[cat] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        return map;
+    }
+
+    /**
+     * _esc(str)
+     * Minimal HTML escape — prevents XSS from category/bill names
+     * containing angle brackets or ampersands.
+     */
+    function _esc(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 </script>

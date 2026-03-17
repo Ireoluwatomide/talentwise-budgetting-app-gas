@@ -1,151 +1,289 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Overview.html — Main Dashboard Screen
 
-     TAB: Overview (default / first tab)
+     TAB: Overview (default tab — starts with .active)
 
      SECTIONS:
-       1. Summary metrics row (Income / Expenses / Saved / Remaining)
-       2. Bills alert (upcoming bills inline on this tab — in addition to AlertBanner)
-       3. Transaction list (reverse-chronological, current month)
-       4. Add Transaction form
-       5. Import CSV control
+       1. Summary metric cards (Income / Expenses / Saved / Remaining)
+       2. Transaction list (reverse-chronological, current month)
+       3. Add Transaction form
+       4. Import CSV control
 
      SERVER CALLS:
-       addTransaction(monthKey, name, amount, type, category, note) → add new tx
-       deleteTransaction(id) → remove a tx
+       addTransaction(monthKey, name, amount, type, category, note) → new tx
+       deleteTransaction(id) → removes tx
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane active" id="pane-overview">
 
-    <!-- ── 1. Summary Metric Cards ─────────────────────────────────────────── -->
-    <!-- TODO: .row4 grid containing 4 metric cards:
-         - Income    id="ov-inc"  color var(--acc)
-         - Expenses  id="ov-exp"  color var(--red)
-         - Saved     id="ov-sav"  color var(--blue)
-         - Remaining id="ov-rem"  color var(--acc) or var(--red) based on sign
-         All values are updated by renderOverview() from AppState
-    -->
+    <!-- ── 1. Summary Metric Cards ──────────────────────────────────────────── -->
     <div class="row4">
-        <div class="metric"><div class="lbl">Income</div><div class="val" id="ov-inc"></div></div>
-        <div class="metric"><div class="lbl">Expenses</div><div class="val" id="ov-exp"></div></div>
-        <div class="metric"><div class="lbl">Saved</div><div class="val" id="ov-sav"></div></div>
-        <div class="metric"><div class="lbl">Remaining</div><div class="val" id="ov-rem"></div></div>
+        <div class="metric">
+            <div class="lbl">Income</div>
+            <div class="val" id="ov-inc" style="color:var(--acc);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Expenses</div>
+            <div class="val" id="ov-exp" style="color:var(--red);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Saved</div>
+            <div class="val" id="ov-sav" style="color:var(--blue);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Remaining</div>
+            <div class="val" id="ov-rem">—</div>
+        </div>
     </div>
 
-    <!-- ── 2. Transaction List ─────────────────────────────────────────────── -->
-    <!-- TODO: Section heading "Transactions" using .sec class -->
-    <!-- TODO: Container id="tx-list" — innerHTML set by renderOverview()
-
-         Empty state: if no transactions, show centred text "No transactions this month"
-
-         Populated state: for each transaction (reverse order — newest first):
-           <div class="tx-row">
-             LEFT:
-               - .tx-dot coloured circle (background: getCategoryColor(tx.category))
-               - tx.name as .tx-name
-               - tx.note rendered as .tx-tag if non-empty (e.g. "#groceries")
-               - tx.category as .tx-cat below the name
-             RIGHT:
-               - Amount as .tx-amount:
-                   income  → '+' prefix, color var(--acc)
-                   savings → '-' prefix, color var(--blue)
-                   expense → '-' prefix, color var(--red)
-               - × delete button: onclick="deleteTx(tx.id)" — .tx-delete
-           </div>
-    -->
+    <!-- ── 2. Transaction List ───────────────────────────────────────────────── -->
     <div class="sec">Transactions</div>
-    <div id="tx-list"></div>
+    <div id="tx-list">
+        <!-- populated by renderOverview() -->
+    </div>
 
-    <!-- ── 3. Add Transaction Form ─────────────────────────────────────────── -->
-    <!-- TODO: Section heading "Add Transaction" -->
-    <!-- TODO: .row2 grid:
-         Row 1: Description input (id="tx-name") | Amount input (id="tx-amt", type=number)
-         Row 2: Category select (id="tx-cat")    | Type select (id="tx-type")
-                  Type options: expense / income / savings deposit
-    -->
-    <!-- TODO: Note input full-width (id="tx-note", placeholder "Note / tag (optional)") -->
-    <!-- TODO: "Add Transaction" .btn-primary full-width onclick="addTx()" -->
+    <!-- ── 3. Add Transaction Form ───────────────────────────────────────────── -->
     <div class="sec">Add Transaction</div>
-    <div class="row2">
-        <input id="tx-name" placeholder="Description" class="inp"/>
-        <input id="tx-amt" placeholder="Amount" type="number" class="inp"/>
-        <select id="tx-cat" class="inp"><!-- populated by populateCategorySelects() --></select>
+
+    <div class="row2" style="margin-bottom:8px;">
+        <input  id="tx-name" placeholder="Description"    class="inp"/>
+        <input  id="tx-amt"  placeholder="Amount"         class="inp" type="number" min="0" step="any"/>
+        <select id="tx-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
         <select id="tx-type" class="inp">
             <option value="expense">Expense</option>
             <option value="income">Income</option>
             <option value="savings">Savings deposit</option>
         </select>
     </div>
-    <input id="tx-note" placeholder="Note / tag (optional)" class="inp" style="margin-bottom: 8px;"/>
-    <button onclick="addTx()" class="btn-primary" style="width: 100%;">Add Transaction</button>
 
-    <!-- ── 4. Import CSV ──────────────────────────────────────────────────── -->
-    <!-- TODO: Label styled as .btn-sm wrapping a hidden file input
-         <label class="btn-sm">
-           Import CSV
-           <input type="file" accept=".csv" onchange="importCSV(event)" style="display:none;"/>
-         </label>
-         margin-top 10px
-    -->
-    <div style="margin-top: 10px;">
-        <label class="btn-sm" style="cursor: pointer;">
+    <input
+            id="tx-note"
+            placeholder="Note / tag (optional)"
+            class="inp"
+            style="margin-bottom:8px;"/>
+
+    <button onclick="addTx()" class="btn-primary" style="width:100%;">
+        Add Transaction
+    </button>
+
+    <!-- ── 4. Import CSV ─────────────────────────────────────────────────────── -->
+    <div style="margin-top:10px;">
+        <label class="btn-sm" style="cursor:pointer;display:inline-block;">
             Import CSV
-            <input type="file" accept=".csv" onchange="importCSV(event)" style="display: none;"/>
+            <input
+                    type="file"
+                    accept=".csv"
+                    onchange="importCSV(event)"
+                    style="display:none;"/>
         </label>
     </div>
 
-</div>
+</div><!-- /#pane-overview -->
+
 
 <script>
+    // =============================================================================
+    // Overview screen — render + action functions
+    // =============================================================================
+
     /**
      * renderOverview()
      *
-     * TODO: Called from renderAll() when the Overview tab is active.
-     *
-     * TODO: 1. Get current month stats via getMonthStats(curKey())
-     * TODO: 2. Update metric card values:
-     *            #ov-inc → fmt(stats.inc)
-     *            #ov-exp → fmt(stats.exp)
-     *            #ov-sav → fmt(stats.sav)
-     *            #ov-rem → fmt(stats.bal) — colour green/red based on sign
-     * TODO: 3. Rebuild #tx-list innerHTML from curTxs() (reversed)
-     *            Each row uses the structure described in the HTML comments above
-     * TODO: 4. Populate category selects via populateCategorySelects()
+     * Called from renderAll() whenever the Overview pane is active.
+     * Updates the four metric cards and rebuilds the transaction list
+     * entirely from AppState — no server call needed.
      */
     function renderOverview() {
-        // TODO: Implement
+        // ── Metric cards ────────────────────────────────────────────────────────────
+        var stats = getMonthStats(curKey());
+
+        var incEl = document.getElementById('ov-inc');
+        var expEl = document.getElementById('ov-exp');
+        var savEl = document.getElementById('ov-sav');
+        var remEl = document.getElementById('ov-rem');
+
+        if (incEl) incEl.textContent = fmt(stats.inc);
+        if (expEl) expEl.textContent = fmt(stats.exp);
+        if (savEl) savEl.textContent = fmt(stats.sav);
+        if (remEl) {
+            remEl.textContent  = fmt(stats.bal);
+            remEl.style.color  = stats.bal >= 0 ? 'var(--acc)' : 'var(--red)';
+        }
+
+        // ── Transaction list ─────────────────────────────────────────────────────────
+        var txList = document.getElementById('tx-list');
+        if (!txList) return;
+
+        var txs = curTxs();
+
+        if (txs.length === 0) {
+            txList.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No transactions this month.' +
+                '</div>'
+            );
+            return;
+        }
+
+        // Render newest first — slice to avoid mutating AppState.
+        var reversed = txs.slice().reverse();
+        var html = '';
+
+        reversed.forEach(function(tx) {
+            var dotColor   = getCategoryColor(tx.category);
+            var amtPrefix  = tx.type === 'income' ? '+' : '−';
+            var amtColor   = tx.type === 'income'  ? 'var(--acc)'
+                : tx.type === 'savings' ? 'var(--blue)'
+                    :                         'var(--red)';
+
+            // Note/tag — only shown when non-empty
+            var tagHtml = tx.note
+                ? '<span class="tx-tag">' + _escTx(tx.note) + '</span>'
+                : '';
+
+            html += (
+                '<div class="tx-row">' +
+                // LEFT side
+                '<div class="tx-left">' +
+                '<span class="tx-dot" style="background:' + dotColor + ';"></span>' +
+                '<div class="tx-meta">' +
+                '<div class="tx-name">' + _escTx(tx.name) + tagHtml + '</div>' +
+                '<div class="tx-cat">'  + _escTx(tx.category) + '</div>' +
+                '</div>' +
+                '</div>' +
+                // RIGHT side
+                '<div class="tx-right">' +
+                '<span class="tx-amount" style="color:' + amtColor + ';">' +
+                amtPrefix + fmt(tx.amount) +
+                '</span>' +
+                '<button ' +
+                'class="tx-delete" ' +
+                'onclick="deleteTx(\'' + tx.id + '\')" ' +
+                'title="Delete transaction">×</button>' +
+                '</div>' +
+                '</div>'
+            );
+        });
+
+        txList.innerHTML = html;
     }
 
+
+    // ─── ADD TRANSACTION ─────────────────────────────────────────────────────────
 
     /**
      * addTx()
      *
-     * TODO: Read form values: name (tx-name), amount (tx-amt), type (tx-type),
-     *       category (tx-cat), note (tx-note)
-     * TODO: Validate: name and amount are required — show toast if missing
-     * TODO: Call server 'addTransaction' with curKey() + form values
-     * TODO: On success:
-     *         1. Push the returned tx into AppState.transactions[curKey()]
-     *         2. If type === 'savings', update the matching savings goal in AppState.savingsGoals
-     *         3. clearInputs('tx-name', 'tx-amt', 'tx-note')
-     *         4. renderAll()
-     *         5. showToast('Transaction added!', 'success')
+     * Reads the add-transaction form, validates, calls the server,
+     * and on success updates AppState + re-renders.
      */
     async function addTx() {
-        // TODO: Implement
+        var name     = getVal('tx-name');
+        var amtRaw   = getVal('tx-amt');
+        var type     = getVal('tx-type');
+        var category = getVal('tx-cat');
+        var note     = getVal('tx-note');
+
+        // ── Client-side validation ─────────────────────────────────────────────────
+        if (!name) {
+            showToast('Please enter a description.', 'error');
+            document.getElementById('tx-name').focus();
+            return;
+        }
+
+        var amount = parseFloat(amtRaw);
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error');
+            document.getElementById('tx-amt').focus();
+            return;
+        }
+
+        if (!type) {
+            showToast('Please select a transaction type.', 'error');
+            return;
+        }
+
+        // ── Server call ────────────────────────────────────────────────────────────
+        try {
+            var newTx = await callServer('addTransaction',
+                curKey(), name, amount, type, category, note
+            );
+
+            // Push the returned tx object (with its server-generated id) into AppState.
+            if (!AppState.transactions[curKey()]) {
+                AppState.transactions[curKey()] = [];
+            }
+            AppState.transactions[curKey()].push(newTx);
+
+            // If this was a savings deposit, update the matching savings goal balance
+            // in AppState so the Savings tab reflects the change without a server
+            // round-trip. The server already updated the row; we just sync client state.
+            if (type === 'savings' && AppState.savingsGoals) {
+                AppState.savingsGoals = AppState.savingsGoals.map(function(goal) {
+                    if (goal.name.toLowerCase() === name.toLowerCase()) {
+                        var newSaved = (parseFloat(goal.saved_amount) || 0) + amount;
+                        var target   = parseFloat(goal.target_amount) || 0;
+                        newSaved     = target > 0 ? Math.min(newSaved, target) : newSaved;
+                        return Object.assign({}, goal, {
+                            saved_amount:     newSaved,
+                            percent_complete: target > 0 ? Math.min(100, Math.round((newSaved / target) * 100)) : 0
+                        });
+                    }
+                    return goal;
+                });
+            }
+
+            clearInputs('tx-name', 'tx-amt', 'tx-note');
+            renderAll();
+            showToast('Transaction added!', 'success');
+
+        } catch (e) {
+            // callServer already showed an error toast via its failure handler.
+        }
     }
 
+
+    // ─── DELETE TRANSACTION ───────────────────────────────────────────────────────
 
     /**
      * deleteTx(txId)
      *
-     * TODO: Call server 'deleteTransaction' with the given transaction id
-     * TODO: On success:
-     *         1. Remove the tx from AppState.transactions[curKey()] by id
-     *         2. renderAll()
-     *         3. showToast('Transaction removed.', 'info')
+     * Deletes a transaction by id. Removes it from AppState immediately
+     * (optimistic update) then confirms with the server.
      */
     async function deleteTx(txId) {
-        // TODO: Implement
+        try {
+            await callServer('deleteTransaction', txId);
+
+            // Remove from AppState cache.
+            var key = curKey();
+            if (AppState.transactions[key]) {
+                AppState.transactions[key] = AppState.transactions[key].filter(function(tx) {
+                    return tx.id !== txId;
+                });
+            }
+
+            renderAll();
+            showToast('Transaction removed.', 'info');
+
+        } catch (e) {
+            // Error toast shown by callServer's failure handler.
+        }
+    }
+
+
+    // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────────
+
+    /**
+     * _escTx(str)
+     * Minimal HTML escape for transaction fields rendered into innerHTML.
+     * Prevents XSS from user-entered names/notes containing HTML characters.
+     */
+    function _escTx(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 </script>

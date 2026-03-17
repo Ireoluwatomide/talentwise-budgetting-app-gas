@@ -1,0 +1,107 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Savings.html — Savings Goals Screen
+
+     TAB: Savings
+
+     SECTIONS:
+       1. Total Saved metric (all-time, across all savings transactions)
+       2. Savings goals list with progress bars
+       3. Add Savings Goal form
+
+     STATE: AppState.savingsGoals, AppState.transactions (for all-time total)
+
+     SERVER CALLS:
+       addSavingsGoal(name, targetAmount) → creates new goal
+       deleteSavingsGoal(goalId) → removes goal
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-savings">
+
+  <!-- ── 1. Total Saved All-Time ─────────────────────────────────────────── -->
+  <!-- TODO: Single wide metric card:
+       <div class="metric" style="margin-bottom: 1rem;">
+         <div class="lbl">Total Saved (All Time)</div>
+         <div class="val" id="sav-total" style="color:var(--blue);font-size:20px;"></div>
+       </div>
+       Value = sum of all savings-type transactions across ALL months in AppState.transactions
+  -->
+  <div class="metric" style="margin-bottom: 1rem;">
+    <div class="lbl">Total Saved (All Time)</div>
+    <div class="val" id="sav-total" style="color: var(--blue); font-size: 20px;"></div>
+  </div>
+
+  <!-- ── 2. Savings Goals List ───────────────────────────────────────────── -->
+  <!-- TODO: id="sav-list" — innerHTML set by renderSavings()
+
+       Empty state: "No savings goals."
+
+       For each savings goal:
+         <div style="margin-bottom: 1.25rem;">
+           Header row:
+             LEFT:  goal name (13px/500)
+             RIGHT: "₦saved / ₦target" in monospace (--text2)
+                    + × delete onclick="deleteSavGoal(goal.id)"
+           Progress bar:
+             width: pct(saved, target)%, background: var(--blue)
+           Footer row (flex, space-between, 11px, --text2):
+             LEFT:  "{pct}% complete"
+             RIGHT: "₦X to go" if pct < 100, or "Goal reached! 🎉" if complete
+         </div>
+  -->
+  <div id="sav-list"></div>
+
+  <!-- ── 3. Add Savings Goal Form ────────────────────────────────────────── -->
+  <!-- TODO: Section heading "New Savings Goal" -->
+  <!-- TODO: 3-column grid: goal name | target amount | "Add" button -->
+  <div class="sec">New Savings Goal</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px;">
+    <input id="sv-name" placeholder="Goal name" class="inp"/>
+    <input id="sv-target" placeholder="Target amount" type="number" class="inp"/>
+    <button onclick="addSavGoalForm()" class="btn-primary">Add</button>
+  </div>
+
+</div>
+
+<script>
+  /**
+   * renderSavings()
+   *
+   * TODO: Called from renderAll() when Savings tab is active.
+   *
+   * TODO: 1. Compute all-time total saved:
+   *            Sum all transactions of type 'savings' across all keys in AppState.transactions
+   *            Set #sav-total to fmt(total)
+   *
+   * TODO: 2. Build #sav-list from AppState.savingsGoals:
+   *            For each: pct = pct(goal.saved_amount, goal.target_amount)
+   *            Render structure described in HTML comments above
+   *            Show "Goal reached! 🎉" when pct >= 100
+   */
+  function renderSavings() {
+    // TODO: Implement
+  }
+
+
+  /**
+   * addSavGoalForm()
+   *
+   * TODO: Read name (#sv-name), target (#sv-target)
+   * TODO: Validate both present, target > 0
+   * TODO: Call server 'addSavingsGoal'
+   * TODO: On success: push to AppState.savingsGoals, clearInputs, renderAll(), showToast
+   */
+  async function addSavGoalForm() {
+    // TODO: Implement
+  }
+
+
+  /**
+   * deleteSavGoal(goalId)
+   *
+   * TODO: Call server 'deleteSavingsGoal'
+   * TODO: On success: filter from AppState.savingsGoals, renderAll(), showToast
+   */
+  async function deleteSavGoal(goalId) {
+    // TODO: Implement
+  }
+</script>

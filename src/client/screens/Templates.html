@@ -1,0 +1,56 @@
+<!-- ─
+     Templates.html — Budget Template Presets Screen
+     SERVER CALLS: applyBudgetTemplate(monthlyIncome, templateType)
+     ───────────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-templates">
+    <!-- TODO: Subtitle: "Apply a budget template based on your monthly income." -->
+
+    <!-- ── Income Input + Template Buttons ────────────────────────────────── -->
+    <!-- TODO: Flex row: income input (id="tpl-income", type=number, placeholder "Monthly income")
+               + "50/30/20" .btn-primary onclick="applyTemplate('503020')"
+               + "70/20/10" .btn-primary onclick="applyTemplate('702010')"
+    -->
+    <div style="display: flex; gap: 8px; margin-bottom: 1.5rem;">
+        <input id="tpl-income" placeholder="Monthly income" type="number" class="inp"/>
+        <button onclick="applyTemplate('503020')" class="btn-primary" style="white-space: nowrap;">50/30/20</button>
+        <button onclick="applyTemplate('702010')" class="btn-primary" style="white-space: nowrap;">70/20/10</button>
+    </div>
+
+    <!-- TODO: id="tpl-result" — populated after template is applied:
+         Shows a confirmation box listing each category + computed limit amount
+    -->
+    <div id="tpl-result"></div>
+
+    <!-- ── Explainer Cards ─────────────────────────────────────────────────── -->
+    <!-- TODO: Section heading "What These Mean" -->
+    <!-- TODO: Two .card elements:
+         50/30/20: "50% Needs · 30% Wants · 20% Savings & Debt"
+         70/20/10: "70% Living expenses · 20% Savings · 10% Debt / giving"
+    -->
+    <div class="sec">What These Mean</div>
+    <div class="card">
+        <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px;">50/30/20 Rule</div>
+        <div style="font-size: 12px; color: var(--text2);">50% Needs · 30% Wants · 20% Savings & Debt</div>
+    </div>
+    <div class="card">
+        <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px;">70/20/10 Rule</div>
+        <div style="font-size: 12px; color: var(--text2);">70% Living expenses · 20% Savings · 10% Debt / giving</div>
+    </div>
+</div>
+
+<script>
+    /**
+     * applyTemplate(type)
+     *
+     * TODO: Read income from #tpl-income — validate it's a positive number
+     * TODO: Call server 'applyBudgetTemplate' with income + type
+     * TODO: On success:
+     *         1. Replace AppState.goals with the returned goals array
+     *         2. Build #tpl-result HTML: confirmation message + goal-by-goal breakdown table
+     *         3. renderAll() (Goals tab progress bars will update)
+     *         4. showToast('Template applied!', 'success')
+     */
+    async function applyTemplate(type) { /* TODO */ }
+
+    function renderTemplates() { /* TODO: if needed — tpl-result is managed by applyTemplate */ }
+</script>

@@ -1,0 +1,289 @@
+<style>
+    /*
+     * styles.css.html — Budget Tracker Master Stylesheet
+     *
+     * PURPOSE:
+     *   Single source of truth for ALL visual design in the app.
+     *   Included in every page render via <?!= include('src/client/utils/styles.css') ?>
+     *
+     * STRUCTURE:
+     *   1.  CSS Custom Properties (Design Tokens)
+     *   2.  Reset & Base
+     *   3.  Layout
+     *   4.  Typography Scale
+     *   5.  Colour Utilities
+     *   6.  Grid & Spacing Helpers
+     *   7.  Metric Cards
+     *   8.  Tab Navigation
+     *   9.  Transaction Rows
+     *   10. Progress Bars
+     *   11. Alert Banners
+     *   12. Cards
+     *   13. Badges
+     *   14. Form Inputs
+     *   15. Buttons
+     *   16. Tables
+     *   17. Dividers
+     *   18. Dark Mode Overrides
+     *   19. Print Styles (for Report tab PDF)
+     *   20. Responsive Breakpoints
+     *
+     * DESIGN LANGUAGE (carried over from the prototype):
+     *   - Monochrome base with green accent (income), red (expenses), blue (savings)
+     *   - System UI font stack for maximum performance — no web font requests
+     *   - Monospace font for all numbers (consistent column alignment)
+     *   - Minimal chrome — 0.5px borders, subtle backgrounds, generous whitespace
+     *   - Accent green: #1D9E75 (income / positive)
+     *   - Accent red:   #D85A30 (expenses / over budget)
+     *   - Accent blue:  #185FA5 (savings)
+     *   - Accent amber: #BA7517 (warnings / approaching limit)
+     *   - Accent purple:#7F77DD (entertainment category)
+     */
+
+
+    /* ─── 1. CSS CUSTOM PROPERTIES ──────────────────────────────────────────────── */
+    :root {
+        /* Brand accent colours */
+        --acc:     #1D9E75;  /* income, positive, success */
+        --red:     #D85A30;  /* expenses, over-budget, danger */
+        --blue:    #185FA5;  /* savings */
+        --amber:   #BA7517;  /* warnings, approaching limit */
+        --purple:  #7F77DD;  /* entertainment category */
+
+        /* Surfaces */
+        --bg:       #ffffff;
+        --bg2:      #f5f5f3;  /* subtle card background */
+
+        /* Borders */
+        --border:   rgba(0, 0, 0, 0.12);   /* subtle dividers */
+        --border2:  rgba(0, 0, 0, 0.22);   /* input borders, stronger dividers */
+
+        /* Text */
+        --text:     #1a1a1a;
+        --text2:    #666;    /* labels, secondary info */
+
+        /* Typography */
+        --font:     system-ui, -apple-system, sans-serif;
+        --mono:     'Courier New', monospace;  /* all currency/number display */
+
+        /* Shape */
+        --radius:    8px;
+        --radius-lg: 12px;
+
+        /* TODO: Add --shadow-sm and --shadow-md tokens for card elevations if needed */
+        /* TODO: Add --transition for consistent animation timing (e.g. 0.15s ease) */
+        /* TODO: Add --max-width token matching the 720px app container */
+    }
+
+
+    /* ─── 2. RESET & BASE ────────────────────────────────────────────────────────── */
+    /* TODO: Box-sizing reset, margin/padding reset */
+    /* TODO: Set body background to var(--bg), color to var(--text), font to var(--font) */
+    /* TODO: min-height: 100vh on body */
+
+
+    /* ─── 3. LAYOUT ──────────────────────────────────────────────────────────────── */
+    /* .app — the main page container */
+    /* TODO: max-width 720px, margin auto, padding 1.5rem 1rem */
+
+    /* .app-header — top bar with month nav + currency + balance */
+    /* TODO: flex, justify-content space-between, align-items flex-end */
+    /* TODO: margin-bottom 1.5rem, padding-bottom 1.25rem, border-bottom */
+
+
+    /* ─── 4. TYPOGRAPHY SCALE ────────────────────────────────────────────────────── */
+    /* TODO: h1 — 24px, font-weight 400 (prototype uses light weight headings) */
+    /* TODO: .label-caps — 11px, font-weight 500, letter-spacing 0.08em, uppercase, color var(--text2) */
+    /*        Used for section headings and metric card labels */
+    /* TODO: .mono-value — font-family var(--mono), font-size 15px, font-weight 500 */
+    /*        Used for all currency display */
+
+
+    /* ─── 5. COLOUR UTILITIES ────────────────────────────────────────────────────── */
+    /* TODO: .text-income     { color: var(--acc); } */
+    /* TODO: .text-expense    { color: var(--red); } */
+    /* TODO: .text-savings    { color: var(--blue); } */
+    /* TODO: .text-warning    { color: var(--amber); } */
+    /* TODO: .text-secondary  { color: var(--text2); } */
+    /* TODO: .text-positive   { color: var(--acc); } — for positive balance */
+    /* TODO: .text-negative   { color: var(--red); } — for negative balance */
+
+
+    /* ─── 6. GRID & SPACING HELPERS ──────────────────────────────────────────────── */
+    /* TODO: .row2 — 2-column equal grid, gap 8px, margin-bottom 8px */
+    /* TODO: .row3 — 3-column equal grid, gap 10px, margin-bottom 1.25rem */
+    /* TODO: .row4 — 4-column equal grid, gap 10px, margin-bottom 1.25rem */
+    /* TODO: .sec  — section heading: label-caps + margin 1.25rem 0 10px */
+    /* TODO: All grids should collapse to 2 columns on mobile (see Responsive section) */
+
+
+    /* ─── 7. METRIC CARDS ────────────────────────────────────────────────────────── */
+    /* .metric — used for Income / Expenses / Saved / Remaining cards */
+    /* TODO: background var(--bg2), border-radius var(--radius), padding 12px 14px */
+    /* TODO: .metric .lbl — label-caps styles */
+    /* TODO: .metric .val — mono-value styles */
+
+
+    /* ─── 8. TAB NAVIGATION ──────────────────────────────────────────────────────── */
+    /* .tabs — horizontal tab strip */
+    /* TODO: display flex, gap 0, border-bottom 0.5px solid var(--border) */
+    /* TODO: margin-bottom 1.5rem, overflow-x auto (scrollable on mobile) */
+    /* TODO: Hide scrollbar on WebKit browsers (scrollbar-width: none + ::-webkit-scrollbar { display:none }) */
+
+    /* .tab — individual tab button */
+    /* TODO: background none, border none, border-bottom 2px solid transparent */
+    /* TODO: padding 8px 11px 10px, margin-bottom -1px (overlaps the strip border) */
+    /* TODO: font 11px/400, cursor pointer, color var(--text2), white-space nowrap */
+
+    /* .tab.active */
+    /* TODO: border-bottom-color var(--text), color var(--text), font-weight 500 */
+
+    /* .pane — screen container, hidden by default */
+    /* TODO: display none */
+    /* .pane.active — visible screen */
+    /* TODO: display block */
+
+
+    /* ─── 9. TRANSACTION ROWS ────────────────────────────────────────────────────── */
+    /* .tx-row — a single transaction list item */
+    /* TODO: display flex, justify-content space-between, align-items center */
+    /* TODO: padding 9px 0, border-bottom 0.5px solid var(--border) */
+
+    /* .tx-dot — coloured category indicator dot */
+    /* TODO: width 8px, height 8px, border-radius 50%, flex-shrink 0, display inline-block */
+
+    /* .tx-name — description text */
+    /* TODO: font-size 13px */
+    /* .tx-cat  — category label below name */
+    /* TODO: font-size 11px, color var(--text2) */
+    /* .tx-tag  — hashtag note displayed inline with description */
+    /* TODO: font-size 10px, color var(--text2), margin-left 6px */
+
+    /* .tx-amount — monospace amount, coloured by type */
+    /* TODO: font-family var(--mono), font-size 13px, font-weight 500 */
+
+    /* .tx-delete — × delete button */
+    /* TODO: cursor pointer, color var(--text2), font-size 16px, line-height 1 */
+
+
+    /* ─── 10. PROGRESS BARS ──────────────────────────────────────────────────────── */
+    /* .prog-track — progress bar background track */
+    /* TODO: height 4px, background var(--bg2), border-radius 2px, overflow hidden, margin 5px 0 */
+
+    /* .prog-fill — coloured fill, width set inline as a percentage */
+    /* TODO: height 100%, border-radius 2px, transition width 0.5s ease */
+
+
+    /* ─── 11. ALERT BANNERS ──────────────────────────────────────────────────────── */
+    /* .alert — base alert box */
+    /* TODO: border-radius var(--radius), padding 10px 14px, margin-bottom 1rem, font-size 12px */
+
+    /* .alert-danger  — over budget (red) */
+    /* TODO: background #FCEBEB, border 0.5px solid #F09595, color #501313 */
+
+    /* .alert-warning — approaching limit (amber) */
+    /* TODO: background #FAEEDA, border 0.5px solid #FAC775, color #412402 */
+
+    /* .alert-info    — bills due (amber, same as warning in prototype) */
+    /* TODO: Reuse .alert-warning or create a distinct blue variant if preferred */
+
+
+    /* ─── 12. CARDS ──────────────────────────────────────────────────────────────── */
+    /* .card — content card used in Debt, Insights, Templates tabs */
+    /* TODO: background var(--bg2), border-radius var(--radius-lg), padding 14px 16px, margin-bottom 10px */
+
+
+    /* ─── 13. BADGES ─────────────────────────────────────────────────────────────── */
+    /* .badge — base inline pill badge */
+    /* TODO: font-size 10px, font-weight 500, padding 2px 6px, border-radius 4px */
+
+    /* .badge-red   — over limit, liability */
+    /* TODO: background #FCEBEB, color #791F1F */
+
+    /* .badge-green — under limit, asset, paid */
+    /* TODO: background #EAF3DE, color #27500A */
+
+    /* .badge-blue  — income type */
+    /* TODO: background #E6F1FB, color #042C53 */
+
+
+    /* ─── 14. FORM INPUTS ────────────────────────────────────────────────────────── */
+    /* .inp — all text inputs, number inputs, and selects */
+    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
+    /* TODO: padding 8px 10px, font-family var(--font), font-size 13px, color var(--text) */
+    /* TODO: box-sizing border-box, width 100% */
+    /* TODO: :focus — outline none, border-color var(--acc) */
+    /* TODO: Select elements: appearance none on WebKit if custom arrow desired */
+
+
+    /* ─── 15. BUTTONS ────────────────────────────────────────────────────────────── */
+    /* .btn-primary — filled button (dark background / light text) */
+    /* TODO: background var(--text), color var(--bg), border none, border-radius var(--radius) */
+    /* TODO: padding 9px 16px, font 13px/500, cursor pointer */
+    /* TODO: :hover — opacity 0.85 or slightly lighter background */
+
+    /* .btn-sm — small ghost button */
+    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
+    /* TODO: padding 5px 10px, font 11px, cursor pointer, color var(--text2) */
+    /* TODO: :hover — border-color var(--text), color var(--text) */
+
+    /* .btn-danger — small destructive button (clear month, etc.) */
+    /* TODO: color var(--red), border-color var(--red) */
+
+
+    /* ─── 16. TABLES ─────────────────────────────────────────────────────────────── */
+    /* Used in Multi-Month and Report tabs */
+    /* TODO: table width 100%, border-collapse collapse, font-size 12px */
+    /* TODO: th — font-size 10px, font-weight 500, uppercase, letter-spacing 0.06em */
+    /*            color var(--text2), border-bottom 0.5px solid var(--border) */
+    /*            text-align: right for all columns except the first (Month name) */
+    /* TODO: td — padding 7px 8px, border-bottom 0.5px solid var(--border) */
+    /*            font-family var(--mono) for numeric columns */
+    /* TODO: .row-active — highlighted row for the current month (background var(--bg2)) */
+
+
+    /* ─── 17. DIVIDERS ───────────────────────────────────────────────────────────── */
+    /* .divider — hr-style separator used in Settings tab */
+    /* TODO: border none, border-top 0.5px solid var(--border), margin 1.25rem 0 */
+
+
+    /* ─── 18. DARK MODE OVERRIDES ────────────────────────────────────────────────── */
+    /* Applied when .dark class is toggled on .app (matches prototype pattern) */
+    /* TODO: .app.dark override all CSS variables:
+         --bg:       #0f0f11;
+         --bg2:      #1a1a1d;
+         --border:   rgba(255, 255, 255, 0.08);
+         --border2:  rgba(255, 255, 255, 0.16);
+         --text:     #e8e6e1;
+         --text2:    #888;
+       Also set background and color on .app.dark directly.
+    */
+
+    /* TODO: Dark mode alert banners — desaturate the backgrounds slightly for dark context */
+    /* TODO: Dark mode inputs — ensure readable contrast on --bg2 backgrounds */
+
+
+    /* ─── 19. PRINT STYLES ───────────────────────────────────────────────────────── */
+    /* Used when the user clicks "Print / PDF" on the Report tab */
+    /* TODO: @media print {
+         Hide: .tabs, .btn-sm, .btn-primary, #alerts-wrap, the currency selector, dark toggle
+         Show: only #pane-report content
+         Set background to white, text to black (override dark mode for print)
+         Page margins: 1.5cm
+         Avoid page breaks inside .card and .tx-row elements
+       }
+    */
+
+
+    /* ─── 20. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────────── */
+    /* TODO: @media (max-width: 480px) {
+         .row4 → grid-template-columns: repeat(2, 1fr)
+         .row3 → grid-template-columns: repeat(2, 1fr) or 1fr 1fr
+         .row2 → grid-template-columns: 1fr  (single column stacking)
+         .app  → padding 1rem 0.75rem
+         Debt add-form grid → stack to 1fr 1fr on two rows
+         Net Worth add-form grid → stack appropriately
+         h1 font-size → 18px
+       }
+    */
+</style>

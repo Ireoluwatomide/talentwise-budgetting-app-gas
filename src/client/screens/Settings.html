@@ -1,0 +1,133 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Settings.html — App Settings Screen
+
+     TAB: Settings
+
+     SECTIONS:
+       1. Custom Categories — list existing categories, add new ones (name + colour picker)
+       2. Divider
+       3. Danger Zone — "Clear Current Month" destructive action
+
+     STATE: AppState.categories
+
+     SERVER CALLS:
+       addCategory(name, color) → saves new category
+       deleteCategory(name) → removes user-added category (default categories protected)
+       Preferences.setCurrency / setDarkMode are handled by setCurrency() / toggleDark() in utils.js
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-settings">
+
+  <!-- ── 1. Custom Categories ────────────────────────────────────────────── -->
+  <!-- TODO: Section heading "Custom Categories" -->
+  <!-- TODO: id="cat-settings-list" — set by renderSettings():
+       For each category in AppState.categories:
+         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+           <span style="width:14px;height:14px;border-radius:3px;background:{color};"></span>
+           <span style="font-size:13px;flex:1;">{name}</span>
+           {if user-added (index >= 9)} × delete button onclick="deleteCat(cat.name)"
+         </div>
+       NOTE: Default 9 categories (indices 0–8) do NOT get a delete button
+  -->
+  <div class="sec" style="margin-top: 0;">Custom Categories</div>
+  <div id="cat-settings-list" style="margin-bottom: 1rem;"></div>
+
+  <!-- ── Add Category Form ──────────────────────────────────────────────── -->
+  <!-- TODO: Flex row: category name input | colour picker input | "Add" button
+       <div style="display:flex;gap:8px;margin-bottom:1.5rem;">
+         <input id="new-cat-name" placeholder="Category name" class="inp"/>
+         <input id="new-cat-color" type="color" value="#1D9E75"
+                style="width:44px;height:38px;border:0.5px solid var(--border2);
+                       border-radius:var(--radius);padding:2px;cursor:pointer;background:transparent;"/>
+         <button onclick="addCategoryForm()" class="btn-primary">Add</button>
+       </div>
+  -->
+  <div style="display: flex; gap: 8px; margin-bottom: 1.5rem;">
+    <input id="new-cat-name" placeholder="Category name" class="inp"/>
+    <input id="new-cat-color" type="color" value="#1D9E75"
+           style="width: 44px; height: 38px; border: 0.5px solid var(--border2);
+                  border-radius: var(--radius); padding: 2px; cursor: pointer; background: transparent;"/>
+    <button onclick="addCategoryForm()" class="btn-primary">Add</button>
+  </div>
+
+  <!-- ── 2. Divider ─────────────────────────────────────────────────────── -->
+  <hr class="divider"/>
+
+  <!-- ── 3. Danger Zone ─────────────────────────────────────────────────── -->
+  <!-- TODO: Section heading "Danger Zone" -->
+  <!-- TODO: Single .btn-sm styled with danger colours (color --red, border-color --red):
+       onclick="clearCurrentMonth()"
+       Text: "Clear Current Month"
+       Confirm dialog before proceeding: "Clear all transactions for [month]? This cannot be undone."
+  -->
+  <div class="sec">Danger Zone</div>
+  <button onclick="clearCurrentMonth()"
+          class="btn-sm"
+          style="color: var(--red); border-color: var(--red);">
+    Clear Current Month
+  </button>
+
+</div>
+
+<script>
+  /**
+   * renderSettings()
+   *
+   * TODO: Build #cat-settings-list from AppState.categories
+   *         Default categories (first 9) → no delete button
+   *         User-added categories (index >= 9) → show × delete button
+   */
+  function renderSettings() {
+    // TODO: Implement
+  }
+
+
+  /**
+   * addCategoryForm()
+   *
+   * TODO: Read name (#new-cat-name), color (#new-cat-color)
+   * TODO: Validate: name must be non-empty, must not already exist (case-insensitive)
+   *         showToast('Category already exists.', 'error') if duplicate
+   * TODO: Call server 'addCategory' with name + color
+   * TODO: On success:
+   *         1. Push { name, color } to AppState.categories
+   *         2. clearInputs('new-cat-name')
+   *         3. renderAll() — updates category list + all <select> dropdowns
+   *         4. showToast('Category added!', 'success')
+   */
+  async function addCategoryForm() {
+    // TODO: Implement
+  }
+
+
+  /**
+   * deleteCat(categoryName)
+   *
+   * TODO: Confirm deletion via window.confirm()
+   * TODO: Call server 'deleteCategory' with the category name
+   * TODO: On success:
+   *         1. Filter out from AppState.categories
+   *         2. renderAll()
+   *         3. showToast('Category removed.', 'info')
+   */
+  async function deleteCat(categoryName) {
+    // TODO: Implement
+  }
+
+
+  /**
+   * clearCurrentMonth()
+   *
+   * TODO: Show confirm dialog: "Clear all transactions for [monthLabel]? This cannot be undone."
+   * TODO: If confirmed:
+   *         1. Call server 'clearMonthTransactions' (needs a matching server function — add to Transactions.gs)
+   *         2. Set AppState.transactions[curKey()] = []
+   *         3. renderAll()
+   *         4. showToast('Month cleared.', 'info')
+   *
+   * NOTE: Remind yourself to add clearMonthTransactions(monthKey) to Transactions.gs
+   */
+  async function clearCurrentMonth() {
+    // TODO: Implement
+  }
+</script>

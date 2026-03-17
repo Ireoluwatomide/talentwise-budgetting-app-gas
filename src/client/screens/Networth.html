@@ -1,0 +1,49 @@
+<!-- ─
+     NetWorth.html — Net Worth Snapshot Screen
+     SERVER CALLS: addNetWorthItem, deleteNetWorthItem
+     ───────────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-networth">
+    <!-- TODO: Subtitle: "Assets minus liabilities — your financial snapshot." -->
+
+    <!-- ── Summary Metrics ─────────────────────────────────────────────────── -->
+    <!-- TODO: .row3 — Total Assets (--acc) | Total Liabilities (--red) | Net Worth (dynamic colour) -->
+    <div class="row3" style="margin-bottom: 1.5rem;">
+        <div class="metric"><div class="lbl">Total Assets</div><div class="val" id="nw-assets" style="color: var(--acc);"></div></div>
+        <div class="metric"><div class="lbl">Total Liabilities</div><div class="val" id="nw-liabilities" style="color: var(--red);"></div></div>
+        <div class="metric"><div class="lbl">Net Worth</div><div class="val" id="nw-total"></div></div>
+    </div>
+
+    <!-- ── Items List ──────────────────────────────────────────────────────── -->
+    <!-- TODO: id="nw-list" — .tx-row for each item:
+         LEFT:  .badge-green "asset" or .badge-red "liability" + item name (13px)
+         RIGHT: amount in monospace (green for asset, red for liability) + × delete
+    -->
+    <div id="nw-list"></div>
+
+    <!-- ── Add Item Form ───────────────────────────────────────────────────── -->
+    <!-- TODO: Section "Add Asset / Liability" -->
+    <!-- TODO: 4-column grid: Name | Value | type select (Asset/Liability) | "Add" button -->
+    <div class="sec">Add Asset / Liability</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 120px auto; gap: 8px;">
+        <input id="nw-name" placeholder="Name" class="inp"/>
+        <input id="nw-amt" placeholder="Value" type="number" class="inp"/>
+        <select id="nw-type" class="inp">
+            <option value="asset">Asset</option>
+            <option value="liability">Liability</option>
+        </select>
+        <button onclick="addNWForm()" class="btn-primary">Add</button>
+    </div>
+</div>
+
+<script>
+    /**
+     * renderNetWorth()
+     * TODO: Compute totals from AppState.netWorthItems
+     * TODO: Update #nw-assets, #nw-liabilities, #nw-total
+     * TODO: Set #nw-total color: var(--acc) if net worth >= 0, else var(--red)
+     * TODO: Build #nw-list from items
+     */
+    function renderNetWorth() { /* TODO */ }
+    async function addNWForm() { /* TODO: read, callServer('addNetWorthItem'), update AppState, renderAll, showToast */ }
+    async function deleteNWItem(itemId) { /* TODO: callServer, filter, renderAll, showToast */ }
+</script>

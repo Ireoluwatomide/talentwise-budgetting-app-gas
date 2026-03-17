@@ -1,0 +1,74 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Debt.html — Debt Tracker Screen
+
+     TAB: Debt
+
+     SECTIONS:
+       1. Summary metrics: Total Debt remaining | Monthly Payments total
+       2. Debt list — each debt shows name, interest rate, monthly payment,
+          payoff ETA, amount owed, progress bar (% paid off), Pay + Delete buttons
+       3. Add Debt form
+
+     SERVER CALLS:
+       addDebt(name, total, monthlyPayment, interestRate)
+       recordDebtPayment(debtId, amount) — prompts for payment amount
+       deleteDebt(debtId)
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-debt">
+
+  <!-- TODO: Subtitle: "Track loans, credit cards, and other debts." -->
+
+  <!-- ── 1. Summary Metrics ──────────────────────────────────────────────── -->
+  <div class="row2" style="margin-bottom: 1rem;">
+    <div class="metric"><div class="lbl">Total Debt</div><div class="val" id="debt-total" style="color: var(--red);"></div></div>
+    <div class="metric"><div class="lbl">Monthly Payments</div><div class="val" id="debt-monthly" style="color: var(--amber);"></div></div>
+  </div>
+
+  <!-- ── 2. Debt List ────────────────────────────────────────────────────── -->
+  <!-- TODO: id="debt-list" — each debt in a .card:
+       Header: debt name (13px/500) + sub-line "X% interest · ₦payment/mo · ~N months left"
+               + amount owed (14px, --red) + "Pay" button + × delete
+       Progress bar: pct(paid, total)% in var(--acc) colour (shows payoff progress)
+       Sub-label: "{pct}% paid off"
+  -->
+  <div id="debt-list"></div>
+
+  <!-- ── 3. Add Debt Form ────────────────────────────────────────────────── -->
+  <!-- TODO: Section heading "Add Debt" -->
+  <!-- TODO: .row2 grid:
+       Row 1: Debt name | Total owed
+       Row 2: Monthly payment | Interest rate % (number, step 0.1)
+       Full-width "Add Debt" .btn-primary
+  -->
+  <div class="sec">Add Debt</div>
+  <div class="row2">
+    <input id="d-name" placeholder="Debt name" class="inp"/>
+    <input id="d-total" placeholder="Total owed" type="number" class="inp"/>
+    <input id="d-payment" placeholder="Monthly payment" type="number" class="inp"/>
+    <input id="d-rate" placeholder="Interest rate %" type="number" step="0.1" class="inp"/>
+  </div>
+  <button onclick="addDebtForm()" class="btn-primary" style="width: 100%;">Add Debt</button>
+
+</div>
+
+<script>
+  /**
+   * renderDebt()
+   *
+   * TODO: Update #debt-total and #debt-monthly from AppState.debts summary
+   * TODO: Build #debt-list from AppState.debts — each as a .card
+   *         months_to_payoff = payment > 0 ? Math.ceil(owed / payment) : '?'
+   */
+  function renderDebt() { /* TODO */ }
+
+  async function addDebtForm() { /* TODO: read form, callServer('addDebt'), update AppState, renderAll, showToast */ }
+
+  async function payDebt(debtId) {
+    // TODO: prompt() for payment amount
+    // TODO: callServer('recordDebtPayment', debtId, amount)
+    // TODO: update AppState.debts, renderAll(), showToast
+  }
+
+  async function deleteDebt(debtId) { /* TODO: callServer, filter AppState, renderAll, showToast */ }
+</script>

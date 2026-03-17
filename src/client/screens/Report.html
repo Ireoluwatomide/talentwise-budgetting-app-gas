@@ -1,0 +1,89 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Report.html — Full Budget Summary Report Screen
+
+     TAB: Report
+
+     PURPOSE:
+       Printable/PDF-ready financial summary spanning all recorded months.
+       Uses window.print() — the print stylesheet in styles.css hides
+       all chrome and renders only this pane cleanly.
+
+     SECTIONS:
+       1. Print button
+       2. Overall totals (Income / Expenses / Saved)
+       3. Monthly averages + savings rate
+       4. Highlights (best month + highest spend month)
+       5. Top spending categories (all-time)
+       6. Month-by-month table (same columns as MultiMonth)
+
+     SERVER CALLS: None — from AppState
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-report">
+
+    <!-- ── Header row ─────────────────────────────────────────────────────── -->
+    <!-- TODO: flex row, space-between:
+         LEFT:  "Full budget summary — all months." (12px, --text2)
+         RIGHT: "Print / PDF" .btn-sm onclick="window.print()"
+    -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div style="font-size: 12px; color: var(--text2);">Full budget summary — all months.</div>
+        <button onclick="window.print()" class="btn-sm">Print / PDF</button>
+    </div>
+
+    <!-- ── Report Body ────────────────────────────────────────────────────── -->
+    <!-- TODO: id="report-body" — full HTML set by renderReport()
+
+         Structure: a single bordered card (border: 0.5px solid var(--border), border-radius: 12px, overflow:hidden)
+         containing the following sections, each separated by a border-bottom:
+
+         SECTION 1 — Header bar (var(--bg2) background):
+           Label: "Budget Summary Report" (label-caps, --text2)
+           Title: "N months recorded" (17px/500)
+
+         SECTION 2 — Totals (.row3):
+           Total Income, Total Expenses, Total Saved (monospace, 14px/500, colour-coded)
+
+         SECTION 3 — Averages (.row3):
+           Avg Monthly Income, Avg Monthly Spend, Savings Rate (% in --acc or --amber based on >= 20%)
+
+         SECTION 4 — Highlights (.row2):
+           Best Month card: label "Best Month", month name (13px/500), net balance (--acc)
+             "Best" = month with highest balance (inc - exp - sav)
+           Highest Spend Month card: label "Highest Spend Month", month name, total expenses (--red)
+
+         SECTION 5 — Top Categories:
+           Label heading "Top Categories"
+           .tx-row for each category: coloured dot + name | amount + % of all-time expenses
+           Sorted descending by total amount
+
+         SECTION 6 — Month-by-Month table:
+           Same column structure as MultiMonth.html summary table
+           All months, oldest to newest
+    -->
+    <div id="report-body"></div>
+
+</div>
+
+<script>
+    /**
+     * renderReport()
+     *
+     * TODO: Called by switchTab('report') and renderAll() if active.
+     *
+     * TODO: 1. Collect all month keys from AppState.transactions, sorted ascending
+     * TODO: 2. Compute all-time totals: totInc, totExp, totSav
+     * TODO: 3. Compute averages: avgInc = totInc / months.length, avgExp, avgSav, savRate
+     * TODO: 4. Find best month: highest (inc - exp - sav) balance
+     * TODO: 5. Find worst month: highest total expenses
+     * TODO: 6. Build top categories: aggregate all expense transactions across all months
+     *            Sort descending by total amount
+     * TODO: 7. Assemble the full HTML report in #report-body
+     *            Each section wrapped in a padded div with border-bottom
+     *            Use makeMetric() helper for individual metric cells
+     *            Use the same table structure as MultiMonth for the month-by-month section
+     */
+    function renderReport() {
+        // TODO: Implement
+    }
+</script>

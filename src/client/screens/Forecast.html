@@ -1,0 +1,73 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Forecast.html — 6-Month Cash Flow Forecast Screen
+
+     TAB: Forecast
+
+     SECTIONS:
+       1. Subtitle explaining the forecast basis
+       2. Projected metrics row (Income / Expenses / Savings — based on historical avg)
+       3. Projected net balance note
+       4. 6-month line chart (Chart.js) — actual data for past months, projected for future
+
+     SERVER CALLS: None — computed from AppState.transactions client-side
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-forecast">
+
+    <!-- TODO: Subtitle: "Based on your average spending over recorded months." (12px, --text2) -->
+
+    <!-- ── Projected Metrics ────────────────────────────────────────────────── -->
+    <!-- TODO: id="forecast-body" — set by renderForecast():
+         .row3 grid:
+           Projected Income   (--acc)
+           Projected Expenses (--red)
+           Projected Savings  (--blue)
+         Then a note below: "Based on N-month average. Projected net: ₦X/month."
+           Projected net colour: var(--acc) if >= 0, var(--red) if negative
+    -->
+    <div id="forecast-body"></div>
+
+    <!-- ── 6-Month Line Chart ──────────────────────────────────────────────── -->
+    <!-- TODO: canvas id="forecast-chart", wrapper height 220px -->
+    <!-- TODO: 3 line datasets: Income (green), Expenses (red), Savings (blue)
+         X-axis: 6 month labels starting from curMonth (e.g. Mar 26, Apr 26, ...)
+         For months with actual data → use real values
+         For future months → use the historical average (shown as projected)
+         Consider adding a visual distinction for projected months:
+           e.g. borderDash: [5,5] on the dataset portions that are projected
+    -->
+    <div style="position: relative; width: 100%; height: 220px; margin-top: 1.5rem;">
+        <canvas id="forecast-chart"></canvas>
+    </div>
+
+</div>
+
+<script>
+    /**
+     * renderForecast()
+     *
+     * TODO: Called by switchTab('forecast') with 50ms delay, and renderAll() if active.
+     *
+     * TODO: 1. Collect all month keys from AppState.transactions and sort them
+     * TODO: 2. If fewer than 2 months → show "Need at least 2 months of data." message and return
+     * TODO: 3. Compute averages across all recorded months:
+     *            avgInc = total income / month count
+     *            avgExp = total expenses / month count
+     *            avgSav = total savings / month count
+     *            avgBal = avgInc - avgExp - avgSav
+     * TODO: 4. Build #forecast-body HTML (metrics + note)
+     * TODO: 5. Build 6-month label array starting from curMonth:
+     *            e.g. ['Mar 26', 'Apr 26', 'May 26', 'Jun 26', 'Jul 26', 'Aug 26']
+     *            Wrap month/year correctly when crossing December
+     * TODO: 6. For each of the 6 months:
+     *            If actual data exists in AppState.transactions → use real stats
+     *            Else → use the computed averages
+     * TODO: 7. destroyChart('forecast-chart') and create Chart.js 'line' chart
+     *            tension: 0.3, fill: false, pointRadius: 4
+     *            Legend: false (no built-in legend, no custom legend needed for this tab)
+     * TODO: 8. registerChart('forecast-chart', instance)
+     */
+    function renderForecast() {
+        // TODO: Implement
+    }
+</script>

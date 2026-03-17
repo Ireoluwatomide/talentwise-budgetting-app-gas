@@ -1,0 +1,46 @@
+<!-- ─
+     Insights.html — Auto-Generated Spending Insights Screen
+     SERVER CALLS: None — computed from AppState client-side
+     ───────────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-insights">
+    <!-- TODO: id="insights-body" — set by renderInsights() -->
+    <div id="insights-body"></div>
+</div>
+
+<script>
+    /**
+     * renderInsights()
+     *
+     * TODO: Generate 4–5 insight cards from AppState data. Use last 3 months.
+     *       Each card: .card with icon (emoji), title (coloured), body text (12px, --text2)
+     *
+     * Insights to generate (same as prototype):
+     *
+     * 1. Savings Rate insight
+     *    savRate = current month: sav / inc * 100
+     *    Message varies: >= 20% "Great job!", >= 10% "Good progress", < 10% "Consider increasing"
+     *    Color: var(--acc)
+     *
+     * 2. Expense Trend (only if 2+ months of data)
+     *    Compare current month expenses vs previous month
+     *    expChange% = (curExp - prevExp) / prevExp * 100
+     *    Message: increased/decreased by X%, colour red if > 10% increase, green if > 10% decrease
+     *
+     * 3. Top Spending Category
+     *    Highest expense category this month
+     *    Message: notes whether a goal is set for it
+     *    Color: var(--amber)
+     *
+     * 4. Average Monthly Spend
+     *    avgExp = mean of all recorded month expenses
+     *    Compare to current month
+     *    Color: var(--blue)
+     *
+     * 5. Debt Overview (only if AppState.debts.length > 0)
+     *    Shows debt count, total remaining, monthly payments
+     *    Color: var(--red)
+     *
+     * TODO: If fewer than 2 months of data, show "Not enough data yet." message
+     */
+    function renderInsights() { /* TODO */ }
+</script>

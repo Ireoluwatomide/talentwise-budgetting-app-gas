@@ -1,0 +1,110 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Goals.html — Monthly Budget Goals Screen
+
+     TAB: Goals
+
+     SECTIONS:
+       1. Goals list — progress bars per category, with spent vs limit + over-budget badge
+       2. Add Goal form — category select + limit input
+
+     STATE: AppState.goals, AppState.transactions (current month expenses)
+
+     SERVER CALLS:
+       addGoal(category, monthlyLimit) → saves new goal, returns goal object
+       deleteGoal(goalId) → removes goal
+       applyBudgetTemplate(income, type) → bulk-generates goals (called from Templates tab)
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-goals">
+
+    <!-- TODO: Subtitle text: "Monthly spending limits per category." (12px, --text2) -->
+
+    <!-- ── 1. Goals List ───────────────────────────────────────────────────── -->
+    <!-- TODO: id="goals-list" — innerHTML set by renderGoals()
+
+         Empty state: "No goals set." in --text2
+
+         For each goal in AppState.goals:
+           <div style="margin-bottom: 1.25rem;">
+             Header row (flex, space-between):
+               LEFT:  category name (13px/500) + .badge-red "Over limit" if spent > limit
+               RIGHT: "₦spent / ₦limit" in monospace (--text2 or --red if over)
+                      + × delete button onclick="deleteGoal(goal.id)"
+             Progress bar (.prog-track > .prog-fill):
+               width: pct(spent, limit)%
+               color: var(--red) if > 100%, var(--amber) if > 70%, var(--acc) otherwise
+             Sub-label: "{pct}% used" — append " — over budget!" if spent > limit
+           </div>
+
+         spent = sum of expense transactions for goal.category in current month (from curTxs())
+    -->
+    <div id="goals-list"></div>
+
+    <!-- ── 2. Add Goal Form ────────────────────────────────────────────────── -->
+    <!-- TODO: Section heading "Add Goal" -->
+    <!-- TODO: 3-column grid: category select | limit input | "Add" button
+         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
+           <select id="g-cat" class="inp"><!-- populated by populateCategorySelects() --></select>
+    <input id="g-limit" placeholder="Limit" type="number" class="inp"/>
+    <button onclick="addGoal()" class="btn-primary">Add</button>
+</div>
+-->
+<div class="sec">Add Goal</div>
+<div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px;">
+    <select id="g-cat" class="inp"></select>
+    <input id="g-limit" placeholder="Limit" type="number" class="inp"/>
+    <button onclick="addGoalForm()" class="btn-primary">Add</button>
+</div>
+
+</div>
+
+<script>
+    /**
+     * renderGoals()
+     *
+     * TODO: Called from renderAll() when Goals tab is active.
+     *
+     * TODO: 1. Get current month expense totals per category from curTxs()
+     *            Build a map: { category: totalSpent }
+     * TODO: 2. For each goal in AppState.goals, compute:
+     *            spent = catMap[goal.category] || 0
+     *            p = pct(spent, goal.monthly_limit)
+     *            progressColor: p > 100 ? var(--red) : p > 70 ? var(--amber) : var(--acc)
+     * TODO: 3. Build HTML for each goal (structure above) and join
+     * TODO: 4. Set #goals-list innerHTML
+     */
+    function renderGoals() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * addGoalForm()
+     *
+     * TODO: Read category from #g-cat, limit from #g-limit
+     * TODO: Validate: limit must be a positive number — showToast if not
+     * TODO: Call server 'addGoal' with category + limit
+     * TODO: On success:
+     *         1. Add returned goal to AppState.goals (or replace if same category)
+     *         2. clearInputs('g-limit')
+     *         3. renderAll()
+     *         4. showToast('Goal added!', 'success')
+     */
+    async function addGoalForm() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * deleteGoal(goalId)
+     *
+     * TODO: Call server 'deleteGoal' with goalId
+     * TODO: On success:
+     *         1. Filter AppState.goals to remove the deleted goal
+     *         2. renderAll()
+     *         3. showToast('Goal removed.', 'info')
+     */
+    async function deleteGoal(goalId) {
+        // TODO: Implement
+    }
+</script>

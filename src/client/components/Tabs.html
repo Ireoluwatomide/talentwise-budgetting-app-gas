@@ -1,50 +1,25 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Tabs.html — Tab Navigation Bar
+     Tabs.html — Horizontal Tab Navigation Strip
 
-     PURPOSE:
-       Horizontal scrollable tab strip. Each tab button activates the
-       corresponding screen pane via switchTab() from utils.js.
-
-     TAB ORDER (matches prototype):
-       Overview | Charts | Categories | Insights | Forecast | Multi-Month |
-       Report | Goals | Savings | Debt | Net Worth | Recurring | Templates |
-       Bills | Settings
-
-     INCLUDED VIA:
-       <?!= include('src/client/components/Tabs') ?> in the main page template
-
-     STATE:
-       Active tab is tracked via the .active CSS class.
-       switchTab(tabId) in utils.js manages adding/removing .active.
+     All 15 tabs in prototype order. switchTab() in utils.js manages
+     the .active class on both the button (tab-X) and the pane (pane-X).
+     The strip is overflow-x: auto so it scrolls on mobile without wrapping.
      ───────────────────────────────────────────────────────────────────────── -->
 
-<div class="tabs">
-
-    <!-- TODO: Each button follows the pattern:
-         <button class="tab active" id="tab-overview" onclick="switchTab('overview')">Overview</button>
-
-         Notes:
-         - id must be tab-{tabId} to match switchTab() and pane-{tabId} pattern
-         - Only Overview gets .active on initial load (first tab visible by default)
-         - All other tabs get class="tab" (no .active)
-         - white-space: nowrap is handled by .tab in styles.css (prevents wrapping)
-         - The strip is overflow-x: auto so it scrolls on narrow mobile screens
-    -->
-
-    <button class="tab active" id="tab-overview"    onclick="switchTab('overview')">Overview</button>
-    <button class="tab"        id="tab-charts"      onclick="switchTab('charts')">Charts</button>
-    <button class="tab"        id="tab-categories"  onclick="switchTab('categories')">Categories</button>
-    <button class="tab"        id="tab-insights"    onclick="switchTab('insights')">Insights</button>
-    <button class="tab"        id="tab-forecast"    onclick="switchTab('forecast')">Forecast</button>
-    <button class="tab"        id="tab-multimonth"  onclick="switchTab('multimonth')">Multi-Month</button>
-    <button class="tab"        id="tab-report"      onclick="switchTab('report')">Report</button>
-    <button class="tab"        id="tab-goals"       onclick="switchTab('goals')">Goals</button>
-    <button class="tab"        id="tab-savings"     onclick="switchTab('savings')">Savings</button>
-    <button class="tab"        id="tab-debt"        onclick="switchTab('debt')">Debt</button>
-    <button class="tab"        id="tab-networth"    onclick="switchTab('networth')">Net Worth</button>
-    <button class="tab"        id="tab-recurring"   onclick="switchTab('recurring')">Recurring</button>
-    <button class="tab"        id="tab-templates"   onclick="switchTab('templates')">Templates</button>
-    <button class="tab"        id="tab-bills"       onclick="switchTab('bills')">Bills</button>
-    <button class="tab"        id="tab-settings"    onclick="switchTab('settings')">Settings</button>
-
+<div class="tabs" role="tablist">
+    <button class="tab active" id="tab-overview"    onclick="switchTab('overview')"    role="tab">Overview</button>
+    <button class="tab"        id="tab-charts"      onclick="switchTab('charts')"      role="tab">Charts</button>
+    <button class="tab"        id="tab-categories"  onclick="switchTab('categories')"  role="tab">Categories</button>
+    <button class="tab"        id="tab-insights"    onclick="switchTab('insights')"    role="tab">Insights</button>
+    <button class="tab"        id="tab-forecast"    onclick="switchTab('forecast')"    role="tab">Forecast</button>
+    <button class="tab"        id="tab-multimonth"  onclick="switchTab('multimonth')"  role="tab">Multi-Month</button>
+    <button class="tab"        id="tab-report"      onclick="switchTab('report')"      role="tab">Report</button>
+    <button class="tab"        id="tab-goals"       onclick="switchTab('goals')"       role="tab">Goals</button>
+    <button class="tab"        id="tab-savings"     onclick="switchTab('savings')"     role="tab">Savings</button>
+    <button class="tab"        id="tab-debt"        onclick="switchTab('debt')"        role="tab">Debt</button>
+    <button class="tab"        id="tab-networth"    onclick="switchTab('networth')"    role="tab">Net Worth</button>
+    <button class="tab"        id="tab-recurring"   onclick="switchTab('recurring')"   role="tab">Recurring</button>
+    <button class="tab"        id="tab-templates"   onclick="switchTab('templates')"   role="tab">Templates</button>
+    <button class="tab"        id="tab-bills"       onclick="switchTab('bills')"       role="tab">Bills</button>
+    <button class="tab"        id="tab-settings"    onclick="switchTab('settings')"    role="tab">Settings</button>
 </div>

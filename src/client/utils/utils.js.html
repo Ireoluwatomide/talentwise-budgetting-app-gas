@@ -1,609 +1,750 @@
 <script>
-    /**
-     * utils.js.html — Shared Client-Side Utilities
-     *
-     * PURPOSE:
-     *   Single JS file included on every page. Provides:
-     *     1.  App State          — single source of truth for all in-memory data
-     *     2.  Server Bridge      — google.script.run wrapper with promise support + loading state
-     *     3.  Formatters         — currency, dates, percentages
-     *     4.  Toast Notifications — non-blocking user feedback messages
-     *     5.  Tab Router         — show/hide panes, track active tab
-     *     6.  Month Navigation   — prev/next month helpers, monthKey builder
-     *     7.  Category Utilities — colour lookup, category list helpers
-     *     8.  DOM Helpers        — safe querySelector wrappers, render guards
-     *     9.  Chart Helpers      — destroy-before-recreate pattern for Chart.js
-     *     10. Constants          — FX rates, month names, type enums
-     *
-     * USAGE:
-     *   All screen files (Overview.html, Charts.html, etc.) can call any function
-     *   defined here. No module imports needed — all functions are global in the
-     *   Apps Script HtmlService environment.
-     *
-     * INCLUDED VIA:
-     *   <?!= include('src/client/utils/utils.js') ?> in the page template
-     */
+    // =============================================================================
+    // utils.js.html — Shared Client-Side Utilities
+    //
+    // Included via <?!= include('src/client/utils/utils.js') ?> in Index.html.
+    // This file is the single source of truth for all client-side shared state
+    // and utility functions. Screen files depend on this — it must load first.
+    //
+    // SECTIONS:
+    //   1.  Constants
+    //   2.  AppState
+    //   3.  Server bridge (callServer / callServerSilent)
+    //   4.  Formatters (fmt, pct, monthLabel, monthKey, curKey, parseMonthKey)
+    //   5.  Toast notifications
+    //   6.  Tab router (switchTab)
+    //   7.  Month navigation (prevMonth, nextMonth, applyRecurringForMonth)
+    //   8.  Category utilities (getCategoryColor, populateCategorySelects)
+    //   9.  Month stats helpers (getMonthStats, curTxs)
+    //   10. DOM helpers ($, setHTML, getVal, clearInputs)
+    //   11. Chart helpers (destroyChart, registerChart, getChartDefaults)
+    //   12. Dark mode & currency (toggleDark, setCurrency)
+    //   13. CSV (exportCSV, importCSV)
+    //   14. renderAll — master re-render dispatcher
+    // =============================================================================
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 1. CONSTANTS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 1. CONSTANTS ─────────────────────────────────────────────────────────────
 
-    /**
-     * TODO: Define MONTHS array — ['January', 'February', ..., 'December']
-     * TODO: Define FX_RATES object — { NGN: 1, USD: 0.00062, EUR: 0.00057, GBP: 0.00049 }
-     *         NOTE: In Phase 1 these are hardcoded. Phase 2 can fetch live rates via UrlFetchApp.
-     * TODO: Define FX_SYMBOLS object — { NGN: '₦', USD: '$', EUR: '€', GBP: '£' }
-     * TODO: Define TX_TYPES array — ['expense', 'income', 'savings']
-     * TODO: Define ALERT_THRESHOLD — 0.85 (warn when 85% of budget limit is spent)
-     */
+    var MONTHS = [
+        'January','February','March','April','May','June',
+        'July','August','September','October','November','December'
+    ];
 
-    const MONTHS = [/* TODO */];
-    const FX_RATES = { /* TODO */ };
-    const FX_SYMBOLS = { /* TODO */ };
-    const TX_TYPES = [/* TODO */];
-    const ALERT_THRESHOLD = 0.85;
+    // Exchange rates relative to NGN (base currency).
+    // These are approximate fixed rates — in Phase 2 these can be replaced
+    // with a live FX API call on bootstrap.
+    var FX_RATES = {
+        NGN: 1,
+        USD: 0.00062,   // ~1 USD = 1,610 NGN
+        EUR: 0.00058,   // ~1 EUR = 1,724 NGN
+        GBP: 0.00049    // ~1 GBP = 2,041 NGN
+    };
 
-
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 2. APP STATE
-    // ═══════════════════════════════════════════════════════════════════════════════
-
-    /**
-     * AppState — central in-memory state for the client
-     *
-     * TODO: Define the AppState object with the following properties:
-     *
-     *   curYear       {number}  — current display year (e.g. 2026)
-     *   curMonth      {number}  — current display month 1–12 (e.g. 3 = March)
-     *   currency      {string}  — active currency code, e.g. 'NGN'
-     *   darkMode      {boolean} — dark mode toggle state
-     *   categories    {Array}   — [{ name, color }, ...] — from Preferences
-     *   transactions  {Object}  — { 'YYYY-MM': [txObj, ...] } — all loaded months
-     *   goals         {Array}   — [{ id, category, monthly_limit }, ...]
-     *   bills         {Array}   — [{ id, name, amount, due_day, paid }, ...]
-     *   savingsGoals  {Array}   — [{ id, name, target_amount, saved_amount }, ...]
-     *   debts         {Array}   — [{ id, name, total, paid, monthly_payment, interest_rate }, ...]
-     *   netWorthItems {Array}   — [{ id, name, type, amount }, ...]
-     *   recurring     {Array}   — [{ id, name, amount, type, category }, ...]
-     *   isLoading     {boolean} — global loading flag (disable inputs during server calls)
-     *
-     * TODO: Initialize from window.__BOOTSTRAP__ if available (injected by doGet() via Main.gs)
-     *       This avoids an extra server round-trip on first load.
-     *       e.g. const AppState = { ...DEFAULT_STATE, ...window.__BOOTSTRAP__ };
-     */
-
-    const AppState = {
-        // TODO: Populate initial state
+    var FX_SYMBOLS = {
+        NGN: '₦',
+        USD: '$',
+        EUR: '€',
+        GBP: '£'
     };
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 3. SERVER BRIDGE
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 2. APP STATE ─────────────────────────────────────────────────────────────
+
+    // Build default state first, then merge in bootstrap data from the server.
+    // This ensures every key always exists even if __BOOTSTRAP__ is partial.
+    var _now = new Date();
+
+    var _DEFAULT_STATE = {
+        curYear:      _now.getFullYear(),
+        curMonth:     _now.getMonth() + 1,   // 1-indexed (1 = January)
+        currency:     'NGN',
+        darkMode:     false,
+        categories:   [],
+        transactions: {},                      // { 'YYYY-MM': [tx, ...] }
+        goals:        [],
+        bills:        [],
+        savingsGoals: [],
+        debts:        [],
+        netWorthItems:[],
+        recurring:    [],
+        isLoading:    false,
+        activeTab:    'overview'
+    };
+
+    // Merge bootstrap data into defaults.
+    // __BOOTSTRAP__ is injected by doGet() in Main.gs before this script loads.
+    var _boot = (typeof window !== 'undefined' && window.__BOOTSTRAP__) ? window.__BOOTSTRAP__ : {};
+
+    var AppState = Object.assign({}, _DEFAULT_STATE, _boot);
+
+    // currentMonthKey from bootstrap may need to be split into curYear/curMonth.
+    if (_boot.currentMonthKey) {
+        var _parts = _boot.currentMonthKey.split('-');
+        AppState.curYear  = parseInt(_parts[0], 10);
+        AppState.curMonth = parseInt(_parts[1], 10);
+    }
+
+    // Normalise dark_mode key from server (snake_case) to camelCase.
+    if (_boot.preferences) {
+        AppState.currency  = _boot.preferences.currency   || 'NGN';
+        AppState.darkMode  = _boot.preferences.dark_mode  || false;
+        AppState.categories= _boot.preferences.categories || [];
+    }
+
+
+    // ─── 3. SERVER BRIDGE ─────────────────────────────────────────────────────────
 
     /**
      * callServer(fnName, ...args)
      *
-     * TODO: Wrap google.script.run in a Promise so screens can use async/await or .then()
-     *       instead of nested callback hell.
+     * Wraps google.script.run in a Promise so all screen files can use
+     * async/await instead of nested callbacks.
      *
-     * TODO: Pattern:
-     *   return new Promise((resolve, reject) => {
-     *     google.script.run
-     *       .withSuccessHandler(resolve)
-     *       .withFailureHandler(reject)
-     *       [fnName](...args);
-     *   });
-     *
-     * TODO: Before calling, set AppState.isLoading = true
-     * TODO: In both resolve and reject handlers, set AppState.isLoading = false
-     * TODO: In the reject handler, call showToast(error.message, 'error')
-     *
-     * USAGE in screen files:
-     *   const txs = await callServer('getTransactionsByMonth', '2026-03');
+     * Sets AppState.isLoading while the call is in flight so inputs can
+     * be disabled during server round-trips.
      */
-    async function callServer(fnName, ...args) {
-        // TODO: Implement
-    }
+    function callServer(fnName) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        AppState.isLoading = true;
 
+        return new Promise(function(resolve, reject) {
+            var runner = google.script.run
+                .withSuccessHandler(function(result) {
+                    AppState.isLoading = false;
+                    resolve(result);
+                })
+                .withFailureHandler(function(err) {
+                    AppState.isLoading = false;
+                    var msg = (err && err.message) ? err.message : String(err);
+                    showToast(msg, 'error');
+                    reject(err);
+                });
+
+            // Dynamically call the named server function with spread args.
+            runner[fnName].apply(runner, args);
+        });
+    }
 
     /**
      * callServerSilent(fnName, ...args)
      *
-     * TODO: Same as callServer but does NOT set isLoading or show error toasts.
-     *       Used for non-critical background calls (e.g. saving a preference)
-     *       where we don't want to visually block the UI.
+     * Same as callServer but does NOT set isLoading or show error toasts.
+     * Used for background preference saves where UI blocking would feel wrong.
      */
-    async function callServerSilent(fnName, ...args) {
-        // TODO: Implement
+    function callServerSilent(fnName) {
+        var args = Array.prototype.slice.call(arguments, 1);
+
+        return new Promise(function(resolve, reject) {
+            var runner = google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(function(err) {
+                    // Log silently — don't surface background errors to the user.
+                    console.warn('callServerSilent error (' + fnName + '):', err);
+                    reject(err);
+                });
+
+            runner[fnName].apply(runner, args);
+        });
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 4. FORMATTERS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 4. FORMATTERS ────────────────────────────────────────────────────────────
 
     /**
      * fmt(amount)
-     *
-     * TODO: Format a raw NGN number into the currently selected currency display.
-     *       1. Multiply by FX_RATES[AppState.currency] to convert from NGN base
-     *       2. Round to nearest integer
-     *       3. Prepend FX_SYMBOLS[AppState.currency]
-     *       4. Use toLocaleString() for thousands separators
-     *
-     * TODO: Handle negative values (preserve the minus sign, do not double-prefix)
-     * TODO: Handle 0 gracefully — return '₦0' not '₦NaN'
-     *
-     * EXAMPLES:
-     *   fmt(450000) → '₦450,000'  (NGN mode)
-     *   fmt(450000) → '$279'      (USD mode)
+     * Converts a raw NGN number to the current currency with symbol + separators.
+     * Handles negatives, zeros, and NaN defensively.
      */
     function fmt(amount) {
-        // TODO: Implement
-    }
+        var num = parseFloat(amount);
+        if (isNaN(num)) num = 0;
 
+        var rate    = FX_RATES[AppState.currency]   || 1;
+        var symbol  = FX_SYMBOLS[AppState.currency] || '₦';
+        var converted = Math.round(num * rate);
+
+        var isNeg = converted < 0;
+        var abs   = Math.abs(converted);
+        var formatted = symbol + abs.toLocaleString();
+
+        return isNeg ? '-' + formatted : formatted;
+    }
 
     /**
      * pct(value, total)
-     *
-     * TODO: Return an integer percentage capped at 100.
-     *       pct(85, 100) → 85
-     *       pct(120, 100) → 100  (capped)
-     *       pct(0, 0) → 0         (guard against division by zero)
+     * Returns an integer percentage, capped at 100, guarded against division by zero.
      */
     function pct(value, total) {
-        // TODO: Implement
+        if (!total || total === 0) return 0;
+        return Math.min(100, Math.round((value / total) * 100));
     }
-
 
     /**
      * monthLabel(year, month)
-     *
-     * TODO: Return human-readable month label e.g. monthLabel(2026, 3) → 'March 2026'
-     * TODO: Use MONTHS array for month names
+     * e.g. monthLabel(2026, 3) → 'March 2026'
      */
     function monthLabel(year, month) {
-        // TODO: return MONTHS[month - 1] + ' ' + year;
+        return MONTHS[month - 1] + ' ' + year;
     }
-
 
     /**
      * monthKey(year, month)
-     *
-     * TODO: Return zero-padded YYYY-MM string e.g. monthKey(2026, 3) → '2026-03'
+     * e.g. monthKey(2026, 3) → '2026-03'
      */
     function monthKey(year, month) {
-        // TODO: return year + '-' + (month < 10 ? '0' : '') + month;
+        return year + '-' + (month < 10 ? '0' : '') + month;
     }
-
 
     /**
      * curKey()
-     *
-     * TODO: Return monthKey for the current AppState.curYear + AppState.curMonth
+     * Returns the YYYY-MM key for the currently displayed month.
      */
     function curKey() {
-        // TODO: return monthKey(AppState.curYear, AppState.curMonth);
+        return monthKey(AppState.curYear, AppState.curMonth);
     }
-
 
     /**
      * parseMonthKey(key)
-     *
-     * TODO: Parse a 'YYYY-MM' string into { year, month } integers.
-     *       Used when iterating allData keys.
+     * Parses '2026-03' into { year: 2026, month: 3 }
      */
     function parseMonthKey(key) {
-        // TODO: Implement
+        var parts = String(key).split('-');
+        return {
+            year:  parseInt(parts[0], 10),
+            month: parseInt(parts[1], 10)
+        };
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 5. TOAST NOTIFICATIONS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 5. TOAST NOTIFICATIONS ───────────────────────────────────────────────────
+
+    // Track the current toast timeout so rapid calls don't stack.
+    var _toastTimer = null;
 
     /**
      * showToast(message, type, duration)
      *
-     * TODO: Display a non-blocking toast notification at the bottom of the viewport.
-     *
-     * Parameters:
-     *   message  {string}  — the message to display
-     *   type     {string}  — 'success' | 'error' | 'info' | 'warning'  (default: 'info')
-     *   duration {number}  — milliseconds before auto-dismiss (default: 3000)
-     *
-     * TODO: Implementation steps:
-     *   1. Create a container div #toast-container if it doesn't exist yet
-     *      (position: fixed, bottom: 1.5rem, left: 50%, transform: translateX(-50%), z-index: 9999)
-     *   2. Create a toast div with appropriate styles for the type:
-     *        success → green background (var(--acc))
-     *        error   → red background (var(--red))
-     *        warning → amber background (var(--amber))
-     *        info    → dark background (var(--text))
-     *   3. Set toast text content to message
-     *   4. Append toast to container
-     *   5. Animate in: slide up + fade in (CSS transition or requestAnimationFrame)
-     *   6. After `duration` ms, animate out (fade out), then remove from DOM
-     *
-     * TODO: Support stacking — multiple toasts should queue vertically, not overlap
-     * TODO: Clicking a toast should dismiss it immediately
-     *
-     * EXAMPLE USAGE:
-     *   showToast('Transaction added!', 'success');
-     *   showToast('Failed to save — check your connection.', 'error', 5000);
-     *   showToast('Bill marked as paid.', 'info');
+     * Displays a non-blocking notification at the bottom of the screen.
+     * type: 'success' | 'error' | 'info' (default 'info')
+     * duration: ms visible (default 3000)
      */
-    function showToast(message, type = 'info', duration = 3000) {
-        // TODO: Implement
-    }
+    function showToast(message, type, duration) {
+        type     = type     || 'info';
+        duration = duration || 3000;
 
+        // Create the toast container if it doesn't exist yet.
+        var toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            toast.style.cssText = [
+                'position:fixed',
+                'bottom:24px',
+                'left:50%',
+                'transform:translateX(-50%)',
+                'padding:10px 18px',
+                'border-radius:8px',
+                'font-size:13px',
+                'font-weight:500',
+                'z-index:9999',
+                'pointer-events:none',
+                'transition:opacity 0.2s ease',
+                'opacity:0',
+                'max-width:320px',
+                'text-align:center',
+                'box-shadow:0 2px 12px rgba(0,0,0,0.15)'
+            ].join(';');
+            document.body.appendChild(toast);
+        }
+
+        // Apply colour based on type.
+        var styles = {
+            success: { bg: '#1D9E75', color: '#fff' },
+            error:   { bg: '#D85A30', color: '#fff' },
+            info:    { bg: '#1a1a1a', color: '#f5f5f3' }
+        };
+        var style = styles[type] || styles.info;
+        toast.style.background = style.bg;
+        toast.style.color       = style.color;
+        toast.textContent       = message;
+        toast.style.opacity     = '1';
+
+        // Clear any existing dismiss timer.
+        if (_toastTimer) clearTimeout(_toastTimer);
+        _toastTimer = setTimeout(function() {
+            toast.style.opacity = '0';
+        }, duration);
+    }
 
     /**
      * showLoading(show)
-     *
-     * TODO: Toggle a subtle loading indicator in the UI.
-     *       Suggested: a thin animated bar at the top of the page (like YouTube's red bar),
-     *       or a spinner overlay on the active pane.
-     * TODO: Also disable all .btn-primary and .btn-sm buttons while loading to prevent double-clicks.
-     *
-     * Parameters:
-     *   show {boolean} — true to show, false to hide
+     * Toggles a subtle full-screen loading overlay.
+     * Used during longer server operations (e.g. applying a budget template).
      */
     function showLoading(show) {
-        // TODO: Implement
+        var overlay = document.getElementById('loading-overlay');
+
+        if (show) {
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'loading-overlay';
+                overlay.style.cssText = [
+                    'position:fixed',
+                    'inset:0',
+                    'background:rgba(255,255,255,0.6)',
+                    'z-index:9998',
+                    'display:flex',
+                    'align-items:center',
+                    'justify-content:center',
+                    'font-size:13px',
+                    'color:#666'
+                ].join(';');
+                overlay.textContent = 'Loading…';
+                document.body.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+        } else {
+            if (overlay) overlay.style.display = 'none';
+        }
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 6. TAB ROUTER
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 6. TAB ROUTER ────────────────────────────────────────────────────────────
 
     /**
      * switchTab(tabId)
      *
-     * TODO: Activate a tab pane and deactivate all others.
-     *
-     * TODO: 1. Remove .active from all .tab buttons and .pane divs
-     * TODO: 2. Add .active to #tab-{tabId} and #pane-{tabId}
-     * TODO: 3. If the activated tab requires a chart, call its render function after a short delay
-     *           (Charts.js needs the canvas to be visible before rendering)
-     *           Tab → chart render function mapping:
-     *             'charts'     → renderCharts()
-     *             'multimonth' → renderMultiMonth()
-     *             'forecast'   → renderForecast()
-     * TODO: 4. If 'report'   tab → renderReport()
-     * TODO: 5. If 'insights' tab → renderInsights()
-     * TODO: 6. Track the current tab in AppState for analytics / back-button support
-     *
-     * CALLED BY: onclick on each .tab button (set in Tabs.html)
+     * Activates the given tab pane, deactivates all others.
+     * Chart tabs need a 50ms delay before rendering because Chart.js
+     * requires the canvas element to be visible (non-zero dimensions) first.
      */
     function switchTab(tabId) {
-        // TODO: Implement
+        // Deactivate all tabs and panes.
+        var tabs  = document.querySelectorAll('.tab');
+        var panes = document.querySelectorAll('.pane');
+
+        tabs.forEach(function(t)  { t.classList.remove('active'); });
+        panes.forEach(function(p) { p.classList.remove('active'); });
+
+        // Activate the selected tab button and pane.
+        var tabBtn  = document.getElementById('tab-'  + tabId);
+        var tabPane = document.getElementById('pane-' + tabId);
+
+        if (tabBtn)  tabBtn.classList.add('active');
+        if (tabPane) tabPane.classList.add('active');
+
+        AppState.activeTab = tabId;
+
+        // Chart tabs: delay render until canvas is visible.
+        var chartTabs = {
+            'charts':     function() { if (typeof renderCharts     === 'function') renderCharts();     },
+            'multimonth': function() { if (typeof renderMultiMonth === 'function') renderMultiMonth(); },
+            'forecast':   function() { if (typeof renderForecast   === 'function') renderForecast();   }
+        };
+
+        if (chartTabs[tabId]) {
+            setTimeout(chartTabs[tabId], 50);
+            return;
+        }
+
+        // Non-chart tabs that still need a fresh render on switch.
+        var renderOnSwitch = {
+            'report':    function() { if (typeof renderReport    === 'function') renderReport();    },
+            'insights':  function() { if (typeof renderInsights  === 'function') renderInsights();  },
+            'categories':function() { if (typeof renderCategories=== 'function') renderCategories();},
+            'templates': function() { if (typeof renderTemplates === 'function') renderTemplates(); }
+        };
+
+        if (renderOnSwitch[tabId]) {
+            renderOnSwitch[tabId]();
+        }
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 7. MONTH NAVIGATION
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 7. MONTH NAVIGATION ──────────────────────────────────────────────────────
 
     /**
      * prevMonth()
-     *
-     * TODO: Decrement AppState.curMonth. If it reaches 0, decrement curYear and set curMonth to 12.
-     * TODO: Call applyRecurringForMonth() to ensure recurring txs exist for the new month
-     * TODO: Call renderAll() to refresh the UI
+     * Steps back one month, fetches transactions for that month if not cached,
+     * applies recurring entries, then re-renders.
      */
     async function prevMonth() {
-        // TODO: Implement
-    }
+        AppState.curMonth -= 1;
+        if (AppState.curMonth < 1) {
+            AppState.curMonth = 12;
+            AppState.curYear  -= 1;
+        }
 
+        await _ensureMonthLoaded(curKey());
+        await applyRecurringForMonth();
+        renderAll();
+    }
 
     /**
      * nextMonth()
-     *
-     * TODO: Increment AppState.curMonth. If it exceeds 12, increment curYear and set curMonth to 1.
-     * TODO: Call applyRecurringForMonth() for the new month
-     * TODO: Call renderAll()
+     * Steps forward one month, same pattern as prevMonth.
      */
     async function nextMonth() {
-        // TODO: Implement
+        AppState.curMonth += 1;
+        if (AppState.curMonth > 12) {
+            AppState.curMonth = 1;
+            AppState.curYear  += 1;
+        }
+
+        await _ensureMonthLoaded(curKey());
+        await applyRecurringForMonth();
+        renderAll();
     }
 
+    /**
+     * _ensureMonthLoaded(key)
+     * Fetches transactions for the given month from the server if they're
+     * not already cached in AppState. Prevents redundant server calls.
+     */
+    async function _ensureMonthLoaded(key) {
+        if (AppState.transactions[key]) return; // already cached
+
+        try {
+            var txs = await callServerSilent('getTransactionsByMonth', key);
+            AppState.transactions[key] = txs || [];
+        } catch(e) {
+            AppState.transactions[key] = [];
+        }
+    }
 
     /**
      * applyRecurringForMonth()
-     *
-     * TODO: Call the server function Recurring.applyRecurringToMonth(curKey())
-     *       to auto-add recurring transactions for the new month.
-     * TODO: Merge returned transactions into AppState.transactions[curKey()]
-     *       (avoiding duplicates if they already exist client-side)
-     * TODO: Use callServerSilent — this is a background operation, no toast needed
+     * Silently applies recurring transactions to the current month.
+     * Merges results into AppState without duplicating existing entries.
      */
     async function applyRecurringForMonth() {
-        // TODO: Implement
+        if (!AppState.recurring || AppState.recurring.length === 0) return;
+
+        try {
+            var result = await callServerSilent('applyRecurringToMonth', curKey());
+            if (result && result.applied > 0) {
+                // Re-fetch the month to get the newly applied transactions.
+                var txs = await callServerSilent('getTransactionsByMonth', curKey());
+                AppState.transactions[curKey()] = txs || [];
+            }
+        } catch(e) {
+            // Non-fatal — recurring apply failure should not break month navigation.
+            console.warn('applyRecurringForMonth failed:', e);
+        }
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 8. CATEGORY UTILITIES
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 8. CATEGORY UTILITIES ────────────────────────────────────────────────────
 
     /**
      * getCategoryColor(categoryName)
-     *
-     * TODO: Find the category in AppState.categories by name and return its color hex.
-     * TODO: Return '#888780' (the 'Other' grey) as fallback if category not found.
+     * Returns the hex color for a category, falling back to 'Other' grey.
      */
     function getCategoryColor(categoryName) {
-        // TODO: Implement
+        var cats = AppState.categories || [];
+        var match = cats.find(function(c) {
+            return c.name.toLowerCase() === String(categoryName).toLowerCase();
+        });
+        return match ? match.color : '#888780';
     }
-
 
     /**
      * populateCategorySelects()
-     *
-     * TODO: Update all <select> elements with id 'tx-cat', 'g-cat', 'r-cat'
-     *       with <option> elements built from AppState.categories.
-     * TODO: Preserve the currently selected value across re-renders.
-     * TODO: Called as part of renderAll() whenever categories may have changed.
+     * Rebuilds all category <select> elements from AppState.categories.
+     * Preserves currently selected value across re-renders.
+     * Called on boot and after adding/deleting a category.
      */
     function populateCategorySelects() {
-        // TODO: Implement
+        var selectIds = ['tx-cat', 'g-cat', 'r-cat'];
+        var cats = AppState.categories || [];
+
+        selectIds.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+
+            var current = el.value; // preserve selection
+            el.innerHTML = '';
+
+            cats.forEach(function(cat) {
+                var opt = document.createElement('option');
+                opt.value       = cat.name;
+                opt.textContent = cat.name;
+                el.appendChild(opt);
+            });
+
+            // Restore previous selection if it still exists.
+            if (current && el.querySelector('option[value="' + current + '"]')) {
+                el.value = current;
+            }
+        });
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 9. MONTH STATS HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 9. MONTH STATS HELPERS ───────────────────────────────────────────────────
 
     /**
      * getMonthStats(key)
-     *
-     * TODO: Compute income, expenses, savings, balance for a given monthKey
-     *       from the client-side AppState.transactions cache.
-     *
-     * TODO: Return { inc, exp, sav, bal }
-     *   inc = sum of type:'income' amounts
-     *   exp = sum of type:'expense' amounts
-     *   sav = sum of type:'savings' amounts
-     *   bal = inc - exp - sav
-     *
-     * TODO: If no data exists for the key, return all zeros
+     * Computes income/expenses/savings/balance for a given month key
+     * from the client-side AppState cache.
      */
     function getMonthStats(key) {
-        // TODO: Implement
-    }
+        var txs = AppState.transactions[key] || [];
+        var inc = 0, exp = 0, sav = 0;
 
+        txs.forEach(function(tx) {
+            var amt = parseFloat(tx.amount) || 0;
+            if      (tx.type === 'income')  inc += amt;
+            else if (tx.type === 'expense') exp += amt;
+            else if (tx.type === 'savings') sav += amt;
+        });
+
+        return { inc: inc, exp: exp, sav: sav, bal: inc - exp - sav };
+    }
 
     /**
      * curTxs()
-     *
-     * TODO: Return the transactions array for the current month from AppState.
-     *       Shorthand for AppState.transactions[curKey()] || []
+     * Shorthand: returns the transactions array for the current month.
      */
     function curTxs() {
-        // TODO: Implement
+        return AppState.transactions[curKey()] || [];
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 10. DOM HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 10. DOM HELPERS ──────────────────────────────────────────────────────────
 
-    /**
-     * $(id)
-     *
-     * TODO: Shorthand for document.getElementById(id).
-     *       Returns null gracefully if element not found.
-     */
+    /** $(id) — shorthand for document.getElementById */
     function $(id) {
-        // TODO: return document.getElementById(id);
+        return document.getElementById(id);
     }
-
 
     /**
      * setHTML(id, html)
-     *
-     * TODO: Set innerHTML of the element with the given id.
-     * TODO: Guard: if element not found, log a warning and return.
+     * Sets innerHTML of an element by id. Warns if element not found
+     * rather than throwing — keeps renders resilient to missing stubs.
      */
     function setHTML(id, html) {
-        // TODO: Implement
+        var el = document.getElementById(id);
+        if (!el) {
+            console.warn('setHTML: element #' + id + ' not found');
+            return;
+        }
+        el.innerHTML = html;
     }
-
-
-    /**
-     * setVal(id, value)
-     *
-     * TODO: Set .value of an input/select element by id.
-     * TODO: Guard: log warning if element not found.
-     */
-    function setVal(id, value) {
-        // TODO: Implement
-    }
-
 
     /**
      * getVal(id)
-     *
-     * TODO: Get and trim .value of an input/select element by id.
-     * TODO: Return '' if element not found.
+     * Returns the trimmed value of an input/select by id, or '' if not found.
      */
     function getVal(id) {
-        // TODO: Implement
+        var el = document.getElementById(id);
+        return el ? String(el.value).trim() : '';
     }
-
 
     /**
      * clearInputs(...ids)
-     *
-     * TODO: Clear the .value of each provided element id.
-     *       Called after a form is submitted to reset fields.
-     *       e.g. clearInputs('tx-name', 'tx-amt', 'tx-note');
+     * Clears the value of one or more input elements by id.
      */
-    function clearInputs(...ids) {
-        // TODO: ids.forEach(id => setVal(id, ''));
+    function clearInputs() {
+        var ids = Array.prototype.slice.call(arguments);
+        ids.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+        });
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 11. CHART HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 11. CHART HELPERS ────────────────────────────────────────────────────────
 
-    /**
-     * chartRegistry — tracks all active Chart.js instances by canvas id
-     *
-     * TODO: Define as a plain object: { canvasId: chartInstance }
-     * TODO: Used by destroyChart() to avoid "Canvas already in use" Chart.js errors
-     */
-    const chartRegistry = {};
-
+    // Registry maps canvasId → Chart.js instance so we can destroy before recreate.
+    var chartRegistry = {};
 
     /**
      * destroyChart(canvasId)
-     *
-     * TODO: If chartRegistry[canvasId] exists and has a .destroy() method, call .destroy()
-     * TODO: Delete the key from chartRegistry
-     * TODO: Call this before creating any new Chart.js instance on a canvas
+     * Destroys an existing Chart.js instance on the given canvas.
+     * Must be called before creating a new chart on the same canvas —
+     * Chart.js throws "Canvas already in use" otherwise.
      */
     function destroyChart(canvasId) {
-        // TODO: Implement
+        if (chartRegistry[canvasId]) {
+            chartRegistry[canvasId].destroy();
+            delete chartRegistry[canvasId];
+        }
     }
-
 
     /**
      * registerChart(canvasId, chartInstance)
-     *
-     * TODO: Store a new Chart.js instance in chartRegistry after creation.
-     *       Ensures destroyChart() can clean it up on the next render.
+     * Stores a Chart.js instance in the registry after creation.
      */
     function registerChart(canvasId, chartInstance) {
-        // TODO: chartRegistry[canvasId] = chartInstance;
+        chartRegistry[canvasId] = chartInstance;
     }
-
 
     /**
      * getChartDefaults()
-     *
-     * TODO: Return a shared Chart.js options base object used across all charts.
-     *       Centralising this keeps chart styling consistent without repetition.
-     *
-     * TODO: Include:
-     *   responsive: true
-     *   maintainAspectRatio: false
-     *   plugins.legend.display: false  (custom legends are rendered in HTML instead)
-     *   scales.x: { grid.display: false, ticks: { color: '#888', font.size: 11 } }
-     *   scales.y: { grid.color: 'rgba(128,128,128,0.1)', ticks: { color: '#888', font.size: 11,
-     *               callback: v => FX_SYMBOLS[AppState.currency] + v.toLocaleString() } }
-     *
-     * TODO: Return a deep clone so callers can extend it without mutating the defaults
+     * Returns a base Chart.js options object shared across all charts.
+     * Returns a fresh object each time so callers can extend without mutating.
      */
     function getChartDefaults() {
-        // TODO: Implement
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        color: '#888',
+                        font: { size: 11 }
+                    }
+                },
+                y: {
+                    grid: { color: 'rgba(128,128,128,0.1)' },
+                    ticks: {
+                        color: '#888',
+                        font: { size: 11 },
+                        callback: function(v) {
+                            var symbol = FX_SYMBOLS[AppState.currency] || '₦';
+                            var rate   = FX_RATES[AppState.currency]   || 1;
+                            return symbol + Math.round(v * rate).toLocaleString();
+                        }
+                    }
+                }
+            }
+        };
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 12. DARK MODE & CURRENCY
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 12. DARK MODE & CURRENCY ─────────────────────────────────────────────────
 
     /**
      * toggleDark()
-     *
-     * TODO: Flip AppState.darkMode boolean
-     * TODO: Toggle .dark class on the #app element
-     * TODO: Update the toggle button text (Dark / Light)
-     * TODO: Persist preference via callServerSilent('setDarkMode', AppState.darkMode)
+     * Flips dark mode state, updates DOM class, persists via server.
      */
     function toggleDark() {
-        // TODO: Implement
-    }
+        AppState.darkMode = !AppState.darkMode;
 
+        var app     = document.getElementById('app');
+        var darkBtn = document.getElementById('dark-btn');
+
+        if (AppState.darkMode) {
+            app.classList.add('dark');
+            if (darkBtn) darkBtn.textContent = 'Light';
+        } else {
+            app.classList.remove('dark');
+            if (darkBtn) darkBtn.textContent = 'Dark';
+        }
+
+        callServerSilent('setDarkMode', AppState.darkMode).catch(function() {});
+    }
 
     /**
      * setCurrency(value)
-     *
-     * TODO: Update AppState.currency to the new value
-     * TODO: Call renderAll() to reformat all displayed amounts
-     * TODO: Persist via callServerSilent('setCurrency', value)
+     * Updates the active currency, re-renders all amounts, persists to server.
      */
     function setCurrency(value) {
-        // TODO: Implement
+        AppState.currency = value;
+        renderAll();
+        callServerSilent('setCurrency', value).catch(function() {});
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 13. CSV EXPORT (Client-Side Download Trigger)
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 13. CSV ──────────────────────────────────────────────────────────────────
 
     /**
      * exportCSV()
-     *
-     * TODO: Call server 'exportTransactionsToCSV' with the current monthKey
-     * TODO: On success, trigger a file download in the browser:
-     *         1. Create a Blob from the returned CSV string (type: 'text/csv')
-     *         2. Create a temporary <a> element with href = URL.createObjectURL(blob)
-     *         3. Set download attribute to 'budget_YYYY-MM.csv'
-     *         4. Programmatically click the <a> element
-     *         5. Revoke the object URL
-     * TODO: Show a success toast on completion
+     * Fetches the current month's transactions as CSV from the server,
+     * then triggers a file download in the browser.
      */
     async function exportCSV() {
-        // TODO: Implement
+        try {
+            var csv = await callServer('exportTransactionsToCSV', curKey());
+            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            var url  = URL.createObjectURL(blob);
+            var a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'budget_' + curKey() + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('CSV exported', 'success');
+        } catch(e) {
+            // Error toast already shown by callServer's failure handler.
+        }
     }
-
 
     /**
      * importCSV(event)
-     *
-     * TODO: Read the selected file from event.target.files[0]
-     * TODO: Use FileReader to read as text
-     * TODO: On load, call server 'importTransactionsFromCSV' with the file text + curKey()
-     * TODO: On success, merge returned transactions into AppState and call renderAll()
-     * TODO: Show a toast with the import count: 'Imported N transactions'
+     * Reads a CSV file from a file input, sends it to the server to import.
      */
     function importCSV(event) {
-        // TODO: Implement
+        var file = event.target.files && event.target.files[0];
+        if (!file) return;
+
+        var reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                var result = await callServer('importTransactionsFromCSV', e.target.result, curKey());
+                showToast('Imported ' + (result.imported || 0) + ' transactions', 'success');
+                // Refresh the current month's transactions from the server.
+                var txs = await callServerSilent('getTransactionsByMonth', curKey());
+                AppState.transactions[curKey()] = txs || [];
+                renderAll();
+            } catch(err) {
+                // Error toast shown by callServer.
+            }
+        };
+        reader.readAsText(file);
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 14. GLOBAL RENDER TRIGGER
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─── 14. RENDER ALL ───────────────────────────────────────────────────────────
 
     /**
      * renderAll()
      *
-     * TODO: Master re-render function — called after any state change.
-     *       Updates all visible UI elements from AppState.
+     * Master re-render function. Called after any state mutation.
+     * Renders the header, alert banners, category selects, and whichever
+     * screen pane is currently active.
      *
-     * TODO: Call in order:
-     *   1. updateHeader()        — month label, net balance, currency selector
-     *   2. updateAlertBanners()  — over-budget + upcoming bills alerts
-     *   3. populateCategorySelects() — refresh <select> dropdowns
-     *   4. renderActivePane()    — re-render whichever tab is currently visible
-     *
-     * TODO: renderActivePane() should check which .pane has .active and call
-     *       the appropriate screen render function:
-     *         overview   → renderOverview()
-     *         goals      → renderGoals()
-     *         savings    → renderSavings()
-     *         debt       → renderDebt()
-     *         networth   → renderNetWorth()
-     *         recurring  → renderRecurring()
-     *         bills      → renderBills()
-     *         settings   → renderSettings()
-     *         categories → renderCategories()
-     *         charts     → renderCharts()      (only if visible — canvas must be in DOM)
-     *         multimonth → renderMultiMonth()
-     *         forecast   → renderForecast()
-     *         report     → renderReport()
-     *         insights   → renderInsights()
-     *         templates  → renderTemplates()
+     * Screen render functions are defined in their respective pane files.
+     * We guard each call with typeof checks so renderAll() works even when
+     * only some screen files are loaded (e.g. during incremental branch work).
      */
     function renderAll() {
-        // TODO: Implement
+        // ── Shared chrome ──────────────────────────────────────────────────────────
+        if (typeof updateHeader        === 'function') updateHeader();
+        if (typeof updateAlertBanners  === 'function') updateAlertBanners();
+        if (typeof populateCategorySelects === 'function') populateCategorySelects();
+
+        // ── Active pane ────────────────────────────────────────────────────────────
+        var activeTab = AppState.activeTab || 'overview';
+
+        var renderMap = {
+            'overview':   function() { if (typeof renderOverview    === 'function') renderOverview();    },
+            'goals':      function() { if (typeof renderGoals       === 'function') renderGoals();       },
+            'savings':    function() { if (typeof renderSavings     === 'function') renderSavings();     },
+            'debt':       function() { if (typeof renderDebt        === 'function') renderDebt();        },
+            'networth':   function() { if (typeof renderNetWorth    === 'function') renderNetWorth();    },
+            'recurring':  function() { if (typeof renderRecurring   === 'function') renderRecurring();   },
+            'bills':      function() { if (typeof renderBills       === 'function') renderBills();       },
+            'settings':   function() { if (typeof renderSettings    === 'function') renderSettings();    },
+            'categories': function() { if (typeof renderCategories  === 'function') renderCategories();  },
+            'report':     function() { if (typeof renderReport      === 'function') renderReport();      },
+            'insights':   function() { if (typeof renderInsights    === 'function') renderInsights();    },
+            'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   },
+            // Chart tabs: let switchTab() handle the 50ms delay.
+            // renderAll() itself does NOT re-render chart tabs to avoid canvas flicker.
+            'charts':     function() { /* rendered by switchTab */ },
+            'multimonth': function() { /* rendered by switchTab */ },
+            'forecast':   function() { /* rendered by switchTab */ }
+        };
+
+        if (renderMap[activeTab]) {
+            renderMap[activeTab]();
+        }
     }
 </script>

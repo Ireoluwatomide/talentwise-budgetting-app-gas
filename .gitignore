@@ -1,5 +1,5 @@
 # Apps Script / clasp
-.clasp.json        # contains scriptId — omit from public repos
+.clasp.json
 .claspignore
 .clasp.local.json
 

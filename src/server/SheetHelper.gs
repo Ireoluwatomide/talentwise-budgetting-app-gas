@@ -46,7 +46,9 @@ const SHEET_HEADERS = {
 
 // Module-level cache — avoids repeated SpreadsheetApp.getActiveSpreadsheet()
 // calls within a single server execution (each call has real latency).
-let _spreadsheet = null;
+// NOTE: Must be var, not let/const — Apps Script V8 can silently fail on
+// top-level let/const redeclarations when files are loaded together.
+var _spreadsheet = null;
 
 /**
  * getSpreadsheet()
@@ -181,6 +183,11 @@ function appendRow(sheetName, rowObject) {
 
   sheet.appendRow(values);
 
+  // Force the write buffer to flush immediately.
+  // Without this, a subsequent getAllRows() in the same execution
+  // can see a stale row count and miss the row just written.
+  SpreadsheetApp.flush();
+
   // Return the row number that was just written.
   return sheet.getLastRow();
 }
@@ -209,6 +216,7 @@ function updateRow(sheetName, rowIndex, rowObject) {
   });
 
   sheet.getRange(rowIndex, 1, 1, lastCol).setValues([values]);
+  SpreadsheetApp.flush();
 }
 
 /**
@@ -220,6 +228,7 @@ function updateRow(sheetName, rowIndex, rowObject) {
 function deleteRow(sheetName, rowIndex) {
   const sheet = getSheet(sheetName);
   sheet.deleteRow(rowIndex);
+  SpreadsheetApp.flush();
 }
 
 /**

@@ -7,113 +7,296 @@
  *
  * SHEET: Preferences
  * COLUMNS: key | value
- *   Stored as simple key-value pairs. Complex values (e.g. categories array) are JSON-stringified.
+ *   Stored as simple key-value pairs.
+ *   Complex values (categories array) are JSON-stringified in the value column.
  *
  * PREFERENCE KEYS:
- *   'currency'    → 'NGN' | 'USD' | 'EUR' | 'GBP'
- *   'dark_mode'   → 'true' | 'false'
- *   'categories'  → JSON array of { name, color } objects
+ *   'currency'   → 'NGN' | 'USD' | 'EUR' | 'GBP'
+ *   'dark_mode'  → 'true' | 'false'
+ *   'categories' → JSON array of { name, color } objects
  *
- * CALLED BY: client via google.script.run, Main.gs (bootstrap data)
+ * CALLED BY: client via google.script.run, and Main.gs (bootstrap data)
  */
 
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+const VALID_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 
 /**
- * DEFAULT CATEGORIES
+ * DEFAULT_CATEGORIES
  *
- * TODO: Define the default categories array here as a constant.
- *       Used when the Preferences sheet has no 'categories' entry yet.
+ * The 9 built-in categories shipped with the app.
+ * Colors match the prototype's design tokens exactly.
+ * These are always present — users cannot delete them, only add on top.
  *
- * Default categories (from the prototype):
- *   Housing   #185FA5
- *   Food      #1D9E75
- *   Transport #D85A30
- *   Utilities #BA7517
- *   Entertainment #7F77DD
- *   Health    #D4537E
- *   Salary    #639922
- *   Savings   #378ADD
- *   Other     #888780
+ * INDEX MATTERS: deleteCategory() uses index >= 9 to identify user-added
+ * categories. Do not reorder or add items to this list without updating
+ * that guard.
  */
 const DEFAULT_CATEGORIES = [
-  // TODO: Populate with default category objects { name, color }
+  { name: 'Housing',       color: '#185FA5' },  // 0 — blue
+  { name: 'Food',          color: '#1D9E75' },  // 1 — green/teal
+  { name: 'Transport',     color: '#D85A30' },  // 2 — coral
+  { name: 'Utilities',     color: '#BA7517' },  // 3 — amber
+  { name: 'Entertainment', color: '#7F77DD' },  // 4 — purple
+  { name: 'Health',        color: '#D4537E' },  // 5 — pink
+  { name: 'Salary',        color: '#639922' },  // 6 — green
+  { name: 'Savings',       color: '#378ADD' },  // 7 — blue (lighter)
+  { name: 'Other',         color: '#888780' },  // 8 — grey (fallback)
 ];
 
+// Preference key strings — centralised to prevent typos.
+const PREF_KEYS = {
+  CURRENCY:   'currency',
+  DARK_MODE:  'dark_mode',
+  CATEGORIES: 'categories'
+};
+
+
+// ─── CORE READ / WRITE ────────────────────────────────────────────────────────
+
+/**
+ * _getPrefsMap()
+ *
+ * Internal helper. Reads all rows from the Preferences sheet and returns
+ * a plain object: { currency: 'NGN', dark_mode: 'false', categories: '[...]' }
+ *
+ * All values are raw strings at this point — callers are responsible
+ * for parsing (JSON.parse for categories, string→boolean for dark_mode).
+ *
+ * Private convention: prefix _ means "do not call from client via google.script.run".
+ */
+function _getPrefsMap() {
+  const rows = getAllRows(SHEET_NAMES.PREFERENCES);
+  const map  = {};
+  rows.forEach(function(row) {
+    if (row.key) map[String(row.key).trim()] = row.value;
+  });
+  return map;
+}
 
 /**
  * getAllPreferences()
  *
- * TODO: Return all preferences as a flat object: { currency, dark_mode, categories }
- * TODO: Parse 'categories' from JSON string to array
- * TODO: Parse 'dark_mode' from string to boolean
- * TODO: If a key is missing, return the sensible default:
- *         currency  → 'NGN'
- *         dark_mode → false
- *         categories → DEFAULT_CATEGORIES
+ * Returns a fully-parsed preferences object ready for the client:
+ *   {
+ *     currency:   'NGN',          // string
+ *     dark_mode:  false,          // boolean
+ *     categories: [{ name, color }, ...]  // array
+ *   }
+ *
+ * Missing keys fall back to safe defaults — this means the app works
+ * correctly on a brand-new sheet before the user has changed anything.
  */
 function getAllPreferences() {
-  // TODO: Implement
-}
+  const map = _getPrefsMap();
 
+  // ── currency ──────────────────────────────────────────────────────────
+  const currency = (map[PREF_KEYS.CURRENCY] && VALID_CURRENCIES.indexOf(map[PREF_KEYS.CURRENCY]) !== -1)
+    ? map[PREF_KEYS.CURRENCY]
+    : 'NGN';
+
+  // ── dark_mode ─────────────────────────────────────────────────────────
+  // Stored as the string 'true' or 'false'. Parse carefully.
+  const darkMode = map[PREF_KEYS.DARK_MODE] === 'true';
+
+  // ── categories ────────────────────────────────────────────────────────
+  let categories = DEFAULT_CATEGORIES;
+  if (map[PREF_KEYS.CATEGORIES]) {
+    try {
+      const parsed = JSON.parse(map[PREF_KEYS.CATEGORIES]);
+      // Validate: must be a non-empty array of objects with name+color.
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        categories = parsed;
+      }
+    } catch (e) {
+      // Corrupted JSON in the sheet — fall back to defaults silently.
+      Logger.log('Preferences.gs: Failed to parse categories JSON, using defaults. Error: ' + e.message);
+    }
+  }
+
+  return {
+    currency:   currency,
+    dark_mode:  darkMode,
+    categories: categories
+  };
+}
 
 /**
  * setPreference(key, value)
  *
- * TODO: Find the row where column 'key' === key
- * TODO: If found, update the value column for that row
- * TODO: If not found, append a new row with the key-value pair
- * TODO: Stringify complex values (arrays, objects) before storing
- * TODO: Return { success: true }
+ * Upserts a preference row:
+ *   - If a row with this key already exists → update its value column
+ *   - If no row exists yet → append a new row
+ *
+ * Complex values (arrays, objects) must be JSON-stringified by the caller
+ * before passing in, OR you can pass the raw value and this function will
+ * stringify if needed.
+ *
+ * Returns { success: true } so the client can chain .then() calls cleanly.
  */
 function setPreference(key, value) {
-  // TODO: Implement
+  if (!key) throw new Error('Preferences.gs: setPreference() requires a key.');
+
+  // Stringify objects/arrays so they survive the sheet round-trip.
+  var storedValue = (typeof value === 'object' && value !== null)
+    ? JSON.stringify(value)
+    : String(value);
+
+  // Try to find an existing row for this key.
+  var rowIndex = findRowIndex(SHEET_NAMES.PREFERENCES, function(row) {
+    return String(row.key).trim() === String(key).trim();
+  });
+
+  if (rowIndex !== -1) {
+    // Update the existing row in place.
+    updateRow(SHEET_NAMES.PREFERENCES, rowIndex, { key: key, value: storedValue });
+  } else {
+    // First time this preference is being set — append a new row.
+    appendRow(SHEET_NAMES.PREFERENCES, { key: key, value: storedValue });
+  }
+
+  return { success: true };
 }
 
+
+// ─── CURRENCY ─────────────────────────────────────────────────────────────────
 
 /**
  * setCurrency(currency)
  *
- * TODO: Validate currency is one of: 'NGN', 'USD', 'EUR', 'GBP'
- * TODO: Call setPreference('currency', currency)
+ * Validates and stores the user's chosen display currency.
+ * Throws if an invalid code is passed — prevents garbage data in the sheet.
  */
 function setCurrency(currency) {
-  // TODO: Implement
+  if (VALID_CURRENCIES.indexOf(currency) === -1) {
+    throw new Error(
+      'Preferences.gs: Invalid currency "' + currency + '". ' +
+      'Must be one of: ' + VALID_CURRENCIES.join(', ')
+    );
+  }
+  return setPreference(PREF_KEYS.CURRENCY, currency);
 }
 
+
+// ─── DARK MODE ────────────────────────────────────────────────────────────────
 
 /**
  * setDarkMode(enabled)
  *
- * TODO: Call setPreference('dark_mode', enabled.toString())
+ * Stores the dark mode preference as the string 'true' or 'false'.
+ * Accepts a boolean or a boolean-like value from the client.
  */
 function setDarkMode(enabled) {
-  // TODO: Implement
+  return setPreference(PREF_KEYS.DARK_MODE, enabled ? 'true' : 'false');
 }
 
+
+// ─── CATEGORIES ───────────────────────────────────────────────────────────────
+
+/**
+ * getCategories()
+ *
+ * Convenience function — returns just the categories array.
+ * Used by other server modules that need the category list
+ * (e.g. to validate a category name on a new transaction).
+ */
+function getCategories() {
+  return getAllPreferences().categories;
+}
 
 /**
  * addCategory(name, color)
  *
- * TODO: Get current categories from getAllPreferences().categories
- * TODO: Check for duplicate name (case-insensitive) — throw if exists
- * TODO: Push new { name, color } to the array
- * TODO: Save via setPreference('categories', JSON.stringify(updatedArray))
- * TODO: Return the updated categories array
+ * Adds a new user-defined category to the stored list.
+ *
+ * Rules:
+ *   - name must be a non-empty string
+ *   - color must be a valid hex color string (e.g. '#1D9E75')
+ *   - Duplicate names are rejected (case-insensitive)
+ *
+ * Returns the full updated categories array so the client can
+ * update AppState.categories without a second server call.
  */
 function addCategory(name, color) {
-  // TODO: Implement
-}
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    throw new Error('Preferences.gs: Category name is required.');
+  }
+  if (!color || typeof color !== 'string' || !color.match(/^#[0-9A-Fa-f]{6}$/)) {
+    throw new Error('Preferences.gs: Category color must be a valid hex color (e.g. #1D9E75).');
+  }
 
+  var trimmedName = name.trim();
+  var current = getCategories();
+
+  // Case-insensitive duplicate check across both default and user-added categories.
+  var isDuplicate = current.some(function(cat) {
+    return cat.name.toLowerCase() === trimmedName.toLowerCase();
+  });
+  if (isDuplicate) {
+    throw new Error('Preferences.gs: A category named "' + trimmedName + '" already exists.');
+  }
+
+  var updated = current.concat([{ name: trimmedName, color: color }]);
+  setPreference(PREF_KEYS.CATEGORIES, JSON.stringify(updated));
+
+  return updated;
+}
 
 /**
  * deleteCategory(categoryName)
  *
- * TODO: Get current categories, filter out the one matching categoryName
- * TODO: Prevent deletion of the 9 default categories (index 0–8)
- *       — only user-added categories (index 9+) can be deleted
- * TODO: Save the updated array via setPreference()
- * TODO: Return the updated categories array
+ * Removes a user-added category from the stored list.
+ *
+ * Protection rules:
+ *   - The first 9 entries (DEFAULT_CATEGORIES) cannot be deleted.
+ *     This is enforced by checking position in the stored array,
+ *     not just by name — so even if the user has renamed nothing,
+ *     the guard is based on index.
+ *   - If the category is not found, throws a clear error.
+ *
+ * Returns the full updated categories array.
  */
 function deleteCategory(categoryName) {
-  // TODO: Implement
+  if (!categoryName) throw new Error('Preferences.gs: categoryName is required.');
+
+  var current = getCategories();
+  var index   = -1;
+
+  for (var i = 0; i < current.length; i++) {
+    if (current[i].name.toLowerCase() === categoryName.toLowerCase()) {
+      index = i;
+      break;
+    }
+  }
+
+  if (index === -1) {
+    throw new Error('Preferences.gs: Category "' + categoryName + '" not found.');
+  }
+
+  // Indices 0–8 are the 9 default categories — they are protected.
+  if (index < DEFAULT_CATEGORIES.length) {
+    throw new Error(
+      'Preferences.gs: "' + categoryName + '" is a default category and cannot be deleted.'
+    );
+  }
+
+  var updated = current.filter(function(_, i) { return i !== index; });
+  setPreference(PREF_KEYS.CATEGORIES, JSON.stringify(updated));
+
+  return updated;
+}
+
+/**
+ * resetCategories()
+ *
+ * Wipes any stored custom categories and restores the 9 defaults.
+ * Exposed as a "Reset to defaults" action in the Settings screen.
+ *
+ * Returns the default categories array.
+ */
+function resetCategories() {
+  setPreference(PREF_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
+  return DEFAULT_CATEGORIES;
 }

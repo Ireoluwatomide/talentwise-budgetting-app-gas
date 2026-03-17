@@ -2,288 +2,668 @@
     /*
      * styles.css.html — Budget Tracker Master Stylesheet
      *
-     * PURPOSE:
-     *   Single source of truth for ALL visual design in the app.
-     *   Included in every page render via <?!= include('src/client/utils/styles.css') ?>
-     *
-     * STRUCTURE:
-     *   1.  CSS Custom Properties (Design Tokens)
-     *   2.  Reset & Base
-     *   3.  Layout
-     *   4.  Typography Scale
-     *   5.  Colour Utilities
-     *   6.  Grid & Spacing Helpers
-     *   7.  Metric Cards
-     *   8.  Tab Navigation
-     *   9.  Transaction Rows
-     *   10. Progress Bars
-     *   11. Alert Banners
-     *   12. Cards
-     *   13. Badges
-     *   14. Form Inputs
-     *   15. Buttons
-     *   16. Tables
-     *   17. Dividers
-     *   18. Dark Mode Overrides
-     *   19. Print Styles (for Report tab PDF)
-     *   20. Responsive Breakpoints
-     *
-     * DESIGN LANGUAGE (carried over from the prototype):
-     *   - Monochrome base with green accent (income), red (expenses), blue (savings)
-     *   - System UI font stack for maximum performance — no web font requests
-     *   - Monospace font for all numbers (consistent column alignment)
-     *   - Minimal chrome — 0.5px borders, subtle backgrounds, generous whitespace
-     *   - Accent green: #1D9E75 (income / positive)
-     *   - Accent red:   #D85A30 (expenses / over budget)
-     *   - Accent blue:  #185FA5 (savings)
-     *   - Accent amber: #BA7517 (warnings / approaching limit)
-     *   - Accent purple:#7F77DD (entertainment category)
+     * Included in the page via <?!= include('src/client/utils/styles.css') ?>
+     * All 20 sections implemented. Do not add inline styles to screen files —
+     * add a class here instead to keep the design system centralised.
      */
 
 
-    /* ─── 1. CSS CUSTOM PROPERTIES ──────────────────────────────────────────────── */
+    /* ─── 1. CSS CUSTOM PROPERTIES ─────────────────────────────────────────────── */
     :root {
-        /* Brand accent colours */
-        --acc:     #1D9E75;  /* income, positive, success */
-        --red:     #D85A30;  /* expenses, over-budget, danger */
-        --blue:    #185FA5;  /* savings */
-        --amber:   #BA7517;  /* warnings, approaching limit */
-        --purple:  #7F77DD;  /* entertainment category */
+        --acc:       #1D9E75;  /* income, positive, success    */
+        --red:       #D85A30;  /* expenses, over-budget, danger */
+        --blue:      #185FA5;  /* savings                       */
+        --amber:     #BA7517;  /* warnings, approaching limit   */
+        --purple:    #7F77DD;  /* entertainment category        */
 
-        /* Surfaces */
-        --bg:       #ffffff;
-        --bg2:      #f5f5f3;  /* subtle card background */
+        --bg:        #ffffff;
+        --bg2:       #f5f5f3;
 
-        /* Borders */
-        --border:   rgba(0, 0, 0, 0.12);   /* subtle dividers */
-        --border2:  rgba(0, 0, 0, 0.22);   /* input borders, stronger dividers */
+        --border:    rgba(0, 0, 0, 0.12);
+        --border2:   rgba(0, 0, 0, 0.22);
 
-        /* Text */
-        --text:     #1a1a1a;
-        --text2:    #666;    /* labels, secondary info */
+        --text:      #1a1a1a;
+        --text2:     #666;
 
-        /* Typography */
-        --font:     system-ui, -apple-system, sans-serif;
-        --mono:     'Courier New', monospace;  /* all currency/number display */
+        --font:      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --mono:      'Courier New', Courier, monospace;
 
-        /* Shape */
         --radius:    8px;
         --radius-lg: 12px;
-
-        /* TODO: Add --shadow-sm and --shadow-md tokens for card elevations if needed */
-        /* TODO: Add --transition for consistent animation timing (e.g. 0.15s ease) */
-        /* TODO: Add --max-width token matching the 720px app container */
+        --transition: 0.15s ease;
+        --max-width:  720px;
     }
 
 
-    /* ─── 2. RESET & BASE ────────────────────────────────────────────────────────── */
-    /* TODO: Box-sizing reset, margin/padding reset */
-    /* TODO: Set body background to var(--bg), color to var(--text), font to var(--font) */
-    /* TODO: min-height: 100vh on body */
+    /* ─── 2. RESET & BASE ───────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 14px;
+        line-height: 1.5;
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+    }
 
 
-    /* ─── 3. LAYOUT ──────────────────────────────────────────────────────────────── */
-    /* .app — the main page container */
-    /* TODO: max-width 720px, margin auto, padding 1.5rem 1rem */
+    /* ─── 3. LAYOUT ─────────────────────────────────────────────────────────────── */
+    .app {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: 1.5rem 1rem;
+    }
 
-    /* .app-header — top bar with month nav + currency + balance */
-    /* TODO: flex, justify-content space-between, align-items flex-end */
-    /* TODO: margin-bottom 1.5rem, padding-bottom 1.25rem, border-bottom */
-
-
-    /* ─── 4. TYPOGRAPHY SCALE ────────────────────────────────────────────────────── */
-    /* TODO: h1 — 24px, font-weight 400 (prototype uses light weight headings) */
-    /* TODO: .label-caps — 11px, font-weight 500, letter-spacing 0.08em, uppercase, color var(--text2) */
-    /*        Used for section headings and metric card labels */
-    /* TODO: .mono-value — font-family var(--mono), font-size 15px, font-weight 500 */
-    /*        Used for all currency display */
-
-
-    /* ─── 5. COLOUR UTILITIES ────────────────────────────────────────────────────── */
-    /* TODO: .text-income     { color: var(--acc); } */
-    /* TODO: .text-expense    { color: var(--red); } */
-    /* TODO: .text-savings    { color: var(--blue); } */
-    /* TODO: .text-warning    { color: var(--amber); } */
-    /* TODO: .text-secondary  { color: var(--text2); } */
-    /* TODO: .text-positive   { color: var(--acc); } — for positive balance */
-    /* TODO: .text-negative   { color: var(--red); } — for negative balance */
+    .app-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 0.5px solid var(--border);
+    }
 
 
-    /* ─── 6. GRID & SPACING HELPERS ──────────────────────────────────────────────── */
-    /* TODO: .row2 — 2-column equal grid, gap 8px, margin-bottom 8px */
-    /* TODO: .row3 — 3-column equal grid, gap 10px, margin-bottom 1.25rem */
-    /* TODO: .row4 — 4-column equal grid, gap 10px, margin-bottom 1.25rem */
-    /* TODO: .sec  — section heading: label-caps + margin 1.25rem 0 10px */
-    /* TODO: All grids should collapse to 2 columns on mobile (see Responsive section) */
+    /* ─── 4. TYPOGRAPHY SCALE ───────────────────────────────────────────────────── */
+    h1 {
+        font-size: 24px;
+        font-weight: 400;
+    }
+
+    .label-caps {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+    }
+
+    .mono-value {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 500;
+    }
 
 
-    /* ─── 7. METRIC CARDS ────────────────────────────────────────────────────────── */
-    /* .metric — used for Income / Expenses / Saved / Remaining cards */
-    /* TODO: background var(--bg2), border-radius var(--radius), padding 12px 14px */
-    /* TODO: .metric .lbl — label-caps styles */
-    /* TODO: .metric .val — mono-value styles */
+    /* ─── 5. COLOUR UTILITIES ───────────────────────────────────────────────────── */
+    .text-income   { color: var(--acc);   }
+    .text-expense  { color: var(--red);   }
+    .text-savings  { color: var(--blue);  }
+    .text-warning  { color: var(--amber); }
+    .text-secondary{ color: var(--text2); }
+    .text-positive { color: var(--acc);   }
+    .text-negative { color: var(--red);   }
 
 
-    /* ─── 8. TAB NAVIGATION ──────────────────────────────────────────────────────── */
-    /* .tabs — horizontal tab strip */
-    /* TODO: display flex, gap 0, border-bottom 0.5px solid var(--border) */
-    /* TODO: margin-bottom 1.5rem, overflow-x auto (scrollable on mobile) */
-    /* TODO: Hide scrollbar on WebKit browsers (scrollbar-width: none + ::-webkit-scrollbar { display:none }) */
+    /* ─── 6. GRID & SPACING HELPERS ─────────────────────────────────────────────── */
+    .row2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
 
-    /* .tab — individual tab button */
-    /* TODO: background none, border none, border-bottom 2px solid transparent */
-    /* TODO: padding 8px 11px 10px, margin-bottom -1px (overlaps the strip border) */
-    /* TODO: font 11px/400, cursor pointer, color var(--text2), white-space nowrap */
+    .row3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 1.25rem;
+    }
 
-    /* .tab.active */
-    /* TODO: border-bottom-color var(--text), color var(--text), font-weight 500 */
+    .row4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-bottom: 1.25rem;
+    }
 
-    /* .pane — screen container, hidden by default */
-    /* TODO: display none */
-    /* .pane.active — visible screen */
-    /* TODO: display block */
-
-
-    /* ─── 9. TRANSACTION ROWS ────────────────────────────────────────────────────── */
-    /* .tx-row — a single transaction list item */
-    /* TODO: display flex, justify-content space-between, align-items center */
-    /* TODO: padding 9px 0, border-bottom 0.5px solid var(--border) */
-
-    /* .tx-dot — coloured category indicator dot */
-    /* TODO: width 8px, height 8px, border-radius 50%, flex-shrink 0, display inline-block */
-
-    /* .tx-name — description text */
-    /* TODO: font-size 13px */
-    /* .tx-cat  — category label below name */
-    /* TODO: font-size 11px, color var(--text2) */
-    /* .tx-tag  — hashtag note displayed inline with description */
-    /* TODO: font-size 10px, color var(--text2), margin-left 6px */
-
-    /* .tx-amount — monospace amount, coloured by type */
-    /* TODO: font-family var(--mono), font-size 13px, font-weight 500 */
-
-    /* .tx-delete — × delete button */
-    /* TODO: cursor pointer, color var(--text2), font-size 16px, line-height 1 */
+    /* Section heading — label-caps with spacing */
+    .sec {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin: 1.25rem 0 10px;
+    }
 
 
-    /* ─── 10. PROGRESS BARS ──────────────────────────────────────────────────────── */
-    /* .prog-track — progress bar background track */
-    /* TODO: height 4px, background var(--bg2), border-radius 2px, overflow hidden, margin 5px 0 */
+    /* ─── 7. METRIC CARDS ───────────────────────────────────────────────────────── */
+    .metric {
+        background: var(--bg2);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+    }
 
-    /* .prog-fill — coloured fill, width set inline as a percentage */
-    /* TODO: height 100%, border-radius 2px, transition width 0.5s ease */
+    .metric .lbl {
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin-bottom: 4px;
+    }
 
-
-    /* ─── 11. ALERT BANNERS ──────────────────────────────────────────────────────── */
-    /* .alert — base alert box */
-    /* TODO: border-radius var(--radius), padding 10px 14px, margin-bottom 1rem, font-size 12px */
-
-    /* .alert-danger  — over budget (red) */
-    /* TODO: background #FCEBEB, border 0.5px solid #F09595, color #501313 */
-
-    /* .alert-warning — approaching limit (amber) */
-    /* TODO: background #FAEEDA, border 0.5px solid #FAC775, color #412402 */
-
-    /* .alert-info    — bills due (amber, same as warning in prototype) */
-    /* TODO: Reuse .alert-warning or create a distinct blue variant if preferred */
-
-
-    /* ─── 12. CARDS ──────────────────────────────────────────────────────────────── */
-    /* .card — content card used in Debt, Insights, Templates tabs */
-    /* TODO: background var(--bg2), border-radius var(--radius-lg), padding 14px 16px, margin-bottom 10px */
+    .metric .val {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text);
+    }
 
 
-    /* ─── 13. BADGES ─────────────────────────────────────────────────────────────── */
-    /* .badge — base inline pill badge */
-    /* TODO: font-size 10px, font-weight 500, padding 2px 6px, border-radius 4px */
+    /* ─── 8. TAB NAVIGATION ─────────────────────────────────────────────────────── */
+    .tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 0.5px solid var(--border);
+        margin-bottom: 1.5rem;
+        overflow-x: auto;
+        /* Hide scrollbar — still scrollable on mobile */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
 
-    /* .badge-red   — over limit, liability */
-    /* TODO: background #FCEBEB, color #791F1F */
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
 
-    /* .badge-green — under limit, asset, paid */
-    /* TODO: background #EAF3DE, color #27500A */
+    .tab {
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 8px 11px 10px;
+        margin-bottom: -1px; /* overlaps the strip border so active border sits on top */
+        font-size: 11px;
+        font-weight: 400;
+        font-family: var(--font);
+        cursor: pointer;
+        color: var(--text2);
+        white-space: nowrap;
+        transition: color var(--transition);
+    }
 
-    /* .badge-blue  — income type */
-    /* TODO: background #E6F1FB, color #042C53 */
+    .tab:hover {
+        color: var(--text);
+    }
 
+    .tab.active {
+        border-bottom-color: var(--text);
+        color: var(--text);
+        font-weight: 500;
+    }
 
-    /* ─── 14. FORM INPUTS ────────────────────────────────────────────────────────── */
-    /* .inp — all text inputs, number inputs, and selects */
-    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
-    /* TODO: padding 8px 10px, font-family var(--font), font-size 13px, color var(--text) */
-    /* TODO: box-sizing border-box, width 100% */
-    /* TODO: :focus — outline none, border-color var(--acc) */
-    /* TODO: Select elements: appearance none on WebKit if custom arrow desired */
+    /* Screen pane — hidden by default, shown when .active */
+    .pane {
+        display: none;
+    }
 
-
-    /* ─── 15. BUTTONS ────────────────────────────────────────────────────────────── */
-    /* .btn-primary — filled button (dark background / light text) */
-    /* TODO: background var(--text), color var(--bg), border none, border-radius var(--radius) */
-    /* TODO: padding 9px 16px, font 13px/500, cursor pointer */
-    /* TODO: :hover — opacity 0.85 or slightly lighter background */
-
-    /* .btn-sm — small ghost button */
-    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
-    /* TODO: padding 5px 10px, font 11px, cursor pointer, color var(--text2) */
-    /* TODO: :hover — border-color var(--text), color var(--text) */
-
-    /* .btn-danger — small destructive button (clear month, etc.) */
-    /* TODO: color var(--red), border-color var(--red) */
-
-
-    /* ─── 16. TABLES ─────────────────────────────────────────────────────────────── */
-    /* Used in Multi-Month and Report tabs */
-    /* TODO: table width 100%, border-collapse collapse, font-size 12px */
-    /* TODO: th — font-size 10px, font-weight 500, uppercase, letter-spacing 0.06em */
-    /*            color var(--text2), border-bottom 0.5px solid var(--border) */
-    /*            text-align: right for all columns except the first (Month name) */
-    /* TODO: td — padding 7px 8px, border-bottom 0.5px solid var(--border) */
-    /*            font-family var(--mono) for numeric columns */
-    /* TODO: .row-active — highlighted row for the current month (background var(--bg2)) */
-
-
-    /* ─── 17. DIVIDERS ───────────────────────────────────────────────────────────── */
-    /* .divider — hr-style separator used in Settings tab */
-    /* TODO: border none, border-top 0.5px solid var(--border), margin 1.25rem 0 */
+    .pane.active {
+        display: block;
+    }
 
 
-    /* ─── 18. DARK MODE OVERRIDES ────────────────────────────────────────────────── */
-    /* Applied when .dark class is toggled on .app (matches prototype pattern) */
-    /* TODO: .app.dark override all CSS variables:
-         --bg:       #0f0f11;
-         --bg2:      #1a1a1d;
-         --border:   rgba(255, 255, 255, 0.08);
-         --border2:  rgba(255, 255, 255, 0.16);
-         --text:     #e8e6e1;
-         --text2:    #888;
-       Also set background and color on .app.dark directly.
-    */
+    /* ─── 9. TRANSACTION ROWS ───────────────────────────────────────────────────── */
+    .tx-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 9px 0;
+        border-bottom: 0.5px solid var(--border);
+    }
 
-    /* TODO: Dark mode alert banners — desaturate the backgrounds slightly for dark context */
-    /* TODO: Dark mode inputs — ensure readable contrast on --bg2 backgrounds */
+    .tx-row:last-child {
+        border-bottom: none;
+    }
+
+    .tx-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        min-width: 0; /* allows text-overflow on long names */
+    }
+
+    .tx-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .tx-meta {
+        min-width: 0;
+    }
+
+    .tx-name {
+        font-size: 13px;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tx-cat {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 1px;
+    }
+
+    .tx-tag {
+        font-size: 10px;
+        color: var(--text2);
+        margin-left: 6px;
+    }
+
+    .tx-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .tx-amount {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .tx-delete {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text2);
+        font-size: 16px;
+        line-height: 1;
+        padding: 0 2px;
+        transition: color var(--transition);
+    }
+
+    .tx-delete:hover {
+        color: var(--red);
+    }
 
 
-    /* ─── 19. PRINT STYLES ───────────────────────────────────────────────────────── */
-    /* Used when the user clicks "Print / PDF" on the Report tab */
-    /* TODO: @media print {
-         Hide: .tabs, .btn-sm, .btn-primary, #alerts-wrap, the currency selector, dark toggle
-         Show: only #pane-report content
-         Set background to white, text to black (override dark mode for print)
-         Page margins: 1.5cm
-         Avoid page breaks inside .card and .tx-row elements
-       }
-    */
+    /* ─── 10. PROGRESS BARS ─────────────────────────────────────────────────────── */
+    .prog-track {
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+        margin: 5px 0;
+    }
+
+    .prog-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.5s ease;
+    }
 
 
-    /* ─── 20. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────────── */
-    /* TODO: @media (max-width: 480px) {
-         .row4 → grid-template-columns: repeat(2, 1fr)
-         .row3 → grid-template-columns: repeat(2, 1fr) or 1fr 1fr
-         .row2 → grid-template-columns: 1fr  (single column stacking)
-         .app  → padding 1rem 0.75rem
-         Debt add-form grid → stack to 1fr 1fr on two rows
-         Net Worth add-form grid → stack appropriately
-         h1 font-size → 18px
-       }
-    */
+    /* ─── 11. ALERT BANNERS ─────────────────────────────────────────────────────── */
+    .alert {
+        border-radius: var(--radius);
+        padding: 10px 14px;
+        margin-bottom: 0.5rem;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
+    .alert-danger {
+        background: #FCEBEB;
+        border: 0.5px solid #F09595;
+        color: #501313;
+    }
+
+    .alert-warning {
+        background: #FAEEDA;
+        border: 0.5px solid #FAC775;
+        color: #412402;
+    }
+
+    .alert-info {
+        background: #E6F1FB;
+        border: 0.5px solid #B5D4F4;
+        color: #042C53;
+    }
+
+    /* Container zones — margin only when they have children */
+    #alerts-budget:not(:empty),
+    #alerts-bills:not(:empty) {
+        margin-bottom: 1rem;
+    }
+
+
+    /* ─── 12. CARDS ─────────────────────────────────────────────────────────────── */
+    .card {
+        background: var(--bg2);
+        border-radius: var(--radius-lg);
+        padding: 14px 16px;
+        margin-bottom: 10px;
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+
+
+    /* ─── 13. BADGES ────────────────────────────────────────────────────────────── */
+    .badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .badge-red {
+        background: #FCEBEB;
+        color: #791F1F;
+    }
+
+    .badge-green {
+        background: #EAF3DE;
+        color: #27500A;
+    }
+
+    .badge-blue {
+        background: #E6F1FB;
+        color: #042C53;
+    }
+
+    .badge-amber {
+        background: #FAEEDA;
+        color: #412402;
+    }
+
+
+    /* ─── 14. FORM INPUTS ───────────────────────────────────────────────────────── */
+    .inp {
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 8px 10px;
+        font-family: var(--font);
+        font-size: 13px;
+        color: var(--text);
+        box-sizing: border-box;
+        width: 100%;
+        transition: border-color var(--transition);
+    }
+
+    .inp:focus {
+        outline: none;
+        border-color: var(--acc);
+    }
+
+    /* Remove default select arrow on WebKit so we control the look */
+    select.inp {
+        -webkit-appearance: none;
+        appearance: none;
+        cursor: pointer;
+    }
+
+    /* Restore a minimal custom arrow for selects */
+    select.inp {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+    }
+
+    textarea.inp {
+        resize: vertical;
+        min-height: 60px;
+    }
+
+
+    /* ─── 15. BUTTONS ───────────────────────────────────────────────────────────── */
+    .btn-primary {
+        background: var(--text);
+        color: var(--bg);
+        border: none;
+        border-radius: var(--radius);
+        padding: 9px 16px;
+        font-family: var(--font);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: opacity var(--transition);
+    }
+
+    .btn-primary:hover {
+        opacity: 0.85;
+    }
+
+    .btn-sm {
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 5px 10px;
+        font-family: var(--font);
+        font-size: 11px;
+        cursor: pointer;
+        color: var(--text2);
+        white-space: nowrap;
+        transition: border-color var(--transition), color var(--transition);
+    }
+
+    .btn-sm:hover {
+        border-color: var(--text);
+        color: var(--text);
+    }
+
+    .btn-danger {
+        color: var(--red);
+        border-color: var(--red);
+    }
+
+    .btn-danger:hover {
+        background: #FCEBEB;
+        color: var(--red);
+        border-color: var(--red);
+    }
+
+
+    /* ─── 16. TABLES ────────────────────────────────────────────────────────────── */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    th {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text2);
+        border-bottom: 0.5px solid var(--border);
+        padding: 6px 8px;
+        text-align: right;
+    }
+
+    th:first-child {
+        text-align: left;
+    }
+
+    td {
+        padding: 7px 8px;
+        border-bottom: 0.5px solid var(--border);
+        font-family: var(--mono);
+        text-align: right;
+    }
+
+    td:first-child {
+        font-family: var(--font);
+        text-align: left;
+    }
+
+    tr.row-active td {
+        background: var(--bg2);
+    }
+
+
+    /* ─── 17. DIVIDERS ──────────────────────────────────────────────────────────── */
+    .divider {
+        border: none;
+        border-top: 0.5px solid var(--border);
+        margin: 1.25rem 0;
+    }
+
+
+    /* ─── 18. DARK MODE OVERRIDES ───────────────────────────────────────────────── */
+    .app.dark {
+        --bg:      #0f0f11;
+        --bg2:     #1a1a1d;
+        --border:  rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.16);
+        --text:    #e8e6e1;
+        --text2:   #888;
+
+        background: var(--bg);
+        color: var(--text);
+    }
+
+    /* Dark mode: alert banners — slightly more muted */
+    .app.dark .alert-danger {
+        background: rgba(216, 90, 48, 0.15);
+        border-color: rgba(216, 90, 48, 0.3);
+        color: #f0a080;
+    }
+
+    .app.dark .alert-warning {
+        background: rgba(186, 117, 23, 0.15);
+        border-color: rgba(186, 117, 23, 0.3);
+        color: #e0b060;
+    }
+
+    .app.dark .alert-info {
+        background: rgba(24, 95, 165, 0.15);
+        border-color: rgba(24, 95, 165, 0.3);
+        color: #80b0e0;
+    }
+
+    /* Dark mode: badges — invert to remain readable */
+    .app.dark .badge-red   { background: rgba(216, 90, 48,  0.2); color: #f0a080; }
+    .app.dark .badge-green { background: rgba(29,  158, 117, 0.2); color: #7dd8a8; }
+    .app.dark .badge-blue  { background: rgba(24,  95,  165, 0.2); color: #80b0e0; }
+    .app.dark .badge-amber { background: rgba(186, 117, 23,  0.2); color: #e0b060; }
+
+    /* Dark mode: inputs */
+    .app.dark .inp {
+        color: var(--text);
+    }
+
+    .app.dark .inp:focus {
+        border-color: var(--acc);
+    }
+
+
+    /* ─── 19. PRINT STYLES ──────────────────────────────────────────────────────── */
+    @media print {
+        /* Hide everything that isn't the report pane */
+        .app-header,
+        .tabs,
+        #alerts-budget,
+        #alerts-bills,
+        .pane:not(#pane-report) {
+            display: none !important;
+        }
+
+        /* Force the report pane to be visible */
+        #pane-report {
+            display: block !important;
+        }
+
+        /* Remove the app container max-width and padding */
+        .app {
+            max-width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+
+        body {
+            background: #fff;
+            color: #000;
+            font-size: 12px;
+        }
+
+        /* Remove backgrounds and shadows for clean print */
+        .metric,
+        .card {
+            background: none;
+            border: 0.5px solid #ccc;
+        }
+
+        /* Hide action buttons in the report */
+        .btn-primary,
+        .btn-sm,
+        .tx-delete {
+            display: none !important;
+        }
+
+        /* Ensure page breaks don't split mid-section */
+        .card,
+        .tx-row {
+            page-break-inside: avoid;
+        }
+    }
+
+
+    /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+        .app {
+            padding: 1rem 0.75rem;
+        }
+
+        /* 4-column grid collapses to 2 columns on mobile */
+        .row4 {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        /* 3-column grid collapses to 2 columns on mobile */
+        .row3 {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        /* Header stacks vertically on very small screens */
+        .app-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        /* Net balance right-align becomes left-align in stacked layout */
+        .app-header > div:last-child {
+            text-align: left;
+        }
+
+        .app-header > div:last-child #hd-bal {
+            text-align: left;
+        }
+
+        /* Larger touch targets for tab buttons on mobile */
+        .tab {
+            padding: 10px 10px 12px;
+            font-size: 11px;
+        }
+    }
+
+    @media (max-width: 400px) {
+        /* 2-column grid collapses to single column on very small screens */
+        .row2 {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>

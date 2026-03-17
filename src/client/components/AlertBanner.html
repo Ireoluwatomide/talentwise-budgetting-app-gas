@@ -1,0 +1,61 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     AlertBanner.html — Over-Budget & Bill-Due Alert Banners
+
+     PURPOSE:
+       Renders contextual alert banners between the header and the tab strip.
+       Two separate alert zones:
+         1. #alerts-budget — over-budget and approaching-limit banners (from Goals)
+         2. #alerts-bills  — upcoming bill due-date warnings (from Bills)
+
+       Both zones are empty divs whose innerHTML is set dynamically by
+       updateAlertBanners() — called from renderAll() in utils.js.
+
+     ALERT TYPES:
+       .alert-danger  → category spending EXCEEDS the budget limit (red)
+       .alert-warning → category spending > 85% of limit (amber)
+       .alert-warning → bills due within 5 days (amber, same style)
+
+     INCLUDED VIA:
+       <?!= include('src/client/components/AlertBanner') ?> in the main page template
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<!-- Budget goal alert zone — populated by updateAlertBanners() -->
+<div id="alerts-budget"></div>
+
+<!-- Bill due-date alert zone — populated by updateAlertBanners() -->
+<div id="alerts-bills"></div>
+
+<script>
+    /**
+     * updateAlertBanners()
+     *
+     * TODO: Called from renderAll() each time state changes.
+     *       Regenerates all alert banner HTML from current AppState.
+     *
+     * ── Budget Goal Alerts ──────────────────────────────────────────────────
+     * TODO: For each goal in AppState.goals:
+     *   1. Sum all expense transactions for goal.category in the current month
+     *   2. If spent > goal.monthly_limit → render .alert-danger banner:
+     *        "⚠ Over budget on [Category]: spent [fmt(spent)], limit [fmt(limit)]"
+     *   3. If spent / goal.monthly_limit > ALERT_THRESHOLD (0.85) → render .alert-warning:
+     *        "⚡ Approaching limit on [Category]: [pct(spent, limit)]% used"
+     *   4. Otherwise → no banner for this category
+     * TODO: Set #alerts-budget innerHTML to all generated banners joined together
+     * TODO: If no alerts, set #alerts-budget innerHTML to '' (empty, no visual noise)
+     *
+     * ── Bill Due Alerts ─────────────────────────────────────────────────────
+     * TODO: Filter AppState.bills for unpaid bills due within 5 days of today
+     *       (same logic as Bills.getUpcomingBills(5) but on client-side state)
+     *       Today's day: new Date().getDate()
+     *       Days until due: bill.due_day >= today ? bill.due_day - today
+     *                                              : (31 - today) + bill.due_day
+     * TODO: If any such bills exist, render a single .alert-warning banner:
+     *        "⚠ Bills due soon: [Name] (₦Amount), [Name] (₦Amount)"
+     *        Each bill name+amount in the list is styled as <strong>
+     * TODO: Set #alerts-bills innerHTML accordingly
+     */
+    function updateAlertBanners() {
+        // TODO: Implement budget alert section
+        // TODO: Implement bills alert section
+    }
+</script>

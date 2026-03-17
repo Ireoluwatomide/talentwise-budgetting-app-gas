@@ -1,0 +1,609 @@
+<script>
+    /**
+     * utils.js.html — Shared Client-Side Utilities
+     *
+     * PURPOSE:
+     *   Single JS file included on every page. Provides:
+     *     1.  App State          — single source of truth for all in-memory data
+     *     2.  Server Bridge      — google.script.run wrapper with promise support + loading state
+     *     3.  Formatters         — currency, dates, percentages
+     *     4.  Toast Notifications — non-blocking user feedback messages
+     *     5.  Tab Router         — show/hide panes, track active tab
+     *     6.  Month Navigation   — prev/next month helpers, monthKey builder
+     *     7.  Category Utilities — colour lookup, category list helpers
+     *     8.  DOM Helpers        — safe querySelector wrappers, render guards
+     *     9.  Chart Helpers      — destroy-before-recreate pattern for Chart.js
+     *     10. Constants          — FX rates, month names, type enums
+     *
+     * USAGE:
+     *   All screen files (Overview.html, Charts.html, etc.) can call any function
+     *   defined here. No module imports needed — all functions are global in the
+     *   Apps Script HtmlService environment.
+     *
+     * INCLUDED VIA:
+     *   <?!= include('src/client/utils/utils.js') ?> in the page template
+     */
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 1. CONSTANTS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * TODO: Define MONTHS array — ['January', 'February', ..., 'December']
+     * TODO: Define FX_RATES object — { NGN: 1, USD: 0.00062, EUR: 0.00057, GBP: 0.00049 }
+     *         NOTE: In Phase 1 these are hardcoded. Phase 2 can fetch live rates via UrlFetchApp.
+     * TODO: Define FX_SYMBOLS object — { NGN: '₦', USD: '$', EUR: '€', GBP: '£' }
+     * TODO: Define TX_TYPES array — ['expense', 'income', 'savings']
+     * TODO: Define ALERT_THRESHOLD — 0.85 (warn when 85% of budget limit is spent)
+     */
+
+    const MONTHS = [/* TODO */];
+    const FX_RATES = { /* TODO */ };
+    const FX_SYMBOLS = { /* TODO */ };
+    const TX_TYPES = [/* TODO */];
+    const ALERT_THRESHOLD = 0.85;
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 2. APP STATE
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * AppState — central in-memory state for the client
+     *
+     * TODO: Define the AppState object with the following properties:
+     *
+     *   curYear       {number}  — current display year (e.g. 2026)
+     *   curMonth      {number}  — current display month 1–12 (e.g. 3 = March)
+     *   currency      {string}  — active currency code, e.g. 'NGN'
+     *   darkMode      {boolean} — dark mode toggle state
+     *   categories    {Array}   — [{ name, color }, ...] — from Preferences
+     *   transactions  {Object}  — { 'YYYY-MM': [txObj, ...] } — all loaded months
+     *   goals         {Array}   — [{ id, category, monthly_limit }, ...]
+     *   bills         {Array}   — [{ id, name, amount, due_day, paid }, ...]
+     *   savingsGoals  {Array}   — [{ id, name, target_amount, saved_amount }, ...]
+     *   debts         {Array}   — [{ id, name, total, paid, monthly_payment, interest_rate }, ...]
+     *   netWorthItems {Array}   — [{ id, name, type, amount }, ...]
+     *   recurring     {Array}   — [{ id, name, amount, type, category }, ...]
+     *   isLoading     {boolean} — global loading flag (disable inputs during server calls)
+     *
+     * TODO: Initialize from window.__BOOTSTRAP__ if available (injected by doGet() via Main.gs)
+     *       This avoids an extra server round-trip on first load.
+     *       e.g. const AppState = { ...DEFAULT_STATE, ...window.__BOOTSTRAP__ };
+     */
+
+    const AppState = {
+        // TODO: Populate initial state
+    };
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 3. SERVER BRIDGE
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * callServer(fnName, ...args)
+     *
+     * TODO: Wrap google.script.run in a Promise so screens can use async/await or .then()
+     *       instead of nested callback hell.
+     *
+     * TODO: Pattern:
+     *   return new Promise((resolve, reject) => {
+     *     google.script.run
+     *       .withSuccessHandler(resolve)
+     *       .withFailureHandler(reject)
+     *       [fnName](...args);
+     *   });
+     *
+     * TODO: Before calling, set AppState.isLoading = true
+     * TODO: In both resolve and reject handlers, set AppState.isLoading = false
+     * TODO: In the reject handler, call showToast(error.message, 'error')
+     *
+     * USAGE in screen files:
+     *   const txs = await callServer('getTransactionsByMonth', '2026-03');
+     */
+    async function callServer(fnName, ...args) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * callServerSilent(fnName, ...args)
+     *
+     * TODO: Same as callServer but does NOT set isLoading or show error toasts.
+     *       Used for non-critical background calls (e.g. saving a preference)
+     *       where we don't want to visually block the UI.
+     */
+    async function callServerSilent(fnName, ...args) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 4. FORMATTERS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * fmt(amount)
+     *
+     * TODO: Format a raw NGN number into the currently selected currency display.
+     *       1. Multiply by FX_RATES[AppState.currency] to convert from NGN base
+     *       2. Round to nearest integer
+     *       3. Prepend FX_SYMBOLS[AppState.currency]
+     *       4. Use toLocaleString() for thousands separators
+     *
+     * TODO: Handle negative values (preserve the minus sign, do not double-prefix)
+     * TODO: Handle 0 gracefully — return '₦0' not '₦NaN'
+     *
+     * EXAMPLES:
+     *   fmt(450000) → '₦450,000'  (NGN mode)
+     *   fmt(450000) → '$279'      (USD mode)
+     */
+    function fmt(amount) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * pct(value, total)
+     *
+     * TODO: Return an integer percentage capped at 100.
+     *       pct(85, 100) → 85
+     *       pct(120, 100) → 100  (capped)
+     *       pct(0, 0) → 0         (guard against division by zero)
+     */
+    function pct(value, total) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * monthLabel(year, month)
+     *
+     * TODO: Return human-readable month label e.g. monthLabel(2026, 3) → 'March 2026'
+     * TODO: Use MONTHS array for month names
+     */
+    function monthLabel(year, month) {
+        // TODO: return MONTHS[month - 1] + ' ' + year;
+    }
+
+
+    /**
+     * monthKey(year, month)
+     *
+     * TODO: Return zero-padded YYYY-MM string e.g. monthKey(2026, 3) → '2026-03'
+     */
+    function monthKey(year, month) {
+        // TODO: return year + '-' + (month < 10 ? '0' : '') + month;
+    }
+
+
+    /**
+     * curKey()
+     *
+     * TODO: Return monthKey for the current AppState.curYear + AppState.curMonth
+     */
+    function curKey() {
+        // TODO: return monthKey(AppState.curYear, AppState.curMonth);
+    }
+
+
+    /**
+     * parseMonthKey(key)
+     *
+     * TODO: Parse a 'YYYY-MM' string into { year, month } integers.
+     *       Used when iterating allData keys.
+     */
+    function parseMonthKey(key) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 5. TOAST NOTIFICATIONS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * showToast(message, type, duration)
+     *
+     * TODO: Display a non-blocking toast notification at the bottom of the viewport.
+     *
+     * Parameters:
+     *   message  {string}  — the message to display
+     *   type     {string}  — 'success' | 'error' | 'info' | 'warning'  (default: 'info')
+     *   duration {number}  — milliseconds before auto-dismiss (default: 3000)
+     *
+     * TODO: Implementation steps:
+     *   1. Create a container div #toast-container if it doesn't exist yet
+     *      (position: fixed, bottom: 1.5rem, left: 50%, transform: translateX(-50%), z-index: 9999)
+     *   2. Create a toast div with appropriate styles for the type:
+     *        success → green background (var(--acc))
+     *        error   → red background (var(--red))
+     *        warning → amber background (var(--amber))
+     *        info    → dark background (var(--text))
+     *   3. Set toast text content to message
+     *   4. Append toast to container
+     *   5. Animate in: slide up + fade in (CSS transition or requestAnimationFrame)
+     *   6. After `duration` ms, animate out (fade out), then remove from DOM
+     *
+     * TODO: Support stacking — multiple toasts should queue vertically, not overlap
+     * TODO: Clicking a toast should dismiss it immediately
+     *
+     * EXAMPLE USAGE:
+     *   showToast('Transaction added!', 'success');
+     *   showToast('Failed to save — check your connection.', 'error', 5000);
+     *   showToast('Bill marked as paid.', 'info');
+     */
+    function showToast(message, type = 'info', duration = 3000) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * showLoading(show)
+     *
+     * TODO: Toggle a subtle loading indicator in the UI.
+     *       Suggested: a thin animated bar at the top of the page (like YouTube's red bar),
+     *       or a spinner overlay on the active pane.
+     * TODO: Also disable all .btn-primary and .btn-sm buttons while loading to prevent double-clicks.
+     *
+     * Parameters:
+     *   show {boolean} — true to show, false to hide
+     */
+    function showLoading(show) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 6. TAB ROUTER
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * switchTab(tabId)
+     *
+     * TODO: Activate a tab pane and deactivate all others.
+     *
+     * TODO: 1. Remove .active from all .tab buttons and .pane divs
+     * TODO: 2. Add .active to #tab-{tabId} and #pane-{tabId}
+     * TODO: 3. If the activated tab requires a chart, call its render function after a short delay
+     *           (Charts.js needs the canvas to be visible before rendering)
+     *           Tab → chart render function mapping:
+     *             'charts'     → renderCharts()
+     *             'multimonth' → renderMultiMonth()
+     *             'forecast'   → renderForecast()
+     * TODO: 4. If 'report'   tab → renderReport()
+     * TODO: 5. If 'insights' tab → renderInsights()
+     * TODO: 6. Track the current tab in AppState for analytics / back-button support
+     *
+     * CALLED BY: onclick on each .tab button (set in Tabs.html)
+     */
+    function switchTab(tabId) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 7. MONTH NAVIGATION
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * prevMonth()
+     *
+     * TODO: Decrement AppState.curMonth. If it reaches 0, decrement curYear and set curMonth to 12.
+     * TODO: Call applyRecurringForMonth() to ensure recurring txs exist for the new month
+     * TODO: Call renderAll() to refresh the UI
+     */
+    async function prevMonth() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * nextMonth()
+     *
+     * TODO: Increment AppState.curMonth. If it exceeds 12, increment curYear and set curMonth to 1.
+     * TODO: Call applyRecurringForMonth() for the new month
+     * TODO: Call renderAll()
+     */
+    async function nextMonth() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * applyRecurringForMonth()
+     *
+     * TODO: Call the server function Recurring.applyRecurringToMonth(curKey())
+     *       to auto-add recurring transactions for the new month.
+     * TODO: Merge returned transactions into AppState.transactions[curKey()]
+     *       (avoiding duplicates if they already exist client-side)
+     * TODO: Use callServerSilent — this is a background operation, no toast needed
+     */
+    async function applyRecurringForMonth() {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 8. CATEGORY UTILITIES
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * getCategoryColor(categoryName)
+     *
+     * TODO: Find the category in AppState.categories by name and return its color hex.
+     * TODO: Return '#888780' (the 'Other' grey) as fallback if category not found.
+     */
+    function getCategoryColor(categoryName) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * populateCategorySelects()
+     *
+     * TODO: Update all <select> elements with id 'tx-cat', 'g-cat', 'r-cat'
+     *       with <option> elements built from AppState.categories.
+     * TODO: Preserve the currently selected value across re-renders.
+     * TODO: Called as part of renderAll() whenever categories may have changed.
+     */
+    function populateCategorySelects() {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 9. MONTH STATS HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * getMonthStats(key)
+     *
+     * TODO: Compute income, expenses, savings, balance for a given monthKey
+     *       from the client-side AppState.transactions cache.
+     *
+     * TODO: Return { inc, exp, sav, bal }
+     *   inc = sum of type:'income' amounts
+     *   exp = sum of type:'expense' amounts
+     *   sav = sum of type:'savings' amounts
+     *   bal = inc - exp - sav
+     *
+     * TODO: If no data exists for the key, return all zeros
+     */
+    function getMonthStats(key) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * curTxs()
+     *
+     * TODO: Return the transactions array for the current month from AppState.
+     *       Shorthand for AppState.transactions[curKey()] || []
+     */
+    function curTxs() {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 10. DOM HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * $(id)
+     *
+     * TODO: Shorthand for document.getElementById(id).
+     *       Returns null gracefully if element not found.
+     */
+    function $(id) {
+        // TODO: return document.getElementById(id);
+    }
+
+
+    /**
+     * setHTML(id, html)
+     *
+     * TODO: Set innerHTML of the element with the given id.
+     * TODO: Guard: if element not found, log a warning and return.
+     */
+    function setHTML(id, html) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * setVal(id, value)
+     *
+     * TODO: Set .value of an input/select element by id.
+     * TODO: Guard: log warning if element not found.
+     */
+    function setVal(id, value) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * getVal(id)
+     *
+     * TODO: Get and trim .value of an input/select element by id.
+     * TODO: Return '' if element not found.
+     */
+    function getVal(id) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * clearInputs(...ids)
+     *
+     * TODO: Clear the .value of each provided element id.
+     *       Called after a form is submitted to reset fields.
+     *       e.g. clearInputs('tx-name', 'tx-amt', 'tx-note');
+     */
+    function clearInputs(...ids) {
+        // TODO: ids.forEach(id => setVal(id, ''));
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 11. CHART HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * chartRegistry — tracks all active Chart.js instances by canvas id
+     *
+     * TODO: Define as a plain object: { canvasId: chartInstance }
+     * TODO: Used by destroyChart() to avoid "Canvas already in use" Chart.js errors
+     */
+    const chartRegistry = {};
+
+
+    /**
+     * destroyChart(canvasId)
+     *
+     * TODO: If chartRegistry[canvasId] exists and has a .destroy() method, call .destroy()
+     * TODO: Delete the key from chartRegistry
+     * TODO: Call this before creating any new Chart.js instance on a canvas
+     */
+    function destroyChart(canvasId) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * registerChart(canvasId, chartInstance)
+     *
+     * TODO: Store a new Chart.js instance in chartRegistry after creation.
+     *       Ensures destroyChart() can clean it up on the next render.
+     */
+    function registerChart(canvasId, chartInstance) {
+        // TODO: chartRegistry[canvasId] = chartInstance;
+    }
+
+
+    /**
+     * getChartDefaults()
+     *
+     * TODO: Return a shared Chart.js options base object used across all charts.
+     *       Centralising this keeps chart styling consistent without repetition.
+     *
+     * TODO: Include:
+     *   responsive: true
+     *   maintainAspectRatio: false
+     *   plugins.legend.display: false  (custom legends are rendered in HTML instead)
+     *   scales.x: { grid.display: false, ticks: { color: '#888', font.size: 11 } }
+     *   scales.y: { grid.color: 'rgba(128,128,128,0.1)', ticks: { color: '#888', font.size: 11,
+     *               callback: v => FX_SYMBOLS[AppState.currency] + v.toLocaleString() } }
+     *
+     * TODO: Return a deep clone so callers can extend it without mutating the defaults
+     */
+    function getChartDefaults() {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 12. DARK MODE & CURRENCY
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * toggleDark()
+     *
+     * TODO: Flip AppState.darkMode boolean
+     * TODO: Toggle .dark class on the #app element
+     * TODO: Update the toggle button text (Dark / Light)
+     * TODO: Persist preference via callServerSilent('setDarkMode', AppState.darkMode)
+     */
+    function toggleDark() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * setCurrency(value)
+     *
+     * TODO: Update AppState.currency to the new value
+     * TODO: Call renderAll() to reformat all displayed amounts
+     * TODO: Persist via callServerSilent('setCurrency', value)
+     */
+    function setCurrency(value) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 13. CSV EXPORT (Client-Side Download Trigger)
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * exportCSV()
+     *
+     * TODO: Call server 'exportTransactionsToCSV' with the current monthKey
+     * TODO: On success, trigger a file download in the browser:
+     *         1. Create a Blob from the returned CSV string (type: 'text/csv')
+     *         2. Create a temporary <a> element with href = URL.createObjectURL(blob)
+     *         3. Set download attribute to 'budget_YYYY-MM.csv'
+     *         4. Programmatically click the <a> element
+     *         5. Revoke the object URL
+     * TODO: Show a success toast on completion
+     */
+    async function exportCSV() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * importCSV(event)
+     *
+     * TODO: Read the selected file from event.target.files[0]
+     * TODO: Use FileReader to read as text
+     * TODO: On load, call server 'importTransactionsFromCSV' with the file text + curKey()
+     * TODO: On success, merge returned transactions into AppState and call renderAll()
+     * TODO: Show a toast with the import count: 'Imported N transactions'
+     */
+    function importCSV(event) {
+        // TODO: Implement
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 14. GLOBAL RENDER TRIGGER
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * renderAll()
+     *
+     * TODO: Master re-render function — called after any state change.
+     *       Updates all visible UI elements from AppState.
+     *
+     * TODO: Call in order:
+     *   1. updateHeader()        — month label, net balance, currency selector
+     *   2. updateAlertBanners()  — over-budget + upcoming bills alerts
+     *   3. populateCategorySelects() — refresh <select> dropdowns
+     *   4. renderActivePane()    — re-render whichever tab is currently visible
+     *
+     * TODO: renderActivePane() should check which .pane has .active and call
+     *       the appropriate screen render function:
+     *         overview   → renderOverview()
+     *         goals      → renderGoals()
+     *         savings    → renderSavings()
+     *         debt       → renderDebt()
+     *         networth   → renderNetWorth()
+     *         recurring  → renderRecurring()
+     *         bills      → renderBills()
+     *         settings   → renderSettings()
+     *         categories → renderCategories()
+     *         charts     → renderCharts()      (only if visible — canvas must be in DOM)
+     *         multimonth → renderMultiMonth()
+     *         forecast   → renderForecast()
+     *         report     → renderReport()
+     *         insights   → renderInsights()
+     *         templates  → renderTemplates()
+     */
+    function renderAll() {
+        // TODO: Implement
+    }
+</script>

@@ -1,0 +1,37 @@
+<!-- ─
+     Recurring.html — Recurring Transactions Screen
+     SERVER CALLS: addRecurring, deleteRecurring
+     ───────────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-recurring">
+    <!-- TODO: Subtitle: "Auto-added when you navigate to a new month." -->
+
+    <!-- ── Recurring List ─────────────────────────────────────────────────── -->
+    <!-- TODO: id="rec-list" — .tx-row for each recurring entry:
+         LEFT:  name (13px) + "category · type" (11px, --text2)
+         RIGHT: amount in monospace + × delete onclick="deleteRecurring(r.id)"
+    -->
+    <div id="rec-list"></div>
+
+    <!-- ── Add Form ────────────────────────────────────────────────────────── -->
+    <!-- TODO: Section "Add Recurring Transaction" -->
+    <!-- TODO: .row2: Description | Amount | Category select | Type select -->
+    <!-- TODO: Full-width "Add Recurring" .btn-primary -->
+    <div class="sec">Add Recurring Transaction</div>
+    <div class="row2">
+        <input id="r-name" placeholder="Description" class="inp"/>
+        <input id="r-amt" placeholder="Amount" type="number" class="inp"/>
+        <select id="r-cat" class="inp"></select>
+        <select id="r-type" class="inp">
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+            <option value="savings">Savings</option>
+        </select>
+    </div>
+    <button onclick="addRecurringForm()" class="btn-primary" style="width: 100%;">Add Recurring</button>
+</div>
+
+<script>
+    function renderRecurring() { /* TODO: build #rec-list from AppState.recurring */ }
+    async function addRecurringForm() { /* TODO: read, callServer, push to AppState, clearInputs, renderAll, showToast */ }
+    async function deleteRecurring(recId) { /* TODO: callServer, filter, renderAll, showToast */ }
+</script>

@@ -1,0 +1,97 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Charts.html — Bar Chart & Donut Chart Screen
+
+     TAB: Charts
+
+     SECTIONS:
+       1. Income vs Expenses vs Savings — grouped bar chart (Chart.js)
+       2. Spending by Category — doughnut chart (Chart.js) + HTML legend
+
+     CHART LIBRARY: Chart.js 4.x loaded from CDN in the page shell
+
+     IMPORTANT: Charts must only render when the canvas is visible (tab is active).
+       switchTab('charts') in utils.js calls renderCharts() after a 50ms delay
+       to ensure the canvas has painted before Chart.js measures dimensions.
+
+     SERVER CALLS: None — all data from AppState (already loaded)
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-charts">
+
+  <!-- ── 1. Bar Chart: Income vs Expenses vs Savings ─────────────────────── -->
+  <div class="sec" style="margin-top: 0;">Income vs Expenses vs Savings</div>
+
+  <!-- TODO: HTML legend (not Chart.js built-in legend — matches prototype):
+       3 inline coloured squares + labels: Income (green) | Expenses (red) | Savings (blue)
+       Each: <span style="display:flex;align-items:center;gap:5px;">
+               <span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block;"></span>
+               Income
+             </span>
+  -->
+  <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text2);">
+    <!-- TODO: Render 3 legend items here (Income, Expenses, Savings) -->
+  </div>
+
+  <!-- TODO: Canvas wrapper — position:relative, width:100%, height:200px -->
+  <!-- TODO: Canvas id="bar-chart" — Chart.js targets this by id -->
+  <div style="position: relative; width: 100%; height: 200px; margin-bottom: 2rem;">
+    <canvas id="bar-chart"></canvas>
+  </div>
+
+  <!-- ── 2. Donut Chart: Spending by Category ────────────────────────────── -->
+  <div class="sec">Spending by Category</div>
+
+  <!-- TODO: id="donut-legend" — dynamic HTML legend built from category data
+       Each entry: coloured square + category name + percentage of total expenses
+       Built by renderCharts(), not static HTML
+  -->
+  <div id="donut-legend" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; font-size: 12px; color: var(--text2);"></div>
+
+  <!-- TODO: Canvas wrapper — height:240px (taller than bar chart for readability) -->
+  <!-- TODO: Canvas id="donut-chart" -->
+  <!-- TODO: Empty state: if no expense data, replace canvas with centred text "No expense data" -->
+  <div style="position: relative; width: 100%; height: 240px;">
+    <canvas id="donut-chart"></canvas>
+  </div>
+
+</div>
+
+<script>
+  /**
+   * renderCharts()
+   *
+   * TODO: Called by switchTab('charts') after a 50ms delay.
+   *       Also called by renderAll() if the charts pane is currently active.
+   *
+   * ── Bar Chart ───────────────────────────────────────────────────────────
+   * TODO: 1. destroyChart('bar-chart') — clean up previous instance
+   * TODO: 2. Get stats for current month: getMonthStats(curKey())
+   * TODO: 3. Create a Chart.js 'bar' chart on canvas #bar-chart:
+   *            Label:    monthLabel(AppState.curYear, AppState.curMonth)
+   *            Datasets: Income (var(--acc)), Expenses (var(--red)), Savings (var(--blue))
+   *            Data:     [inc], [exp], [sav]
+   *            Options:  from getChartDefaults(), borderRadius: 4, borderSkipped: false
+   * TODO: 4. Register via registerChart('bar-chart', chartInstance)
+   *
+   * ── Donut Chart ─────────────────────────────────────────────────────────
+   * TODO: 1. destroyChart('donut-chart')
+   * TODO: 2. Build category breakdown from curTxs() — group expenses by category
+   *            { Housing: 120000, Food: 18500, ... }
+   * TODO: 3. If no expense data:
+   *            Replace canvas parent div with "No expense data" message
+   *            Return early
+   * TODO: 4. Create a Chart.js 'doughnut' chart:
+   *            Labels:   category names
+   *            Data:     category amounts
+   *            Colors:   getCategoryColor() for each category
+   *            Options:  cutout '68%', no legend (custom legend in HTML)
+   *                      tooltip callback: ' CategoryName: ₦Amount'
+   * TODO: 5. Build #donut-legend innerHTML:
+   *            For each category: coloured square + name + percentage of total
+   * TODO: 6. Register chart
+   */
+  function renderCharts() {
+    // TODO: Implement bar chart
+    // TODO: Implement donut chart
+  }
+</script>

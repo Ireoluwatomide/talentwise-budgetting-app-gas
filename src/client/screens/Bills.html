@@ -1,0 +1,132 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Bills.html — Bill Tracker Screen
+
+     TAB: Bills
+
+     SECTIONS:
+       1. Bills list — each bill shows name, due date, amount, days-until-due badge,
+          Pay/Unpay toggle, and × delete
+       2. Add Bill form — name, amount, due day
+
+     STATE: AppState.bills
+
+     SERVER CALLS:
+       addBill(name, amount, dueDay) → saves new bill
+       toggleBillPaid(billId) → flips paid status
+       deleteBill(billId) → removes bill
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-bills">
+
+    <!-- TODO: Subtitle: "Recurring bills — alerts fire 5 days before due date." -->
+
+    <!-- ── 1. Bills List ───────────────────────────────────────────────────── -->
+    <!-- TODO: id="bills-list" — innerHTML set by renderBills()
+
+         Empty state: "No bills." in --text2
+
+         For each bill:
+           <div class="tx-row">
+             LEFT:
+               - Bill name (13px/500)
+               - Due day in ordinal format e.g. "1st monthly", "15th monthly" (11px, --text2)
+                 Ordinal suffix: 1→st, 2→nd, 3→rd, 4–20→th, 21→st, etc.
+             RIGHT:
+               - Amount in monospace (13px)
+               - Status badge (11px/500):
+                   paid → "Paid" in var(--acc)
+                   daysUntil === 0 → "Due today" in var(--red)
+                   daysUntil <= 5 and unpaid → "Due in Xd" in var(--red)
+                   else → "Due in Xd" in var(--text2)
+               - Pay/Unpay toggle button .btn-sm onclick="toggleBillPaid(bill.id)"
+                 Text: "Pay" if unpaid, "Unpay" if paid
+               - × delete button onclick="deleteBill(bill.id)"
+           </div>
+
+         daysUntil calculation (same as server Bills.getUpcomingBills):
+           today = new Date().getDate()
+           daysUntil = bill.due_day >= today
+             ? bill.due_day - today
+             : (31 - today) + bill.due_day
+    -->
+    <div id="bills-list"></div>
+
+    <!-- ── 2. Add Bill Form ────────────────────────────────────────────────── -->
+    <!-- TODO: Section heading "Add Bill" -->
+    <!-- TODO: 4-column grid: Bill name | Amount | Day (number, 1–31) | "Add" button
+         <div style="display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;">
+           ...
+         </div>
+    -->
+    <div class="sec">Add Bill</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 70px auto; gap: 8px;">
+        <input id="b-name" placeholder="Bill name" class="inp"/>
+        <input id="b-amt" placeholder="Amount" type="number" class="inp"/>
+        <input id="b-day" placeholder="Day" type="number" min="1" max="31" class="inp"/>
+        <button onclick="addBillForm()" class="btn-primary">Add</button>
+    </div>
+
+</div>
+
+<script>
+    /**
+     * renderBills()
+     *
+     * TODO: Called from renderAll() when Bills tab is active.
+     * TODO: Build #bills-list innerHTML from AppState.bills using the structure above
+     * TODO: Compute daysUntil for each bill using today's date
+     * TODO: Apply correct status text and colour per the rules above
+     * TODO: Use ordinal() helper (see below) for due day display
+     */
+    function renderBills() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * ordinal(n)
+     *
+     * TODO: Return ordinal suffix string for a day number.
+     *       ordinal(1) → 'st', ordinal(2) → 'nd', ordinal(3) → 'rd', ordinal(4) → 'th'
+     *       Handle special cases: 11th, 12th, 13th (not 11st, 12nd, 13rd)
+     * TODO: Used inline: `${bill.due_day}${ordinal(bill.due_day)} monthly`
+     */
+    function ordinal(n) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * addBillForm()
+     *
+     * TODO: Read name (#b-name), amount (#b-amt), dueDay (#b-day)
+     * TODO: Validate all three are present and dueDay is 1–31
+     * TODO: Call server 'addBill'
+     * TODO: On success: push to AppState.bills, clearInputs, renderAll(), showToast
+     */
+    async function addBillForm() {
+        // TODO: Implement
+    }
+
+
+    /**
+     * toggleBillPaid(billId)
+     *
+     * TODO: Call server 'toggleBillPaid' with billId
+     * TODO: On success: update the matching bill in AppState.bills, renderAll()
+     */
+    async function toggleBillPaid(billId) {
+        // TODO: Implement
+    }
+
+
+    /**
+     * deleteBill(billId)
+     *
+     * TODO: Call server 'deleteBill'
+     * TODO: On success: filter out from AppState.bills, renderAll(), showToast
+     */
+    async function deleteBill(billId) {
+        // TODO: Implement
+    }
+</script>

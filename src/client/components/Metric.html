@@ -1,0 +1,52 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Metric.html — Reusable Metric Card Helper
+
+     PURPOSE:
+       Provides a JavaScript helper function makeMetric() that generates
+       the HTML string for a single metric card (label + monospace value).
+
+       Metric cards appear in .row3 and .row4 grids on the Overview, Savings,
+       Debt, Net Worth, Forecast, and Report tabs.
+
+     EXAMPLE OUTPUT:
+       <div class="metric">
+         <div class="lbl">Income</div>
+         <div class="val" style="color: var(--acc);">₦450,000</div>
+       </div>
+
+     INCLUDED VIA:
+       <?!= include('src/client/components/Metric') ?> in the main page template
+
+     USAGE in screen files:
+       makeMetric('Income', fmt(income), 'var(--acc)')
+       makeMetric('Expenses', fmt(expenses), 'var(--red)')
+       makeMetric('Net Worth', fmt(nw))   // no colour = inherits --text
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<script>
+  /**
+   * makeMetric(label, value, color)
+   *
+   * TODO: Return an HTML string for a metric card.
+   *
+   * Parameters:
+   *   label  {string} — the card label text (e.g. 'Income', 'Total Saved')
+   *   value  {string} — the formatted display value (e.g. '₦450,000')
+   *   color  {string} — optional CSS color for the value (e.g. 'var(--acc)')
+   *                     Defaults to 'var(--text)' (inherits body text color)
+   *
+   * TODO: Return:
+   *   <div class="metric">
+   *     <div class="lbl">{label}</div>
+   *     <div class="val" style="color: {color};">{value}</div>
+   *   </div>
+   *
+   * NOTES:
+   *   - This is a pure string-building helper, not a DOM operation
+   *   - The returned string is concatenated into a parent container's innerHTML
+   *   - label text should be short — it is uppercase/small-caps via CSS .lbl
+   */
+  function makeMetric(label, value, color = 'var(--text)') {
+    // TODO: Implement — return the HTML string
+  }
+</script>

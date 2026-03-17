@@ -1,0 +1,84 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     MultiMonth.html — 6-Month Trend Chart & Summary Table Screen
+
+     TAB: Multi-Month
+
+     SECTIONS:
+       1. HTML legend (Income / Expenses / Savings)
+       2. Grouped bar chart — last 6 months (Chart.js)
+       3. Month-by-month summary table (Month | Income | Expenses | Saved | Balance | Save %)
+
+     SERVER CALLS: None — from AppState
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-multimonth">
+
+    <!-- TODO: HTML legend row — same 3-item pattern as Charts.html -->
+    <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text2);">
+        <!-- TODO: Income (--acc), Expenses (--red), Savings (--blue) legend items -->
+    </div>
+
+    <!-- ── Grouped Bar Chart ───────────────────────────────────────────────── -->
+    <!-- TODO: canvas id="trend-chart", wrapper height 220px, margin-bottom 1.5rem -->
+    <div style="position: relative; width: 100%; height: 220px; margin-bottom: 1.5rem;">
+        <canvas id="trend-chart"></canvas>
+    </div>
+
+    <!-- ── Summary Table ───────────────────────────────────────────────────── -->
+    <!-- TODO: id="month-table" — set by renderMultiMonth()
+
+         <table style="width:100%;border-collapse:collapse;font-size:12px;">
+           <thead>
+             <tr>
+               th: Month (left-align)
+               th: Income | Expenses | Saved | Balance | Save % (right-align each)
+               All th: 10px, 500 weight, uppercase, letter-spacing 0.06em, --text2
+                       border-bottom 0.5px solid var(--border)
+             </tr>
+           </thead>
+           <tbody>
+             For each of the 6 months (oldest → newest):
+               <tr style="background: var(--bg2)" if it's the current month else "">
+                 Opacity 0.4 if no data exists for the month
+                 Month label (short: "Mar 26")
+                 Income  → fmt(inc) in --acc, right-align, monospace
+                 Expenses → fmt(exp) in --red
+                 Saved   → fmt(sav) in --blue
+                 Balance → fmt(bal) in --text or --red (if negative)
+                 Save %  → savRate% (sav/inc*100, rounded)
+                 All "—" if no data for the month
+               </tr>
+           </tbody>
+         </table>
+    -->
+    <div id="month-table"></div>
+
+</div>
+
+<script>
+    /**
+     * renderMultiMonth()
+     *
+     * TODO: Called by switchTab('multimonth') with 50ms delay.
+     *
+     * TODO: 1. Build array of last 6 month keys ending at curKey()
+     *            e.g. if curKey = '2026-03':
+     *            ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03']
+     *            Handle year rollback correctly when going back past January
+     *
+     * TODO: 2. destroyChart('trend-chart') then create grouped bar chart:
+     *            3 datasets: Income (rgba --acc, 0.85), Expenses (--red), Savings (--blue)
+     *            Each dataset: data = months.map(k => getMonthStats(k).inc/exp/sav)
+     *            X labels: short month+year ('Oct 25', 'Nov 25', ...)
+     *            Options from getChartDefaults(), borderRadius: 3, borderSkipped: false
+     *            maxTicksLimit: 5 on Y axis to avoid crowding
+     * TODO: 3. registerChart('trend-chart', instance)
+     *
+     * TODO: 4. Build #month-table HTML — table structure as described above
+     *            Highlight the row where key === curKey() with var(--bg2) background
+     *            Show 0.4 opacity for months with no data in AppState.transactions
+     */
+    function renderMultiMonth() {
+        // TODO: Implement
+    }
+</script>

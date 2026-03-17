@@ -1,0 +1,31 @@
+<!-- ─
+     Categories.html — Category Spending Breakdown Screen
+     SERVER CALLS: None — computed from AppState.transactions client-side
+     ───────────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-categories">
+    <!-- TODO: id="cat-list" — innerHTML set by renderCategories()
+
+         For each category that has expense transactions this month, sorted by amount DESC:
+           <div style="margin-bottom: 1.25rem;">
+             Header row:
+               LEFT:  coloured square (10×10, getCategoryColor(cat)) + category name (13px/500)
+                      + .badge-red "Over limit" if over goal
+               RIGHT: fmt(amount) in monospace + percentage of total expenses (11px, --text2)
+             Progress bar: width = pct of total expenses, background = getCategoryColor(cat)
+             Sub-label (if goal exists): "Limit: ₦X — Y% used"
+           </div>
+    -->
+    <div id="cat-list"></div>
+</div>
+
+<script>
+    /**
+     * renderCategories()
+     *
+     * TODO: Group curTxs() expenses by category → { cat: totalAmount }
+     * TODO: Sort descending by amount
+     * TODO: For each category, check if a goal exists in AppState.goals
+     * TODO: Build and set #cat-list innerHTML
+     */
+    function renderCategories() { /* TODO */ }
+</script>

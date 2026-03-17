@@ -1,9 +1,22 @@
-.idea
-.clasp.json
+# Apps Script / clasp
+.clasp.json        # contains scriptId — omit from public repos
+.claspignore
 .clasp.local.json
 
-dist/
-build/
-node_modules/
+# OS
+.DS_Store
+Thumbs.db
 
-qodana.yaml
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node (if clasp is installed locally rather than globally)
+node_modules/
+package-lock.json
+
+# Temp / build
+*.log
+dist/

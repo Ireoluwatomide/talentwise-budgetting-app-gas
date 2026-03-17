@@ -1,0 +1,97 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Header.html — Top Bar Component
+
+     PURPOSE:
+       Renders the persistent top bar visible across all tabs. Contains:
+         - App label ("Budget Tracker")
+         - Month navigation (prev ‹ / month name / next ›)
+         - Currency selector dropdown
+         - Dark mode toggle button
+         - CSV export button
+         - Net Balance display (large monospace, green/red)
+
+     INCLUDED VIA:
+       <?!= include('src/client/components/Header') ?> in the main page template
+
+     STATE DEPENDENCIES (from AppState via utils.js):
+       AppState.curYear, AppState.curMonth, AppState.currency, AppState.darkMode
+
+     RENDERED BY:
+       updateHeader() — called from renderAll() in utils.js whenever state changes.
+       The DOM is static (defined here); only the text content + colours update.
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="app-header">
+
+    <!-- LEFT: App label + month navigation -->
+    <div>
+        <!-- TODO: App label — "Budget Tracker" in .label-caps style -->
+        <div class="label-caps" style="margin-bottom: 5px;">Budget Tracker</div>
+
+        <!-- TODO: Month navigation row
+             - Left arrow button: onclick="prevMonth()" — .btn-sm, 26×26px, centered ‹
+             - Month display: id="hd-month", updated by updateHeader() via monthLabel()
+               min-width 155px so the layout doesn't jump between short/long month names
+             - Right arrow button: onclick="nextMonth()" — .btn-sm, 26×26px, centered ›
+        -->
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button onclick="prevMonth()" class="btn-sm">‹</button>
+            <div id="hd-month"><!-- updated by updateHeader() --></div>
+            <button onclick="nextMonth()" class="btn-sm">›</button>
+        </div>
+    </div>
+
+    <!-- RIGHT: Controls + Net Balance -->
+    <div style="display: flex; align-items: center; gap: 8px;">
+
+        <!-- TODO: Currency selector
+             <select id="currency-sel" onchange="setCurrency(this.value)" class="inp">
+               <option value="NGN">₦ NGN</option>
+               <option value="USD">$ USD</option>
+               <option value="EUR">€ EUR</option>
+               <option value="GBP">£ GBP</option>
+             </select>
+             NOTE: Selected option is synced to AppState.currency in updateHeader()
+        -->
+
+        <!-- TODO: Dark mode toggle button
+             id="dark-btn", onclick="toggleDark()"
+             Text: 'Dark' when light mode active, 'Light' when dark mode active
+             Class: .btn-sm
+        -->
+
+        <!-- TODO: CSV Export button
+             onclick="exportCSV()", class .btn-sm, text "CSV"
+        -->
+
+        <!-- TODO: Net Balance display (right-aligned)
+             Label:  "Net Balance" in .label-caps, margin-bottom 2px
+             Value:  id="hd-bal", font-family var(--mono), font-size 22px, font-weight 500
+                     Color: var(--acc) when positive, var(--red) when negative
+                     Updated by updateHeader() using getMonthStats(curKey()).bal
+        -->
+        <div style="text-align: right;">
+            <div class="label-caps" style="margin-bottom: 2px;">Net Balance</div>
+            <div id="hd-bal" class="mono-value" style="font-size: 22px;"><!-- updated --></div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    /**
+     * updateHeader()
+     *
+     * TODO: Called from renderAll() to refresh the header with current AppState values.
+     *
+     * TODO: 1. Set #hd-month text to monthLabel(AppState.curYear, AppState.curMonth)
+     * TODO: 2. Compute balance from getMonthStats(curKey()).bal
+     * TODO: 3. Set #hd-bal text to fmt(balance)
+     * TODO: 4. Set #hd-bal color: var(--acc) if balance >= 0, else var(--red)
+     * TODO: 5. Sync #currency-sel .value to AppState.currency
+     * TODO: 6. Update #dark-btn text to 'Light' if darkMode, 'Dark' if not
+     */
+    function updateHeader() {
+        // TODO: Implement
+    }
+</script>

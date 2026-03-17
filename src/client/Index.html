@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Budget Tracker</title>
+
+  <!--
+    Index.html — Root Page Shell
+
+    PURPOSE:
+      This is the single HTML file served by doGet() in Main.gs via:
+        HtmlService.createTemplateFromFile('src/client/Index')
+                   .evaluate()
+                   .setTitle('Budget Tracker')
+
+    COMPOSITION PATTERN:
+      This file does NOT contain inline styles or business logic.
+      Everything is pulled in via the <?!= include('...') ?> scriptlet tag,
+      which calls the include() helper in Main.gs:
+
+        function include(filename) {
+          return HtmlService.createHtmlOutputFromFile(filename).getContent();
+        }
+
+      The result is a single concatenated HTML document served to the browser.
+
+    BOOTSTRAP DATA INJECTION:
+      Main.gs injects initial app data as a JSON script block so the first
+      render requires zero extra server round-trips:
+
+        <?!= bootstrapScript ?>
+
+      Where bootstrapScript is built in Main.gs as:
+        const data = getBootstrapData();
+        const bootstrapScript = `<script>window.__BOOTSTRAP__ = ${JSON.stringify(data)};<\/script>`;
+
+    INCLUDE ORDER (matters — dependencies must come before dependents):
+      1. styles.css.html     — CSS variables + all component styles (must be first)
+      2. Bootstrap data      — window.__BOOTSTRAP__ injected by Main.gs
+      3. Chart.js CDN        — loaded before any screen JS that references Chart
+      4. Metric.html         — makeMetric() helper (used by screen render functions)
+      5. utils.js.html       — AppState, callServer, fmt, toast, switchTab, renderAll, etc.
+      6. AlertBanner.html    — updateAlertBanners() + the two alert zone divs
+      7. Header.html         — updateHeader() + the header DOM
+      8. Tabs.html           — the tab strip DOM
+      9. Screen panes        — each pane div + its inline <script> block
+      10. Component init     — call renderAll() once DOM is ready
+
+    FILE NAMING IN APPS SCRIPT:
+      Apps Script flattens the file tree — there are no real subdirectories
+      in the editor. When using clasp to sync from a local folder, the path
+      separator becomes part of the filename. The include() call uses the
+      path as written here (e.g. 'src/client/utils/styles.css') and clasp
+      maps that to the file 'src/client/utils/styles.css.html' on disk.
+
+      ⚠ In the Apps Script web editor, files appear with '/' replaced by spaces
+        or as flat names. Use clasp for local development to preserve structure.
+  -->
+
+  <!-- ── 1. Master Stylesheet ─────────────────────────────────────────── -->
+  <!--
+    TODO: <?!= include('src/client/utils/styles.css') ?>
+
+    This pulls in the full contents of styles.css.html (the <style> block)
+    inline into the <head>. No external stylesheet request — everything
+    is inlined for maximum performance in the Apps Script web app environment.
+  -->
+  <!-- PASTE INCLUDE TAG HERE WHEN IMPLEMENTING -->
+
+</head>
+<body>
+
+<!--
+  TODO: Inject bootstrap data script block from Main.gs:
+  <?!= bootstrapScript ?>
+
+  This must appear BEFORE utils.js so that window.__BOOTSTRAP__ is defined
+  when AppState initialises. Main.gs builds bootstrapScript as:
+
+    const data = getBootstrapData(); // calls all server modules
+    const bootstrapScript = `<script>window.__BOOTSTRAP__ = ${JSON.stringify(data)};<\/script>`;
+
+  AppState in utils.js then reads: const AppState = { ...DEFAULT_STATE, ...window.__BOOTSTRAP__ };
+-->
+
+<!-- ── 2. Chart.js (CDN) ────────────────────────────────────────────── -->
+<!--
+  TODO: Load Chart.js from cdnjs BEFORE any screen scripts run.
+        Version must match what the prototype used (4.4.1):
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+  NOTE: Apps Script HtmlService DOES allow external script tags.
+        The browser fetches this from the CDN — no bundling needed.
+        If offline use is required in Phase 3, bundle Chart.js into the project.
+-->
+
+<!-- ── 3. App Container ─────────────────────────────────────────────── -->
+<div id="app" class="app">
+  <!--
+    The .app div is the root container. Dark mode is toggled by adding/removing
+    the .dark class on this element (matches the prototype pattern).
+    max-width 720px, centred, defined in styles.css.
+  -->
+
+  <!-- ── 4. Header Component ────────────────────────────────────────── -->
+  <!--
+    TODO: <?!= include('src/client/components/Header') ?>
+
+    Renders:
+      - App label "Budget Tracker"
+      - Month navigation (‹ / March 2026 / ›)
+      - Currency selector
+      - Dark mode toggle
+      - CSV export button
+      - Net Balance display
+
+    Also includes the updateHeader() JS function used by renderAll().
+  -->
+
+  <!-- ── 5. Alert Banners ───────────────────────────────────────────── -->
+  <!--
+    TODO: <?!= include('src/client/components/AlertBanner') ?>
+
+    Renders two empty divs (#alerts-budget, #alerts-bills) that are
+    populated dynamically by updateAlertBanners() on every renderAll() call.
+
+    Also includes the updateAlertBanners() JS function.
+  -->
+
+  <!-- ── 6. Tab Navigation ──────────────────────────────────────────── -->
+  <!--
+    TODO: <?!= include('src/client/components/Tabs') ?>
+
+    Renders the horizontal tab strip with all 15 tab buttons.
+    switchTab() in utils.js manages the active state.
+  -->
+
+  <!-- ── 7. Screen Panes ────────────────────────────────────────────── -->
+  <!--
+    Each include renders one <div class="pane" id="pane-X"> block
+    plus an inline <script> with that screen's render + action functions.
+
+    Only #pane-overview has .active on initial load (set in Overview.html).
+    All others start with display:none via .pane CSS class.
+
+    TODO: Include screens in tab order:
+
+    <?!= include('src/client/screens/Overview') ?>
+    <?!= include('src/client/screens/Charts') ?>
+    <?!= include('src/client/screens/Categories') ?>
+    <?!= include('src/client/screens/Insights') ?>
+    <?!= include('src/client/screens/Forecast') ?>
+    <?!= include('src/client/screens/MultiMonth') ?>
+    <?!= include('src/client/screens/Report') ?>
+    <?!= include('src/client/screens/Goals') ?>
+    <?!= include('src/client/screens/Savings') ?>
+    <?!= include('src/client/screens/Debt') ?>
+    <?!= include('src/client/screens/NetWorth') ?>
+    <?!= include('src/client/screens/Recurring') ?>
+    <?!= include('src/client/screens/Templates') ?>
+    <?!= include('src/client/screens/Bills') ?>
+    <?!= include('src/client/screens/Settings') ?>
+  -->
+
+</div><!-- /#app -->
+
+<!-- ── 8. Shared Component Helpers ───────────────────────────────────── -->
+<!--
+  TODO: <?!= include('src/client/components/Metric') ?>
+
+  Provides makeMetric() string-builder helper used by multiple screen
+  render functions. Included after the pane divs so it is available
+  when the inline screen scripts define their render functions.
+
+  NOTE ON INCLUDE ORDER vs EXECUTION ORDER:
+    All <script> blocks are parsed top-to-bottom by the browser.
+    Function *definitions* (function foo(){}) are hoisted, so the
+    order of include matters less for function declarations.
+    However, any immediately-invoked code (like renderAll() at the
+    bottom of this file) must come LAST.
+-->
+
+<!-- ── 9. Shared Utilities ────────────────────────────────────────────── -->
+<!--
+  TODO: <?!= include('src/client/utils/utils.js') ?>
+
+  This is the largest include. Provides:
+    - AppState (initialised from window.__BOOTSTRAP__)
+    - callServer() / callServerSilent()
+    - fmt(), pct(), monthLabel(), monthKey(), curKey()
+    - showToast(), showLoading()
+    - switchTab(), prevMonth(), nextMonth()
+    - getCategoryColor(), populateCategorySelects()
+    - getMonthStats(), curTxs()
+    - $(), setHTML(), getVal(), clearInputs()
+    - destroyChart(), registerChart(), getChartDefaults()
+    - toggleDark(), setCurrency()
+    - exportCSV(), importCSV()
+    - renderAll() — the master re-render dispatcher
+
+  MUST be included before the initialisation call below.
+-->
+
+<!-- ── 10. App Initialisation ─────────────────────────────────────────── -->
+<script>
+  /**
+   * App boot sequence — runs once after all includes have been parsed.
+   *
+   * TODO: Implement the following sequence:
+   *
+   * 1. Apply dark mode from AppState if it was persisted:
+   *      if (AppState.darkMode) {
+   *        document.getElementById('app').classList.add('dark');
+   *        document.getElementById('dark-btn').textContent = 'Light';
+   *      }
+   *
+   * 2. Set the currency selector to AppState.currency:
+   *      document.getElementById('currency-sel').value = AppState.currency;
+   *
+   * 3. Populate all category <select> dropdowns from AppState.categories:
+   *      populateCategorySelects();
+   *
+   * 4. Run the first full render — this populates all metric values,
+   *    the transaction list, goals, bills, etc. from the bootstrap data:
+   *      renderAll();
+   *
+   * 5. (Optional) If no bootstrap data was injected (window.__BOOTSTRAP__ is empty),
+   *    fetch the initial data from the server as a fallback:
+   *      if (!window.__BOOTSTRAP__) {
+   *        callServer('getBootstrapData').then(data => {
+   *          Object.assign(AppState, data);
+   *          renderAll();
+   *        });
+   *      }
+   *
+   * NOTE: Do NOT wrap this in DOMContentLoaded — HtmlService renders the page
+   *       fully before executing scripts, so the DOM is always ready here.
+   */
+
+  // TODO: Implement boot sequence
+</script>
+
+</body>
+</html>

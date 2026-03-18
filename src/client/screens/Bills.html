@@ -4,129 +4,253 @@
      TAB: Bills
 
      SECTIONS:
-       1. Bills list — each bill shows name, due date, amount, days-until-due badge,
-          Pay/Unpay toggle, and × delete
-       2. Add Bill form — name, amount, due day
+       1. Bills list with due-date badges and pay/unpay toggle
+       2. Add Bill form
 
      STATE: AppState.bills
-
-     SERVER CALLS:
-       addBill(name, amount, dueDay) → saves new bill
-       toggleBillPaid(billId) → flips paid status
-       deleteBill(billId) → removes bill
+     SERVER CALLS: addBill, toggleBillPaid, deleteBill
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-bills">
 
-    <!-- TODO: Subtitle: "Recurring bills — alerts fire 5 days before due date." -->
+    <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;">
+        Recurring bills — alerts fire 5 days before the due date.
+    </div>
 
-    <!-- ── 1. Bills List ───────────────────────────────────────────────────── -->
-    <!-- TODO: id="bills-list" — innerHTML set by renderBills()
+    <!-- ── 1. Bills List ──────────────────────────────────────────────────────── -->
+    <div id="bills-list">
+        <!-- populated by renderBills() -->
+    </div>
 
-         Empty state: "No bills." in --text2
-
-         For each bill:
-           <div class="tx-row">
-             LEFT:
-               - Bill name (13px/500)
-               - Due day in ordinal format e.g. "1st monthly", "15th monthly" (11px, --text2)
-                 Ordinal suffix: 1→st, 2→nd, 3→rd, 4–20→th, 21→st, etc.
-             RIGHT:
-               - Amount in monospace (13px)
-               - Status badge (11px/500):
-                   paid → "Paid" in var(--acc)
-                   daysUntil === 0 → "Due today" in var(--red)
-                   daysUntil <= 5 and unpaid → "Due in Xd" in var(--red)
-                   else → "Due in Xd" in var(--text2)
-               - Pay/Unpay toggle button .btn-sm onclick="toggleBillPaid(bill.id)"
-                 Text: "Pay" if unpaid, "Unpay" if paid
-               - × delete button onclick="deleteBill(bill.id)"
-           </div>
-
-         daysUntil calculation (same as server Bills.getUpcomingBills):
-           today = new Date().getDate()
-           daysUntil = bill.due_day >= today
-             ? bill.due_day - today
-             : (31 - today) + bill.due_day
-    -->
-    <div id="bills-list"></div>
-
-    <!-- ── 2. Add Bill Form ────────────────────────────────────────────────── -->
-    <!-- TODO: Section heading "Add Bill" -->
-    <!-- TODO: 4-column grid: Bill name | Amount | Day (number, 1–31) | "Add" button
-         <div style="display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;">
-           ...
-         </div>
-    -->
+    <!-- ── 2. Add Bill Form ───────────────────────────────────────────────────── -->
     <div class="sec">Add Bill</div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 70px auto; gap: 8px;">
-        <input id="b-name" placeholder="Bill name" class="inp"/>
-        <input id="b-amt" placeholder="Amount" type="number" class="inp"/>
-        <input id="b-day" placeholder="Day" type="number" min="1" max="31" class="inp"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;">
+        <input id="b-name" class="inp" placeholder="Bill name"/>
+        <input id="b-amt"  class="inp" placeholder="Amount"   type="number" min="0" step="any"/>
+        <input id="b-day"  class="inp" placeholder="Day"      type="number" min="1" max="31"/>
         <button onclick="addBillForm()" class="btn-primary">Add</button>
     </div>
 
 </div>
 
+
 <script>
+    // =============================================================================
+    // Bills screen — render + action functions
+    // =============================================================================
+
     /**
      * renderBills()
-     *
-     * TODO: Called from renderAll() when Bills tab is active.
-     * TODO: Build #bills-list innerHTML from AppState.bills using the structure above
-     * TODO: Compute daysUntil for each bill using today's date
-     * TODO: Apply correct status text and colour per the rules above
-     * TODO: Use ordinal() helper (see below) for due day display
+     * Called from renderAll() when the Bills pane is active.
+     * Computes days-until-due for each bill and renders a row with
+     * status badge, pay/unpay toggle, and delete button.
      */
     function renderBills() {
-        // TODO: Implement
+        var listEl = document.getElementById('bills-list');
+        if (!listEl) return;
+
+        var bills = AppState.bills || [];
+
+        if (bills.length === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No bills added yet.' +
+                '</div>'
+            );
+            return;
+        }
+
+        var today = new Date().getDate();
+        var html  = '';
+
+        // Sort: unpaid and most-urgent first, then paid bills at the bottom.
+        var sorted = bills.slice().sort(function(a, b) {
+            if (a.paid && !b.paid) return 1;
+            if (!a.paid && b.paid) return -1;
+            return _daysUntil(a.due_day, today) - _daysUntil(b.due_day, today);
+        });
+
+        sorted.forEach(function(bill) {
+            var daysUntil    = _daysUntil(bill.due_day, today);
+            var dueLabelText = _dueBadgeText(bill, daysUntil);
+            var dueLabelColor= _dueBadgeColor(bill, daysUntil);
+            var dueSubline   = bill.due_day + ordinal(bill.due_day) + ' monthly';
+
+            html += (
+                '<div class="tx-row">' +
+
+                // LEFT: name + due sub-line
+                '<div class="tx-left">' +
+                '<div class="tx-meta">' +
+                '<div class="tx-name">' + _escB(bill.name) + '</div>' +
+                '<div class="tx-cat">'  + dueSubline + '</div>' +
+                '</div>' +
+                '</div>' +
+
+                // RIGHT: amount, status badge, pay toggle, delete
+                '<div class="tx-right" style="gap:8px;">' +
+                '<span style="font-family:var(--mono);font-size:13px;">' +
+                fmt(bill.amount) +
+                '</span>' +
+                '<span style="font-size:11px;font-weight:500;color:' + dueLabelColor + ';">' +
+                dueLabelText +
+                '</span>' +
+                '<button ' +
+                'class="btn-sm" ' +
+                'onclick="toggleBillPaid(\'' + bill.id + '\')">' +
+                (bill.paid ? 'Unpay' : 'Pay') +
+                '</button>' +
+                '<button ' +
+                'class="tx-delete" ' +
+                'onclick="deleteBill(\'' + bill.id + '\')" ' +
+                'title="Delete bill">×</button>' +
+                '</div>' +
+
+                '</div>'
+            );
+        });
+
+        listEl.innerHTML = html;
     }
 
+
+    // ─── ADD BILL ────────────────────────────────────────────────────────────────
+
+    async function addBillForm() {
+        var name   = getVal('b-name');
+        var amtRaw = getVal('b-amt');
+        var dayRaw = getVal('b-day');
+
+        if (!name) {
+            showToast('Please enter a bill name.', 'error');
+            document.getElementById('b-name').focus();
+            return;
+        }
+
+        var amount = parseFloat(amtRaw);
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid amount.', 'error');
+            document.getElementById('b-amt').focus();
+            return;
+        }
+
+        var dueDay = parseInt(dayRaw, 10);
+        if (!dayRaw || isNaN(dueDay) || dueDay < 1 || dueDay > 31) {
+            showToast('Please enter a due day between 1 and 31.', 'error');
+            document.getElementById('b-day').focus();
+            return;
+        }
+
+        try {
+            var newBill = await callServer('addBill', name, amount, dueDay);
+
+            if (!AppState.bills) AppState.bills = [];
+            AppState.bills.push(newBill);
+
+            clearInputs('b-name', 'b-amt', 'b-day');
+            renderAll();
+            showToast('Bill added!', 'success');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── TOGGLE PAID ─────────────────────────────────────────────────────────────
+
+    async function toggleBillPaid(billId) {
+        try {
+            var updated = await callServer('toggleBillPaid', billId);
+
+            AppState.bills = (AppState.bills || []).map(function(b) {
+                return b.id === billId ? updated : b;
+            });
+
+            renderAll();
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── DELETE BILL ─────────────────────────────────────────────────────────────
+
+    async function deleteBill(billId) {
+        try {
+            await callServer('deleteBill', billId);
+
+            AppState.bills = (AppState.bills || []).filter(function(b) {
+                return b.id !== billId;
+            });
+
+            renderAll();
+            showToast('Bill removed.', 'info');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
     /**
      * ordinal(n)
+     * Returns the ordinal suffix for a day number.
+     * Handles the 11th/12th/13th special cases correctly.
      *
-     * TODO: Return ordinal suffix string for a day number.
-     *       ordinal(1) → 'st', ordinal(2) → 'nd', ordinal(3) → 'rd', ordinal(4) → 'th'
-     *       Handle special cases: 11th, 12th, 13th (not 11st, 12nd, 13rd)
-     * TODO: Used inline: `${bill.due_day}${ordinal(bill.due_day)} monthly`
+     * ordinal(1)  → 'st'
+     * ordinal(11) → 'th'  (not 'st')
+     * ordinal(22) → 'nd'
      */
     function ordinal(n) {
-        // TODO: Implement
+        var mod100 = n % 100;
+        var mod10  = n % 10;
+        if (mod100 >= 11 && mod100 <= 13) return 'th';
+        if (mod10 === 1) return 'st';
+        if (mod10 === 2) return 'nd';
+        if (mod10 === 3) return 'rd';
+        return 'th';
     }
 
-
     /**
-     * addBillForm()
-     *
-     * TODO: Read name (#b-name), amount (#b-amt), dueDay (#b-day)
-     * TODO: Validate all three are present and dueDay is 1–31
-     * TODO: Call server 'addBill'
-     * TODO: On success: push to AppState.bills, clearInputs, renderAll(), showToast
+     * _daysUntil(dueDay, today)
+     * Computes days until the bill is due, wrapping around month boundaries.
      */
-    async function addBillForm() {
-        // TODO: Implement
+    function _daysUntil(dueDay, today) {
+        var d = parseInt(dueDay, 10);
+        return d >= today ? d - today : (31 - today) + d;
     }
 
-
     /**
-     * toggleBillPaid(billId)
-     *
-     * TODO: Call server 'toggleBillPaid' with billId
-     * TODO: On success: update the matching bill in AppState.bills, renderAll()
+     * _dueBadgeText(bill, daysUntil)
+     * Returns the status label string for the badge column.
      */
-    async function toggleBillPaid(billId) {
-        // TODO: Implement
+    function _dueBadgeText(bill, daysUntil) {
+        if (bill.paid)      return 'Paid';
+        if (daysUntil === 0) return 'Due today';
+        return 'Due in ' + daysUntil + 'd';
     }
 
+    /**
+     * _dueBadgeColor(bill, daysUntil)
+     * Returns the CSS colour for the status badge.
+     */
+    function _dueBadgeColor(bill, daysUntil) {
+        if (bill.paid)             return 'var(--acc)';
+        if (daysUntil <= 5)        return 'var(--red)';
+        return 'var(--text2)';
+    }
 
     /**
-     * deleteBill(billId)
-     *
-     * TODO: Call server 'deleteBill'
-     * TODO: On success: filter out from AppState.bills, renderAll(), showToast
+     * _escB(str) — minimal HTML escape for bill names.
      */
-    async function deleteBill(billId) {
-        // TODO: Implement
+    function _escB(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 </script>

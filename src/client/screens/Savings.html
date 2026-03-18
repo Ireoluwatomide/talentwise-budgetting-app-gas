@@ -4,104 +4,217 @@
      TAB: Savings
 
      SECTIONS:
-       1. Total Saved metric (all-time, across all savings transactions)
+       1. Total Saved metric (all-time across all months)
        2. Savings goals list with progress bars
        3. Add Savings Goal form
 
      STATE: AppState.savingsGoals, AppState.transactions (for all-time total)
-
-     SERVER CALLS:
-       addSavingsGoal(name, targetAmount) → creates new goal
-       deleteSavingsGoal(goalId) → removes goal
+     SERVER CALLS: addSavingsGoal, deleteSavingsGoal
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-savings">
 
-  <!-- ── 1. Total Saved All-Time ─────────────────────────────────────────── -->
-  <!-- TODO: Single wide metric card:
-       <div class="metric" style="margin-bottom: 1rem;">
-         <div class="lbl">Total Saved (All Time)</div>
-         <div class="val" id="sav-total" style="color:var(--blue);font-size:20px;"></div>
-       </div>
-       Value = sum of all savings-type transactions across ALL months in AppState.transactions
-  -->
-  <div class="metric" style="margin-bottom: 1rem;">
-    <div class="lbl">Total Saved (All Time)</div>
-    <div class="val" id="sav-total" style="color: var(--blue); font-size: 20px;"></div>
+  <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;">
+    Track your savings targets. Add a "Savings deposit" transaction whose description
+    matches a goal name — the goal balance updates automatically.
   </div>
 
-  <!-- ── 2. Savings Goals List ───────────────────────────────────────────── -->
-  <!-- TODO: id="sav-list" — innerHTML set by renderSavings()
+  <!-- ── 1. Total Saved All-Time ──────────────────────────────────────────── -->
+  <div class="metric" style="margin-bottom:1.25rem;">
+    <div class="lbl">Total Saved (All Time)</div>
+    <div class="val" id="sav-total" style="color:var(--blue);font-size:20px;">—</div>
+  </div>
 
-       Empty state: "No savings goals."
+  <!-- ── 2. Savings Goals List ────────────────────────────────────────────── -->
+  <div id="sav-list">
+    <!-- populated by renderSavings() -->
+  </div>
 
-       For each savings goal:
-         <div style="margin-bottom: 1.25rem;">
-           Header row:
-             LEFT:  goal name (13px/500)
-             RIGHT: "₦saved / ₦target" in monospace (--text2)
-                    + × delete onclick="deleteSavGoal(goal.id)"
-           Progress bar:
-             width: pct(saved, target)%, background: var(--blue)
-           Footer row (flex, space-between, 11px, --text2):
-             LEFT:  "{pct}% complete"
-             RIGHT: "₦X to go" if pct < 100, or "Goal reached! 🎉" if complete
-         </div>
-  -->
-  <div id="sav-list"></div>
-
-  <!-- ── 3. Add Savings Goal Form ────────────────────────────────────────── -->
-  <!-- TODO: Section heading "New Savings Goal" -->
-  <!-- TODO: 3-column grid: goal name | target amount | "Add" button -->
+  <!-- ── 3. Add Savings Goal Form ─────────────────────────────────────────── -->
   <div class="sec">New Savings Goal</div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px;">
-    <input id="sv-name" placeholder="Goal name" class="inp"/>
-    <input id="sv-target" placeholder="Target amount" type="number" class="inp"/>
+  <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
+    <input id="sv-name"   class="inp" placeholder="Goal name"/>
+    <input id="sv-target" class="inp" placeholder="Target amount" type="number" min="1"/>
     <button onclick="addSavGoalForm()" class="btn-primary">Add</button>
   </div>
 
 </div>
 
+
 <script>
+  // =============================================================================
+  // Savings screen — render + action functions
+  // =============================================================================
+
   /**
    * renderSavings()
    *
-   * TODO: Called from renderAll() when Savings tab is active.
+   * Called from renderAll() when the Savings pane is active.
    *
-   * TODO: 1. Compute all-time total saved:
-   *            Sum all transactions of type 'savings' across all keys in AppState.transactions
-   *            Set #sav-total to fmt(total)
-   *
-   * TODO: 2. Build #sav-list from AppState.savingsGoals:
-   *            For each: pct = pct(goal.saved_amount, goal.target_amount)
-   *            Render structure described in HTML comments above
-   *            Show "Goal reached! 🎉" when pct >= 100
+   * Computes the all-time total saved from AppState.transactions (client-side)
+   * rather than relying on AppState.savingsGoals.saved_amount — the two can
+   * diverge if the user added savings transactions before creating the goal.
+   * Using the transaction total as the header metric is always accurate.
    */
   function renderSavings() {
-    // TODO: Implement
+    // ── All-time total saved ──────────────────────────────────────────────────
+    var totalSaved = _computeAllTimeSaved();
+    var totalEl    = document.getElementById('sav-total');
+    if (totalEl) totalEl.textContent = fmt(totalSaved);
+
+    // ── Goals list ────────────────────────────────────────────────────────────
+    var listEl = document.getElementById('sav-list');
+    if (!listEl) return;
+
+    var goals = AppState.savingsGoals || [];
+
+    if (goals.length === 0) {
+      listEl.innerHTML = (
+              '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+              'No savings goals yet. Add one below to start tracking.' +
+              '</div>'
+      );
+      return;
+    }
+
+    var html = '';
+
+    goals.forEach(function(goal) {
+      var saved   = parseFloat(goal.saved_amount)  || 0;
+      var target  = parseFloat(goal.target_amount) || 0;
+      var p       = pct(saved, target);
+      var reached = p >= 100;
+      var toGo    = Math.max(0, target - saved);
+
+      var footerRight = reached
+              ? '<span style="color:var(--acc);">Goal reached! 🎉</span>'
+              : '<span>' + fmt(toGo) + ' to go</span>';
+
+      html += (
+              '<div style="margin-bottom:1.25rem;">' +
+
+              // Header row
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+              '<div style="font-size:13px;font-weight:500;">' + _escS(goal.name) + '</div>' +
+              '<div style="display:flex;align-items:center;gap:10px;">' +
+              '<span style="font-family:var(--mono);font-size:12px;color:var(--text2);">' +
+              fmt(saved) + ' / ' + fmt(target) +
+              '</span>' +
+              '<button ' +
+              'class="tx-delete" ' +
+              'onclick="deleteSavGoal(\'' + goal.id + '\')" ' +
+              'title="Remove goal">×</button>' +
+              '</div>' +
+              '</div>' +
+
+              // Progress bar — always blue for savings
+              '<div class="prog-track">' +
+              '<div class="prog-fill" style="width:' + p + '%;background:var(--blue);"></div>' +
+              '</div>' +
+
+              // Footer row: left = percent, right = to-go or reached
+              '<div style="display:flex;justify-content:space-between;font-size:11px;' +
+              'color:var(--text2);margin-top:3px;">' +
+              '<span>' + p + '% complete</span>' +
+              footerRight +
+              '</div>' +
+
+              '</div>'
+      );
+    });
+
+    listEl.innerHTML = html;
   }
 
 
-  /**
-   * addSavGoalForm()
-   *
-   * TODO: Read name (#sv-name), target (#sv-target)
-   * TODO: Validate both present, target > 0
-   * TODO: Call server 'addSavingsGoal'
-   * TODO: On success: push to AppState.savingsGoals, clearInputs, renderAll(), showToast
-   */
+  // ─── ADD SAVINGS GOAL ────────────────────────────────────────────────────────
+
   async function addSavGoalForm() {
-    // TODO: Implement
+    var name      = getVal('sv-name');
+    var targetRaw = getVal('sv-target');
+    var target    = parseFloat(targetRaw);
+
+    if (!name) {
+      showToast('Please enter a goal name.', 'error');
+      document.getElementById('sv-name').focus();
+      return;
+    }
+
+    if (!targetRaw || isNaN(target) || target <= 0) {
+      showToast('Please enter a valid target amount greater than zero.', 'error');
+      document.getElementById('sv-target').focus();
+      return;
+    }
+
+    try {
+      var newGoal = await callServer('addSavingsGoal', name, target);
+
+      if (!AppState.savingsGoals) AppState.savingsGoals = [];
+      AppState.savingsGoals.push(newGoal);
+
+      clearInputs('sv-name', 'sv-target');
+      renderAll();
+      showToast('Savings goal added!', 'success');
+
+    } catch (e) {
+      // Error toast shown by callServer's failure handler.
+    }
   }
 
 
-  /**
-   * deleteSavGoal(goalId)
-   *
-   * TODO: Call server 'deleteSavingsGoal'
-   * TODO: On success: filter from AppState.savingsGoals, renderAll(), showToast
-   */
+  // ─── DELETE SAVINGS GOAL ─────────────────────────────────────────────────────
+
   async function deleteSavGoal(goalId) {
-    // TODO: Implement
+    try {
+      await callServer('deleteSavingsGoal', goalId);
+
+      AppState.savingsGoals = (AppState.savingsGoals || []).filter(function(g) {
+        return g.id !== goalId;
+      });
+
+      renderAll();
+      showToast('Savings goal removed.', 'info');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
+  }
+
+
+  // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
+
+  /**
+   * _computeAllTimeSaved()
+   *
+   * Sums all savings-type transactions across every month loaded in AppState.
+   * This is the authoritative all-time total — independent of goal balances.
+   *
+   * AppState.transactions is keyed by month_key: { 'YYYY-MM': [tx, ...] }
+   * We iterate all keys and sum type === 'savings' amounts.
+   */
+  function _computeAllTimeSaved() {
+    var total = 0;
+    var allTxs = AppState.transactions || {};
+
+    Object.keys(allTxs).forEach(function(key) {
+      var monthTxs = allTxs[key] || [];
+      monthTxs.forEach(function(tx) {
+        if (tx.type === 'savings') {
+          total += parseFloat(tx.amount) || 0;
+        }
+      });
+    });
+
+    return total;
+  }
+
+  /**
+   * _escS(str) — minimal HTML escape for savings goal names.
+   */
+  function _escS(str) {
+    return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
   }
 </script>

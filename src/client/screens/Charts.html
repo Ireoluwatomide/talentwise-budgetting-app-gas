@@ -3,95 +3,267 @@
 
      TAB: Charts
 
-     SECTIONS:
-       1. Income vs Expenses vs Savings — grouped bar chart (Chart.js)
-       2. Spending by Category — doughnut chart (Chart.js) + HTML legend
+     IMPORTANT: Canvas must be visible before Chart.js measures its dimensions.
+       switchTab('charts') in utils.js calls renderCharts() after a 50ms delay.
+       renderAll() also calls renderCharts() if the Charts pane is active.
 
-     CHART LIBRARY: Chart.js 4.x loaded from CDN in the page shell
-
-     IMPORTANT: Charts must only render when the canvas is visible (tab is active).
-       switchTab('charts') in utils.js calls renderCharts() after a 50ms delay
-       to ensure the canvas has painted before Chart.js measures dimensions.
-
-     SERVER CALLS: None — all data from AppState (already loaded)
+     SERVER CALLS: None — all data from AppState.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-charts">
 
-  <!-- ── 1. Bar Chart: Income vs Expenses vs Savings ─────────────────────── -->
-  <div class="sec" style="margin-top: 0;">Income vs Expenses vs Savings</div>
+  <!-- ── 1. Bar Chart: Income vs Expenses vs Savings ───────────────────────── -->
+  <div class="sec" style="margin-top:0;">Income vs Expenses vs Savings</div>
 
-  <!-- TODO: HTML legend (not Chart.js built-in legend — matches prototype):
-       3 inline coloured squares + labels: Income (green) | Expenses (red) | Savings (blue)
-       Each: <span style="display:flex;align-items:center;gap:5px;">
-               <span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block;"></span>
-               Income
-             </span>
-  -->
-  <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text2);">
-    <!-- TODO: Render 3 legend items here (Income, Expenses, Savings) -->
+  <!-- HTML legend — 3 coloured squares with labels -->
+  <div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block;"></span>Income
+    </span>
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block;"></span>Expenses
+    </span>
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--blue);display:inline-block;"></span>Savings
+    </span>
   </div>
 
-  <!-- TODO: Canvas wrapper — position:relative, width:100%, height:200px -->
-  <!-- TODO: Canvas id="bar-chart" — Chart.js targets this by id -->
-  <div style="position: relative; width: 100%; height: 200px; margin-bottom: 2rem;">
+  <!-- Bar chart canvas -->
+  <div style="position:relative;width:100%;height:200px;margin-bottom:2rem;">
     <canvas id="bar-chart"></canvas>
   </div>
 
-  <!-- ── 2. Donut Chart: Spending by Category ────────────────────────────── -->
+  <!-- ── 2. Donut Chart: Spending by Category ──────────────────────────────── -->
   <div class="sec">Spending by Category</div>
 
-  <!-- TODO: id="donut-legend" — dynamic HTML legend built from category data
-       Each entry: coloured square + category name + percentage of total expenses
-       Built by renderCharts(), not static HTML
-  -->
-  <div id="donut-legend" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; font-size: 12px; color: var(--text2);"></div>
+  <!-- Dynamic HTML legend — built by renderCharts() -->
+  <div id="donut-legend"
+       style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+  </div>
 
-  <!-- TODO: Canvas wrapper — height:240px (taller than bar chart for readability) -->
-  <!-- TODO: Canvas id="donut-chart" -->
-  <!-- TODO: Empty state: if no expense data, replace canvas with centred text "No expense data" -->
-  <div style="position: relative; width: 100%; height: 240px;">
+  <!-- Donut chart canvas — wrapped in a div so we can swap it for an empty state message -->
+  <div id="donut-wrap" style="position:relative;width:100%;height:240px;">
     <canvas id="donut-chart"></canvas>
   </div>
 
 </div>
 
+
 <script>
+  // =============================================================================
+  // Charts screen — renderCharts()
+  // =============================================================================
+
   /**
    * renderCharts()
    *
-   * TODO: Called by switchTab('charts') after a 50ms delay.
-   *       Also called by renderAll() if the charts pane is currently active.
+   * Called by switchTab('charts') after a 50ms delay (canvas must be visible).
+   * Also called by renderAll() when the Charts pane is already active.
    *
-   * ── Bar Chart ───────────────────────────────────────────────────────────
-   * TODO: 1. destroyChart('bar-chart') — clean up previous instance
-   * TODO: 2. Get stats for current month: getMonthStats(curKey())
-   * TODO: 3. Create a Chart.js 'bar' chart on canvas #bar-chart:
-   *            Label:    monthLabel(AppState.curYear, AppState.curMonth)
-   *            Datasets: Income (var(--acc)), Expenses (var(--red)), Savings (var(--blue))
-   *            Data:     [inc], [exp], [sav]
-   *            Options:  from getChartDefaults(), borderRadius: 4, borderSkipped: false
-   * TODO: 4. Register via registerChart('bar-chart', chartInstance)
-   *
-   * ── Donut Chart ─────────────────────────────────────────────────────────
-   * TODO: 1. destroyChart('donut-chart')
-   * TODO: 2. Build category breakdown from curTxs() — group expenses by category
-   *            { Housing: 120000, Food: 18500, ... }
-   * TODO: 3. If no expense data:
-   *            Replace canvas parent div with "No expense data" message
-   *            Return early
-   * TODO: 4. Create a Chart.js 'doughnut' chart:
-   *            Labels:   category names
-   *            Data:     category amounts
-   *            Colors:   getCategoryColor() for each category
-   *            Options:  cutout '68%', no legend (custom legend in HTML)
-   *                      tooltip callback: ' CategoryName: ₦Amount'
-   * TODO: 5. Build #donut-legend innerHTML:
-   *            For each category: coloured square + name + percentage of total
-   * TODO: 6. Register chart
+   * Renders two Chart.js charts:
+   *   1. Grouped bar chart — Income / Expenses / Savings for the current month
+   *   2. Doughnut chart   — expense breakdown by category for the current month
    */
   function renderCharts() {
-    // TODO: Implement bar chart
-    // TODO: Implement donut chart
+    _renderBarChart();
+    _renderDonutChart();
+  }
+
+
+  // ─── BAR CHART ───────────────────────────────────────────────────────────────
+
+  function _renderBarChart() {
+    destroyChart('bar-chart');
+
+    var canvas = document.getElementById('bar-chart');
+    if (!canvas) return;
+
+    var stats = getMonthStats(curKey());
+    var label = monthLabel(AppState.curYear, AppState.curMonth);
+
+    // Resolve CSS variable values at runtime — Chart.js needs hex/rgb strings,
+    // not CSS variable references.
+    var style   = getComputedStyle(document.documentElement);
+    var colAcc  = _resolveColor('--acc',  '#1D9E75');
+    var colRed  = _resolveColor('--red',  '#D85A30');
+    var colBlue = _resolveColor('--blue', '#185FA5');
+
+    var defaults = getChartDefaults();
+
+    // Extend defaults for bar-specific options.
+    defaults.scales.x.grid = { display: false };
+    defaults.scales.y.ticks.maxTicksLimit = 5;
+
+    var chart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: [label],
+        datasets: [
+          {
+            label:           'Income',
+            data:            [stats.inc],
+            backgroundColor: colAcc,
+            borderRadius:    4,
+            borderSkipped:   false
+          },
+          {
+            label:           'Expenses',
+            data:            [stats.exp],
+            backgroundColor: colRed,
+            borderRadius:    4,
+            borderSkipped:   false
+          },
+          {
+            label:           'Savings',
+            data:            [stats.sav],
+            backgroundColor: colBlue,
+            borderRadius:    4,
+            borderSkipped:   false
+          }
+        ]
+      },
+      options: defaults
+    });
+
+    registerChart('bar-chart', chart);
+  }
+
+
+  // ─── DONUT CHART ─────────────────────────────────────────────────────────────
+
+  function _renderDonutChart() {
+    destroyChart('donut-chart');
+
+    var wrapEl   = document.getElementById('donut-wrap');
+    var legendEl = document.getElementById('donut-legend');
+    if (!wrapEl) return;
+
+    // Build category spending map from current month expenses only.
+    var breakdown = _buildCategoryBreakdown();
+
+    // ── Empty state ──────────────────────────────────────────────────────────
+    if (breakdown.length === 0) {
+      // Replace the canvas wrapper with a centred message.
+      wrapEl.innerHTML = (
+              '<div style="display:flex;align-items:center;justify-content:center;' +
+              'height:100%;color:var(--text2);font-size:13px;">' +
+              'No expense data for this month.' +
+              '</div>'
+      );
+      if (legendEl) legendEl.innerHTML = '';
+      return;
+    }
+
+    // Restore canvas if it was previously replaced with the empty-state message.
+    if (!document.getElementById('donut-chart')) {
+      wrapEl.innerHTML = '<canvas id="donut-chart"></canvas>';
+    }
+
+    var canvas = document.getElementById('donut-chart');
+    if (!canvas) return;
+
+    var labels = breakdown.map(function(item) { return item.category; });
+    var data   = breakdown.map(function(item) { return item.amount;   });
+    var colors = breakdown.map(function(item) { return getCategoryColor(item.category); });
+    var total  = data.reduce(function(sum, v) { return sum + v; }, 0);
+
+    // ── Legend HTML ─────────────────────────────────────────────────────────
+    if (legendEl) {
+      legendEl.innerHTML = breakdown.map(function(item) {
+        var color   = getCategoryColor(item.category);
+        var percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
+        return (
+                '<span style="display:flex;align-items:center;gap:5px;">' +
+                '<span style="width:10px;height:10px;border-radius:2px;' +
+                'background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
+                '<span>' + _escC(item.category) + ' ' + percent + '%</span>' +
+                '</span>'
+        );
+      }).join('');
+    }
+
+    // ── Doughnut chart ───────────────────────────────────────────────────────
+    var symbol = (typeof FX_SYMBOLS !== 'undefined' && FX_SYMBOLS[AppState.currency])
+            ? FX_SYMBOLS[AppState.currency]
+            : '₦';
+
+    var chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels:   labels,
+        datasets: [{
+          data:            data,
+          backgroundColor: colors,
+          borderWidth:     0,         // no gap between segments
+          hoverOffset:     6
+        }]
+      },
+      options: {
+        responsive:          true,
+        maintainAspectRatio: false,
+        cutout:              '68%',
+        plugins: {
+          legend: { display: false },  // custom HTML legend above
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                var val     = ctx.parsed || 0;
+                var rate    = (typeof FX_RATES !== 'undefined' && FX_RATES[AppState.currency]) || 1;
+                var percent = total > 0 ? Math.round((val / total) * 100) : 0;
+                return ' ' + ctx.label + ': ' + symbol + Math.round(val * rate).toLocaleString() +
+                        ' (' + percent + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+
+    registerChart('donut-chart', chart);
+  }
+
+
+  // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+  /**
+   * _buildCategoryBreakdown()
+   * Sums expense transactions by category for the current month.
+   * Returns [{ category, amount }] sorted descending by amount.
+   */
+  function _buildCategoryBreakdown() {
+    var map = {};
+
+    curTxs().forEach(function(tx) {
+      if (tx.type !== 'expense') return;
+      var cat = tx.category || 'Other';
+      map[cat] = (map[cat] || 0) + (parseFloat(tx.amount) || 0);
+    });
+
+    return Object.keys(map)
+            .map(function(cat) { return { category: cat, amount: map[cat] }; })
+            .sort(function(a, b) { return b.amount - a.amount; });
+  }
+
+  /**
+   * _resolveColor(varName, fallback)
+   * Reads a CSS custom property value at runtime.
+   * Chart.js needs a resolved colour string — it cannot use CSS variable syntax.
+   * Falls back to a hardcoded hex if the variable isn't found.
+   */
+  function _resolveColor(varName, fallback) {
+    var val = getComputedStyle(document.getElementById('app') || document.documentElement)
+            .getPropertyValue(varName)
+            .trim();
+    return val || fallback;
+  }
+
+  /**
+   * _escC(str) — minimal HTML escape for category names in the legend.
+   */
+  function _escC(str) {
+    return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
   }
 </script>

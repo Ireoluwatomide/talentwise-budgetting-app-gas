@@ -4,71 +4,257 @@
      TAB: Debt
 
      SECTIONS:
-       1. Summary metrics: Total Debt remaining | Monthly Payments total
-       2. Debt list — each debt shows name, interest rate, monthly payment,
-          payoff ETA, amount owed, progress bar (% paid off), Pay + Delete buttons
+       1. Summary metrics — Total Debt Remaining | Total Monthly Payments
+       2. Debt list — progress bars, payoff ETA, pay + delete actions
        3. Add Debt form
 
-     SERVER CALLS:
-       addDebt(name, total, monthlyPayment, interestRate)
-       recordDebtPayment(debtId, amount) — prompts for payment amount
-       deleteDebt(debtId)
+     STATE: AppState.debts
+     SERVER CALLS: addDebt, recordDebtPayment, deleteDebt
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-debt">
 
-  <!-- TODO: Subtitle: "Track loans, credit cards, and other debts." -->
-
-  <!-- ── 1. Summary Metrics ──────────────────────────────────────────────── -->
-  <div class="row2" style="margin-bottom: 1rem;">
-    <div class="metric"><div class="lbl">Total Debt</div><div class="val" id="debt-total" style="color: var(--red);"></div></div>
-    <div class="metric"><div class="lbl">Monthly Payments</div><div class="val" id="debt-monthly" style="color: var(--amber);"></div></div>
+  <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;">
+    Track loans, credit cards, and other debts. Click Pay to record a payment.
   </div>
 
-  <!-- ── 2. Debt List ────────────────────────────────────────────────────── -->
-  <!-- TODO: id="debt-list" — each debt in a .card:
-       Header: debt name (13px/500) + sub-line "X% interest · ₦payment/mo · ~N months left"
-               + amount owed (14px, --red) + "Pay" button + × delete
-       Progress bar: pct(paid, total)% in var(--acc) colour (shows payoff progress)
-       Sub-label: "{pct}% paid off"
-  -->
-  <div id="debt-list"></div>
+  <!-- ── 1. Summary Metrics ────────────────────────────────────────────────── -->
+  <div class="row2" style="margin-bottom:1.25rem;">
+    <div class="metric">
+      <div class="lbl">Total Debt Remaining</div>
+      <div class="val" id="debt-total" style="color:var(--red);">—</div>
+    </div>
+    <div class="metric">
+      <div class="lbl">Monthly Payments</div>
+      <div class="val" id="debt-monthly" style="color:var(--amber);">—</div>
+    </div>
+  </div>
 
-  <!-- ── 3. Add Debt Form ────────────────────────────────────────────────── -->
-  <!-- TODO: Section heading "Add Debt" -->
-  <!-- TODO: .row2 grid:
-       Row 1: Debt name | Total owed
-       Row 2: Monthly payment | Interest rate % (number, step 0.1)
-       Full-width "Add Debt" .btn-primary
-  -->
+  <!-- ── 2. Debt List ──────────────────────────────────────────────────────── -->
+  <div id="debt-list">
+    <!-- populated by renderDebt() -->
+  </div>
+
+  <!-- ── 3. Add Debt Form ──────────────────────────────────────────────────── -->
   <div class="sec">Add Debt</div>
-  <div class="row2">
-    <input id="d-name" placeholder="Debt name" class="inp"/>
-    <input id="d-total" placeholder="Total owed" type="number" class="inp"/>
-    <input id="d-payment" placeholder="Monthly payment" type="number" class="inp"/>
-    <input id="d-rate" placeholder="Interest rate %" type="number" step="0.1" class="inp"/>
+  <div class="row2" style="margin-bottom:8px;">
+    <input id="d-name"    class="inp" placeholder="Debt name"/>
+    <input id="d-total"   class="inp" placeholder="Total owed"       type="number" min="1"/>
+    <input id="d-payment" class="inp" placeholder="Monthly payment"  type="number" min="0"/>
+    <input id="d-rate"    class="inp" placeholder="Interest rate %"  type="number" min="0" step="0.1"/>
   </div>
-  <button onclick="addDebtForm()" class="btn-primary" style="width: 100%;">Add Debt</button>
+  <button onclick="addDebtForm()" class="btn-primary" style="width:100%;">Add Debt</button>
 
 </div>
 
+
 <script>
+  // =============================================================================
+  // Debt screen — render + action functions
+  // =============================================================================
+
   /**
    * renderDebt()
-   *
-   * TODO: Update #debt-total and #debt-monthly from AppState.debts summary
-   * TODO: Build #debt-list from AppState.debts — each as a .card
-   *         months_to_payoff = payment > 0 ? Math.ceil(owed / payment) : '?'
+   * Called from renderAll() when the Debt pane is active.
+   * Computes aggregate metrics from AppState.debts and renders each
+   * debt as a .card with a progress bar and payoff ETA.
    */
-  function renderDebt() { /* TODO */ }
+  function renderDebt() {
+    var debts = AppState.debts || [];
 
-  async function addDebtForm() { /* TODO: read form, callServer('addDebt'), update AppState, renderAll, showToast */ }
+    // ── Summary metrics ───────────────────────────────────────────────────────
+    var totalOwed   = 0;
+    var totalMonthly = 0;
 
-  async function payDebt(debtId) {
-    // TODO: prompt() for payment amount
-    // TODO: callServer('recordDebtPayment', debtId, amount)
-    // TODO: update AppState.debts, renderAll(), showToast
+    debts.forEach(function(d) {
+      totalOwed    += parseFloat(d.amount_owed)      || (parseFloat(d.total) - parseFloat(d.paid)) || 0;
+      totalMonthly += parseFloat(d.monthly_payment)  || 0;
+    });
+
+    var totalEl   = document.getElementById('debt-total');
+    var monthlyEl = document.getElementById('debt-monthly');
+    if (totalEl)   totalEl.textContent   = fmt(totalOwed);
+    if (monthlyEl) monthlyEl.textContent = fmt(totalMonthly);
+
+    // ── Debt list ─────────────────────────────────────────────────────────────
+    var listEl = document.getElementById('debt-list');
+    if (!listEl) return;
+
+    if (debts.length === 0) {
+      listEl.innerHTML = (
+              '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+              'No debts tracked. Add one below.' +
+              '</div>'
+      );
+      return;
+    }
+
+    var html = '';
+
+    debts.forEach(function(d) {
+      var total   = parseFloat(d.total)          || 0;
+      var paid    = parseFloat(d.paid)           || 0;
+      var owed    = parseFloat(d.amount_owed)    != null ? parseFloat(d.amount_owed)   : Math.max(0, total - paid);
+      var payment = parseFloat(d.monthly_payment)|| 0;
+      var rate    = parseFloat(d.interest_rate)  || 0;
+      var p       = (d.percent_paid != null)     ? d.percent_paid
+              : (total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0);
+
+      var months  = (d.months_to_payoff != null) ? d.months_to_payoff
+              : (payment > 0 && owed > 0 ? Math.ceil(owed / payment) : null);
+
+      var etaText = months != null ? '~' + months + ' month' + (months === 1 ? '' : 's') + ' left'
+              : 'No payment set';
+
+      // Sub-line: rate · payment · ETA
+      var subParts = [];
+      if (rate > 0)    subParts.push(rate + '% interest');
+      if (payment > 0) subParts.push(fmt(payment) + '/mo');
+      subParts.push(etaText);
+
+      var isPaidOff = owed <= 0;
+
+      html += (
+              '<div class="card">' +
+
+              // Card header: name + sub-line | amount owed + actions
+              '<div class="card-header">' +
+              '<div>' +
+              '<div style="font-size:13px;font-weight:500;margin-bottom:3px;">' +
+              _escD(d.name) +
+              (isPaidOff ? ' <span class="badge badge-green">Paid off</span>' : '') +
+              '</div>' +
+              '<div style="font-size:11px;color:var(--text2);">' +
+              subParts.join(' · ') +
+              '</div>' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+              '<span style="font-family:var(--mono);font-size:14px;color:' +
+              (isPaidOff ? 'var(--acc)' : 'var(--red)') + ';">' +
+              fmt(owed) +
+              '</span>' +
+              (!isPaidOff
+                      ? '<button class="btn-sm" onclick="payDebt(\'' + d.id + '\')">Pay</button>'
+                      : '') +
+              '<button class="tx-delete" onclick="deleteDebt(\'' + d.id + '\')" title="Remove debt">×</button>' +
+              '</div>' +
+              '</div>' +
+
+              // Progress bar — green, shows % paid off
+              '<div class="prog-track">' +
+              '<div class="prog-fill" style="width:' + p + '%;background:var(--acc);"></div>' +
+              '</div>' +
+
+              // Sub-label
+              '<div style="font-size:11px;color:var(--text2);margin-top:3px;">' +
+              p + '% paid off' +
+              (isPaidOff ? ' — congratulations! 🎉' : '') +
+              '</div>' +
+
+              '</div>'
+      );
+    });
+
+    listEl.innerHTML = html;
   }
 
-  async function deleteDebt(debtId) { /* TODO: callServer, filter AppState, renderAll, showToast */ }
+
+  // ─── ADD DEBT ────────────────────────────────────────────────────────────────
+
+  async function addDebtForm() {
+    var name    = getVal('d-name');
+    var totRaw  = getVal('d-total');
+    var payRaw  = getVal('d-payment');
+    var rateRaw = getVal('d-rate');
+
+    if (!name) {
+      showToast('Please enter a debt name.', 'error');
+      document.getElementById('d-name').focus();
+      return;
+    }
+
+    var total = parseFloat(totRaw);
+    if (!totRaw || isNaN(total) || total <= 0) {
+      showToast('Please enter the total amount owed.', 'error');
+      document.getElementById('d-total').focus();
+      return;
+    }
+
+    var payment = parseFloat(payRaw)  || 0;
+    var rate    = parseFloat(rateRaw) || 0;
+
+    try {
+      var newDebt = await callServer('addDebt', name, total, payment, rate);
+
+      if (!AppState.debts) AppState.debts = [];
+      AppState.debts.push(newDebt);
+
+      clearInputs('d-name', 'd-total', 'd-payment', 'd-rate');
+      renderAll();
+      showToast('Debt added!', 'success');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
+  }
+
+
+  // ─── RECORD PAYMENT ──────────────────────────────────────────────────────────
+
+  async function payDebt(debtId) {
+    // Use a browser prompt to ask for the payment amount.
+    // This keeps the UI clean without needing an inline form per debt.
+    var input = window.prompt('Enter payment amount:');
+    if (input === null) return; // user cancelled
+
+    var amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('Please enter a valid payment amount.', 'error');
+      return;
+    }
+
+    try {
+      var updated = await callServer('recordDebtPayment', debtId, amount);
+
+      // Replace the updated debt in AppState.
+      AppState.debts = (AppState.debts || []).map(function(d) {
+        return d.id === debtId ? updated : d;
+      });
+
+      renderAll();
+      showToast('Payment recorded!', 'success');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
+  }
+
+
+  // ─── DELETE DEBT ─────────────────────────────────────────────────────────────
+
+  async function deleteDebt(debtId) {
+    try {
+      await callServer('deleteDebt', debtId);
+
+      AppState.debts = (AppState.debts || []).filter(function(d) {
+        return d.id !== debtId;
+      });
+
+      renderAll();
+      showToast('Debt removed.', 'info');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
+  }
+
+
+  // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+  function _escD(str) {
+    return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+  }
 </script>

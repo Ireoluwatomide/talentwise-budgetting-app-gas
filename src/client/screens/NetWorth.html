@@ -1,49 +1,226 @@
-<!-- ─
+<!-- ─────────────────────────────────────────────────────────────────────────
      NetWorth.html — Net Worth Snapshot Screen
+
+     TAB: Net Worth
+
+     SECTIONS:
+       1. Summary metrics — Total Assets | Total Liabilities | Net Worth
+       2. Items list — assets and liabilities in a flat list
+       3. Add Asset / Liability form
+
+     STATE: AppState.netWorthItems
      SERVER CALLS: addNetWorthItem, deleteNetWorthItem
      ───────────────────────────────────────────────────────────────────────── -->
-<div class="pane" id="pane-networth">
-    <!-- TODO: Subtitle: "Assets minus liabilities — your financial snapshot." -->
 
-    <!-- ── Summary Metrics ─────────────────────────────────────────────────── -->
-    <!-- TODO: .row3 — Total Assets (--acc) | Total Liabilities (--red) | Net Worth (dynamic colour) -->
-    <div class="row3" style="margin-bottom: 1.5rem;">
-        <div class="metric"><div class="lbl">Total Assets</div><div class="val" id="nw-assets" style="color: var(--acc);"></div></div>
-        <div class="metric"><div class="lbl">Total Liabilities</div><div class="val" id="nw-liabilities" style="color: var(--red);"></div></div>
-        <div class="metric"><div class="lbl">Net Worth</div><div class="val" id="nw-total"></div></div>
+<div class="pane" id="pane-networth">
+
+    <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;">
+        Assets minus liabilities — your complete financial snapshot.
     </div>
 
-    <!-- ── Items List ──────────────────────────────────────────────────────── -->
-    <!-- TODO: id="nw-list" — .tx-row for each item:
-         LEFT:  .badge-green "asset" or .badge-red "liability" + item name (13px)
-         RIGHT: amount in monospace (green for asset, red for liability) + × delete
-    -->
-    <div id="nw-list"></div>
+    <!-- ── 1. Summary Metrics ────────────────────────────────────────────────── -->
+    <div class="row3" style="margin-bottom:1.25rem;">
+        <div class="metric">
+            <div class="lbl">Total Assets</div>
+            <div class="val" id="nw-assets" style="color:var(--acc);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Total Liabilities</div>
+            <div class="val" id="nw-liabilities" style="color:var(--red);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Net Worth</div>
+            <div class="val" id="nw-total">—</div>
+        </div>
+    </div>
 
-    <!-- ── Add Item Form ───────────────────────────────────────────────────── -->
-    <!-- TODO: Section "Add Asset / Liability" -->
-    <!-- TODO: 4-column grid: Name | Value | type select (Asset/Liability) | "Add" button -->
+    <!-- ── 2. Items List ─────────────────────────────────────────────────────── -->
+    <div id="nw-list">
+        <!-- populated by renderNetWorth() -->
+    </div>
+
+    <!-- ── 3. Add Item Form ──────────────────────────────────────────────────── -->
     <div class="sec">Add Asset / Liability</div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 120px auto; gap: 8px;">
-        <input id="nw-name" placeholder="Name" class="inp"/>
-        <input id="nw-amt" placeholder="Value" type="number" class="inp"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr 120px auto;gap:8px;">
+        <input  id="nw-name" class="inp" placeholder="Name"/>
+        <input  id="nw-amt"  class="inp" placeholder="Value" type="number" min="1"/>
         <select id="nw-type" class="inp">
             <option value="asset">Asset</option>
             <option value="liability">Liability</option>
         </select>
         <button onclick="addNWForm()" class="btn-primary">Add</button>
     </div>
+
 </div>
 
+
 <script>
+    // =============================================================================
+    // Net Worth screen — render + action functions
+    // =============================================================================
+
     /**
      * renderNetWorth()
-     * TODO: Compute totals from AppState.netWorthItems
-     * TODO: Update #nw-assets, #nw-liabilities, #nw-total
-     * TODO: Set #nw-total color: var(--acc) if net worth >= 0, else var(--red)
-     * TODO: Build #nw-list from items
+     * Called from renderAll() when the Net Worth pane is active.
+     * Computes totals from AppState.netWorthItems and renders each item
+     * as a tx-row with a type badge, name, amount, and delete button.
      */
-    function renderNetWorth() { /* TODO */ }
-    async function addNWForm() { /* TODO: read, callServer('addNetWorthItem'), update AppState, renderAll, showToast */ }
-    async function deleteNWItem(itemId) { /* TODO: callServer, filter, renderAll, showToast */ }
+    function renderNetWorth() {
+        var items = AppState.netWorthItems || [];
+
+        // ── Summary metrics ───────────────────────────────────────────────────────
+        var totalAssets      = 0;
+        var totalLiabilities = 0;
+
+        items.forEach(function(item) {
+            var amt = parseFloat(item.amount) || 0;
+            if (item.type === 'asset')      totalAssets      += amt;
+            else if (item.type === 'liability') totalLiabilities += amt;
+        });
+
+        var netWorth = totalAssets - totalLiabilities;
+
+        var assetsEl = document.getElementById('nw-assets');
+        var liabEl   = document.getElementById('nw-liabilities');
+        var totalEl  = document.getElementById('nw-total');
+
+        if (assetsEl) assetsEl.textContent = fmt(totalAssets);
+        if (liabEl)   liabEl.textContent   = fmt(totalLiabilities);
+        if (totalEl) {
+            totalEl.textContent = fmt(netWorth);
+            totalEl.style.color = netWorth >= 0 ? 'var(--acc)' : 'var(--red)';
+        }
+
+        // ── Items list ────────────────────────────────────────────────────────────
+        var listEl = document.getElementById('nw-list');
+        if (!listEl) return;
+
+        if (items.length === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No assets or liabilities added yet.' +
+                '</div>'
+            );
+            return;
+        }
+
+        // Sort: assets first, then liabilities; each group sorted by amount descending.
+        var sorted = items.slice().sort(function(a, b) {
+            if (a.type !== b.type) {
+                return a.type === 'asset' ? -1 : 1;
+            }
+            return (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0);
+        });
+
+        // Group header tracker — renders a .sec label when the type changes.
+        var lastType = null;
+        var html = '';
+
+        sorted.forEach(function(item) {
+            var isAsset = item.type === 'asset';
+            var amt     = parseFloat(item.amount) || 0;
+
+            // Section heading when type changes
+            if (item.type !== lastType) {
+                html += '<div class="sec" style="margin-top:' + (lastType ? '1.5rem' : '0') + ';">' +
+                    (isAsset ? 'Assets' : 'Liabilities') +
+                    '</div>';
+                lastType = item.type;
+            }
+
+            html += (
+                '<div class="tx-row">' +
+
+                // LEFT: badge + name
+                '<div class="tx-left">' +
+                '<span class="badge ' + (isAsset ? 'badge-green' : 'badge-red') + '">' +
+                (isAsset ? 'asset' : 'liability') +
+                '</span>' +
+                '<div class="tx-meta" style="margin-left:8px;">' +
+                '<div class="tx-name">' + _escNW(item.name) + '</div>' +
+                '</div>' +
+                '</div>' +
+
+                // RIGHT: amount + delete
+                '<div class="tx-right">' +
+                '<span class="tx-amount" style="color:' + (isAsset ? 'var(--acc)' : 'var(--red)') + ';">' +
+                fmt(amt) +
+                '</span>' +
+                '<button ' +
+                'class="tx-delete" ' +
+                'onclick="deleteNWItem(\'' + item.id + '\')" ' +
+                'title="Remove item">×</button>' +
+                '</div>' +
+
+                '</div>'
+            );
+        });
+
+        listEl.innerHTML = html;
+    }
+
+
+    // ─── ADD ITEM ────────────────────────────────────────────────────────────────
+
+    async function addNWForm() {
+        var name    = getVal('nw-name');
+        var amtRaw  = getVal('nw-amt');
+        var type    = getVal('nw-type');
+
+        if (!name) {
+            showToast('Please enter a name.', 'error');
+            document.getElementById('nw-name').focus();
+            return;
+        }
+
+        var amount = parseFloat(amtRaw);
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid value greater than zero.', 'error');
+            document.getElementById('nw-amt').focus();
+            return;
+        }
+
+        try {
+            var newItem = await callServer('addNetWorthItem', name, type, amount);
+
+            if (!AppState.netWorthItems) AppState.netWorthItems = [];
+            AppState.netWorthItems.push(newItem);
+
+            clearInputs('nw-name', 'nw-amt');
+            renderAll();
+            showToast((type === 'asset' ? 'Asset' : 'Liability') + ' added!', 'success');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── DELETE ITEM ─────────────────────────────────────────────────────────────
+
+    async function deleteNWItem(itemId) {
+        try {
+            await callServer('deleteNetWorthItem', itemId);
+
+            AppState.netWorthItems = (AppState.netWorthItems || []).filter(function(item) {
+                return item.id !== itemId;
+            });
+
+            renderAll();
+            showToast('Item removed.', 'info');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _escNW(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 </script>

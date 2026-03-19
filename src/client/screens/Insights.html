@@ -1,46 +1,205 @@
-<!-- ─
-     Insights.html — Auto-Generated Spending Insights Screen
-     SERVER CALLS: None — computed from AppState client-side
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Insights.html — Auto-Generated Spending Insights
+
+     TAB: Insights
+
+     PURPOSE:
+       Generates 4–5 insight cards from AppState data, using the last 3 months
+       of loaded transaction history. Each card has an emoji icon, a colour-coded
+       title, and a data-driven body text.
+
+     Insights generated:
+       1. Savings rate (current month)
+       2. Expense trend (month-over-month % change) — only if prev month exists
+       3. Top spending category — only if expenses exist
+       4. Average monthly spend vs current month
+       5. Debt overview — only if debts exist
+
+     All data computed client-side from AppState. No server calls.
+     switchTab('insights') calls renderInsights() immediately (no canvas delay).
      ───────────────────────────────────────────────────────────────────────── -->
+
 <div class="pane" id="pane-insights">
-    <!-- TODO: id="insights-body" — set by renderInsights() -->
-    <div id="insights-body"></div>
+    <div id="insights-body">
+        <!-- populated by renderInsights() -->
+    </div>
 </div>
 
+
 <script>
+    // =============================================================================
+    // Insights screen
+    // =============================================================================
+
     /**
      * renderInsights()
      *
-     * TODO: Generate 4–5 insight cards from AppState data. Use last 3 months.
-     *       Each card: .card with icon (emoji), title (coloured), body text (12px, --text2)
+     * Builds insight cards from the last 3 months of loaded transaction data.
+     * Uses curTxs() for the current month, AppState.transactions for history.
      *
-     * Insights to generate (same as prototype):
-     *
-     * 1. Savings Rate insight
-     *    savRate = current month: sav / inc * 100
-     *    Message varies: >= 20% "Great job!", >= 10% "Good progress", < 10% "Consider increasing"
-     *    Color: var(--acc)
-     *
-     * 2. Expense Trend (only if 2+ months of data)
-     *    Compare current month expenses vs previous month
-     *    expChange% = (curExp - prevExp) / prevExp * 100
-     *    Message: increased/decreased by X%, colour red if > 10% increase, green if > 10% decrease
-     *
-     * 3. Top Spending Category
-     *    Highest expense category this month
-     *    Message: notes whether a goal is set for it
-     *    Color: var(--amber)
-     *
-     * 4. Average Monthly Spend
-     *    avgExp = mean of all recorded month expenses
-     *    Compare to current month
-     *    Color: var(--blue)
-     *
-     * 5. Debt Overview (only if AppState.debts.length > 0)
-     *    Shows debt count, total remaining, monthly payments
-     *    Color: var(--red)
-     *
-     * TODO: If fewer than 2 months of data, show "Not enough data yet." message
+     * Called by switchTab('insights') and renderAll() when pane is active.
      */
-    function renderInsights() { /* TODO */ }
+    function renderInsights() {
+        var bodyEl = document.getElementById('insights-body');
+        if (!bodyEl) return;
+
+        // ── Gather up to last 3 months with transaction data ─────────────────────
+        var allKeys = Object.keys(AppState.transactions || {})
+            .filter(function(k) {
+                var txs = AppState.transactions[k];
+                return txs && txs.length > 0;
+            })
+            .sort()          // chronological
+            .slice(-3);      // last 3 only
+
+        if (allKeys.length === 0) {
+            bodyEl.innerHTML = (
+                '<div style="color:var(--text2);font-size:13px;padding:1rem 0;">' +
+                'Not enough data yet. Add some transactions to see insights.' +
+                '</div>'
+            );
+            return;
+        }
+
+        var recentKey = allKeys[allKeys.length - 1];
+        var prevKey   = allKeys.length >= 2 ? allKeys[allKeys.length - 2] : null;
+
+        var rs = getMonthStats(recentKey);
+        var ps = prevKey ? getMonthStats(prevKey) : { inc: 0, exp: 0, sav: 0, bal: 0 };
+
+        // ── Derived metrics ───────────────────────────────────────────────────────
+
+        // 1. Savings rate — current month
+        var savRate = rs.inc > 0 ? Math.round((rs.sav / rs.inc) * 100) : 0;
+
+        // 2. Month-over-month expense change %
+        var expChange = (prevKey && ps.exp > 0)
+            ? Math.round(((rs.exp - ps.exp) / ps.exp) * 100)
+            : 0;
+
+        // 3. Average monthly expenses across loaded months
+        var avgExp = Math.round(
+            allKeys.reduce(function(sum, k) { return sum + getMonthStats(k).exp; }, 0) / allKeys.length
+        );
+
+        // 4. Top spending category this month
+        var catMap = {};
+        curTxs().forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            catMap[tx.category] = (catMap[tx.category] || 0) + (parseFloat(tx.amount) || 0);
+        });
+        var topCatEntry = Object.keys(catMap)
+            .map(function(c) { return [c, catMap[c]]; })
+            .sort(function(a, b) { return b[1] - a[1]; })[0] || null;
+
+        // 5. Debt totals
+        var debts        = AppState.debts || [];
+        var totalDebt    = debts.reduce(function(sum, d) {
+            return sum + (parseFloat(d.amount_owed) || Math.max(0, (parseFloat(d.total) || 0) - (parseFloat(d.paid) || 0)));
+        }, 0);
+        var totalMonthly = debts.reduce(function(sum, d) {
+            return sum + (parseFloat(d.monthly_payment) || 0);
+        }, 0);
+
+        // ── Build insight cards ───────────────────────────────────────────────────
+        var insights = [];
+
+        // 1. Savings rate
+        var savBody = savRate >= 20
+            ? 'Your savings rate is <strong>' + savRate + '%</strong> — hitting the 20% benchmark!'
+            : savRate >= 10
+                ? 'Your savings rate is <strong>' + savRate + '%</strong>. Good progress — aim for 20% for stronger financial health.'
+                : 'Your savings rate is <strong>' + savRate + '%</strong>. Consider increasing savings — the 50/30/20 rule suggests 20% of income.';
+
+        insights.push({
+            icon:  '📈',
+            title: 'Savings rate',
+            body:  savBody,
+            color: 'var(--acc)'
+        });
+
+        // 2. Expense trend (only if previous month exists and has income)
+        if (prevKey && expChange !== 0) {
+            var dir       = expChange > 0 ? 'increased' : 'decreased';
+            var trendNote = expChange > 10  ? 'Worth reviewing your spending this month.'
+                : expChange < -10 ? 'Great work cutting costs!'
+                    :                   'Spending is fairly stable.';
+            insights.push({
+                icon:  '💸',
+                title: 'Expense trend',
+                body:  'Expenses <strong>' + dir + '</strong> by <strong>' + Math.abs(expChange) + '%</strong> vs last month. ' + trendNote,
+                color: expChange > 10 ? 'var(--red)' : 'var(--acc)'
+            });
+        }
+
+        // 3. Top spending category
+        if (topCatEntry) {
+            var topCatName = topCatEntry[0];
+            var topCatAmt  = topCatEntry[1];
+            var hasGoal    = (AppState.goals || []).some(function(g) {
+                return g.category && g.category.toLowerCase() === topCatName.toLowerCase();
+            });
+            var goalNote = hasGoal
+                ? 'A budget goal is set for this category.'
+                : 'Consider setting a budget goal to track this.';
+
+            insights.push({
+                icon:  '🏷️',
+                title: 'Top spending category',
+                body:  'Biggest expense: <strong>' + _escIns(topCatName) + '</strong> at ' + fmt(topCatAmt) + '. ' + goalNote,
+                color: 'var(--amber)'
+            });
+        }
+
+        // 4. Average monthly spend
+        var avgNote = rs.exp > avgExp
+            ? 'Spending is above your ' + allKeys.length + '-month average this month.'
+            : 'Spending is below your ' + allKeys.length + '-month average — good discipline!';
+
+        insights.push({
+            icon:  '📊',
+            title: 'Average monthly spend',
+            body:  'Your ' + allKeys.length + '-month average is <strong>' + fmt(avgExp) + '</strong>/month. ' + avgNote,
+            color: 'var(--blue)'
+        });
+
+        // 5. Debt overview (only if debts exist)
+        if (debts.length > 0) {
+            insights.push({
+                icon:  '💳',
+                title: 'Debt overview',
+                body:  '<strong>' + debts.length + '</strong> active debt' + (debts.length > 1 ? 's' : '') +
+                    ' totalling <strong>' + fmt(totalDebt) + '</strong>.' +
+                    (totalMonthly > 0 ? ' Monthly payments: ' + fmt(totalMonthly) + '.' : ''),
+                color: 'var(--red)'
+            });
+        }
+
+        // ── Render cards ──────────────────────────────────────────────────────────
+        bodyEl.innerHTML = insights.map(function(ins) {
+            return (
+                '<div class="card" style="display:flex;gap:12px;margin-bottom:10px;">' +
+                '<div style="font-size:22px;flex-shrink:0;line-height:1.4;">' + ins.icon + '</div>' +
+                '<div>' +
+                '<div style="font-size:13px;font-weight:500;color:' + ins.color + ';margin-bottom:4px;">' +
+                ins.title +
+                '</div>' +
+                '<div style="font-size:12px;color:var(--text2);line-height:1.6;">' +
+                ins.body +
+                '</div>' +
+                '</div>' +
+                '</div>'
+            );
+        }).join('');
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _escIns(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 </script>

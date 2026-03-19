@@ -651,57 +651,113 @@
     }
 
 
-    // ─── 13. CSV ──────────────────────────────────────────────────────────────────
+    // ─── 13. Export CSV ──────────────────────────────────────────────────────────────────
 
     /**
      * exportCSV()
-     * Fetches the current month's transactions as CSV from the server,
-     * then triggers a file download in the browser.
+     *
+     * Calls the server to generate a CSV string for the current month,
+     * then triggers a browser file download via a temporary <a> element.
+     * No server storage — the CSV is streamed directly to the client.
      */
     async function exportCSV() {
         try {
             var csv = await callServer('exportTransactionsToCSV', curKey());
-            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            var url  = URL.createObjectURL(blob);
-            var a    = document.createElement('a');
+
+            if (!csv || csv.trim() === '') {
+                showToast('No transactions to export this month.', 'info');
+                return;
+            }
+
+            // Build a Blob and trigger a download via a temporary anchor element.
+            var blob     = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            var url      = URL.createObjectURL(blob);
+            var filename = 'budget_' + curKey() + '.csv';
+
+            var a      = document.createElement('a');
             a.href     = url;
-            a.download = 'budget_' + curKey() + '.csv';
+            a.download = filename;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('CSV exported', 'success');
-        } catch(e) {
-            // Error toast already shown by callServer's failure handler.
+
+            // Clean up immediately — revoking too early on some browsers cancels the download,
+            // so use a short timeout.
+            setTimeout(function() {
+                URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 250);
+
+            showToast('Exported ' + filename, 'success');
+
+        } catch (e) {
+            // Error toast shown by callServer's failure handler.
         }
     }
 
+
+    // ─── 14. Import CSV ──────────────────────────────────────────────────────────────────
+
     /**
      * importCSV(event)
-     * Reads a CSV file from a file input, sends it to the server to import.
+     *
+     * Reads the selected .csv file, sends it to the server for parsing and
+     * insertion, then merges the returned transactions into AppState and
+     * refreshes the UI.
+     *
+     * Called by the hidden file input in Overview.html:
+     *   <input type="file" accept=".csv" onchange="importCSV(event)"/>
      */
     function importCSV(event) {
         var file = event.target.files && event.target.files[0];
         if (!file) return;
 
+        // Reset the input so the same file can be re-selected if needed.
+        event.target.value = '';
+
         var reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                var result = await callServer('importTransactionsFromCSV', e.target.result, curKey());
-                showToast('Imported ' + (result.imported || 0) + ' transactions', 'success');
-                // Refresh the current month's transactions from the server.
-                var txs = await callServerSilent('getTransactionsByMonth', curKey());
-                AppState.transactions[curKey()] = txs || [];
-                renderAll();
-            } catch(err) {
-                // Error toast shown by callServer.
+
+        reader.onload = function(e) {
+            var csvText = e.target.result;
+
+            if (!csvText || !csvText.trim()) {
+                showToast('The selected file appears to be empty.', 'error');
+                return;
             }
+
+            // Send to server — callServer returns a Promise.
+            callServer('importTransactionsFromCSV', csvText, curKey())
+                .then(function(result) {
+                    var imported = result && result.imported ? result.imported : 0;
+                    var skipped  = result && result.skipped  ? result.skipped  : 0;
+
+                    // Re-fetch the current month's transactions to get the server's
+                    // authoritative list (includes the newly imported rows with IDs).
+                    return callServerSilent('getTransactionsByMonth', curKey())
+                        .then(function(txs) {
+                            AppState.transactions[curKey()] = txs || [];
+                            renderAll();
+
+                            var msg = 'Imported ' + imported + ' transaction' + (imported !== 1 ? 's' : '') + '.';
+                            if (skipped > 0) msg += ' ' + skipped + ' row' + (skipped !== 1 ? 's' : '') + ' skipped.';
+                            var toastType = imported > 0 ? 'success' : 'info';
+                            showToast(msg, toastType);
+                        });
+                })
+                .catch(function() {
+                    // Error toast shown by callServer's failure handler.
+                });
         };
+
+        reader.onerror = function() {
+            showToast('Could not read the file. Please try again.', 'error');
+        };
+
         reader.readAsText(file);
     }
 
 
-    // ─── 14. RENDER ALL ───────────────────────────────────────────────────────────
+    // ─── 15. RENDER ALL ───────────────────────────────────────────────────────────
 
     /**
      * renderAll()

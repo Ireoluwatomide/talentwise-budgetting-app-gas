@@ -187,6 +187,7 @@
         color: var(--text2);
         white-space: nowrap;
         transition: color var(--transition);
+        flex-shrink: 0;
     }
 
     .tab:hover {
@@ -621,49 +622,266 @@
     }
 
 
-    /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
-    @media (max-width: 600px) {
+    /* ─── 20. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────── */
+
+    /* ── Tablet (max 768px) ─────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+        /* Slightly tighter app padding */
+        .app { padding: 1rem 0.875rem; }
+
+        /* 3-col metric rows collapse to 2 */
+        .row3 { grid-template-columns: 1fr 1fr; }
+
+        /* Net worth 3-col header collapses to 2 */
+        #pane-networth .row3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+
+    /* ── Mobile (max 480px) ─────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+
+        /* Core layout */
         .app {
             padding: 1rem 0.75rem;
+            /* Extra bottom padding so content clears the bottom nav bar */
+            padding-bottom: calc(1rem + 68px);
         }
 
-        /* 4-column grid collapses to 2 columns on mobile */
-        .row4 {
-            grid-template-columns: 1fr 1fr;
-        }
+        /* Grid collapses */
+        .row4 { grid-template-columns: 1fr 1fr; }
+        .row3 { grid-template-columns: 1fr 1fr; }
+        .row2 { grid-template-columns: 1fr; }
 
-        /* 3-column grid collapses to 2 columns on mobile */
-        .row3 {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        /* Header stacks vertically on very small screens */
+        /* Header — stack vertically on small screens */
         .app-header {
             flex-direction: column;
             align-items: flex-start;
-            gap: 1rem;
+            gap: 12px;
+            padding-bottom: 1rem;
         }
-
-        /* Net balance right-align becomes left-align in stacked layout */
         .app-header > div:last-child {
-            text-align: left;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .app-header > div:last-child #hd-bal {
-            text-align: left;
+        /* Month navigation — bigger tap targets */
+        .btn-sm {
+            min-height: 36px;
+            min-width: 36px;
+            padding: 6px 12px;
         }
 
-        /* Larger touch targets for tab buttons on mobile */
-        .tab {
-            padding: 10px 10px 12px;
-            font-size: 11px;
+        /* Net balance — slightly smaller on mobile */
+        #hd-bal { font-size: 18px !important; }
+
+        /* Month label centred */
+        #hd-month { font-size: 16px !important; min-width: 130px !important; }
+
+        /* Currency selector full width */
+        #currency-sel { width: 100% !important; }
+
+        /* Forms: 2-col grids become 1-col */
+        .row2[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+
+        /* Debt add form: 2-col grid */
+        #pane-debt .row2 { grid-template-columns: 1fr !important; }
+
+        /* Net worth 4-col add form → 2+2 */
+        #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
+            grid-template-columns: 1fr 1fr !important;
         }
+
+        /* Bills 4-col add form → name full width, then 3-col */
+        #pane-bills [style*="grid-template-columns: 1fr 1fr 70px auto"] {
+            grid-template-columns: 1fr 1fr auto !important;
+        }
+        #b-name { grid-column: 1 / -1; }
+
+        /* Goals 3-col form stays 3-col (short fields) */
+
+        /* Tab strip — hide on mobile (replaced by bottom nav) */
+        .tabs { display: none; }
+
+        /* Cards get slightly more breathing room */
+        .card { padding: 12px 14px; }
+
+        /* Transaction rows — ensure amounts don't wrap */
+        .tx-row { gap: 8px; }
+        .tx-amount { white-space: nowrap; }
+
+        /* Progress labels — smaller */
+        .prog-track { margin: 6px 0; }
+
+        /* Section headings — a touch smaller */
+        .sec { font-size: 10px; }
+
+        /* Metric values — slightly smaller */
+        .metric .val { font-size: 14px; }
+
+        /* Report / multi-month table — horizontal scroll */
+        #report-body table,
+        #month-table table {
+            min-width: 480px;
+        }
+        #report-body,
+        #month-table {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Charts — allow shorter height on mobile */
+        #pane-charts [style*="height:200px"] { height: 160px !important; }
+        #pane-charts [style*="height:240px"] { height: 180px !important; }
+        #pane-multimonth [style*="height:220px"] { height: 160px !important; }
+        #pane-forecast [style*="height:220px"] { height: 160px !important; }
+
+        h1 { font-size: 18px; }
     }
 
-    @media (max-width: 400px) {
-        /* 2-column grid collapses to single column on very small screens */
-        .row2 {
-            grid-template-columns: 1fr;
-        }
+
+    /* ─── BOTTOM NAVIGATION BAR (mobile only) ───────────────────────────────── */
+    /*
+     * On mobile (≤ 480px) the horizontal tab strip is hidden and replaced with
+     * a fixed bottom navigation bar showing 5 primary tabs.
+     * The "More" button opens a tab picker overlay for the remaining tabs.
+     */
+
+    #bottom-nav {
+        display: none; /* shown via media query below */
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 200;
+        background: var(--bg);
+        border-top: 0.5px solid var(--border);
+        padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+        /* Frosted glass on modern browsers */
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+    }
+
+    .bnav-inner {
+        display: flex;
+        justify-content: space-around;
+        align-items: flex-end;
+        max-width: 480px;
+        margin: 0 auto;
+    }
+
+    .bnav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 8px;
+        min-width: 48px;
+        min-height: 44px;
+        justify-content: center;
+        color: var(--text2);
+        font-family: var(--font);
+        -webkit-tap-highlight-color: transparent;
+        transition: color .15s;
+    }
+
+    .bnav-item.active { color: var(--text); }
+
+    .bnav-item svg {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .bnav-label {
+        font-size: 10px;
+        font-weight: 400;
+        white-space: nowrap;
+    }
+
+    .bnav-item.active .bnav-label { font-weight: 500; }
+
+    /* "More" tab sheet overlay */
+    #tab-sheet {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+    }
+    #tab-sheet.open { display: block; }
+
+    #tab-sheet-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,.35);
+    }
+
+    #tab-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 16px max(24px, env(safe-area-inset-bottom));
+        max-height: 75vh;
+        overflow-y: auto;
+    }
+
+    #tab-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+
+    .tab-sheet-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    .tab-sheet-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 8px 10px;
+        cursor: pointer;
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text2);
+        -webkit-tap-highlight-color: transparent;
+    }
+    .tab-sheet-item.active { color: var(--text); border-color: var(--border2); }
+    .tab-sheet-item svg {
+        width: 22px; height: 22px;
+        stroke: currentColor; fill: none;
+        stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    @media (max-width: 480px) {
+        #bottom-nav { display: flex; flex-direction: column; }
+    }
+
+
+    /* ─── SWIPE INDICATOR (month nav hint on first load) ────────────────────── */
+    @keyframes swipeHint {
+        0%   { transform: translateX(0);   opacity: 0; }
+        20%  { transform: translateX(0);   opacity: .7; }
+        60%  { transform: translateX(-18px); opacity: .7; }
+        80%  { transform: translateX(-18px); opacity: 0; }
+        100% { transform: translateX(0);   opacity: 0; }
     }
 </style>
+

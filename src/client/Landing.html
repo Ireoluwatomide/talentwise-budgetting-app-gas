@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Budget Tracker — Track your finances, free</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+
+        :root{
+            --ink:#0f0e0c;
+            --ink2:#4a4845;
+            --ink3:#9a9894;
+            --paper:#faf9f6;
+            --paper2:#f0ede8;
+            --paper3:#e4e0d8;
+            --acc:#1D9E75;
+            --acc2:#0f6e56;
+            --red:#D85A30;
+            --blue:#185FA5;
+            --amber:#BA7517;
+            --serif:'DM Serif Display',Georgia,serif;
+            --sans:'DM Sans',system-ui,sans-serif;
+            --radius:10px;
+            --radius-lg:18px;
+        }
+
+        html{scroll-behavior:smooth;}
+        body{font-family:var(--sans);background:var(--paper);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased;}
+
+        /* ── NAV ── */
+        nav{
+            position:sticky;top:0;z-index:100;
+            display:flex;justify-content:space-between;align-items:center;
+            padding:0 clamp(1.5rem,5vw,4rem);height:64px;
+            background:rgba(250,249,246,0.88);
+            backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+            border-bottom:0.5px solid var(--paper3);
+        }
+        .nav-logo{display:flex;align-items:center;gap:10px;}
+        .nav-logo-mark{
+            width:32px;height:32px;border-radius:9px;
+            background:var(--ink);
+            display:flex;align-items:center;justify-content:center;
+        }
+        .nav-logo-mark svg{width:17px;height:17px;}
+        .nav-logo-text{font-family:var(--serif);font-size:18px;letter-spacing:-.01em;}
+        .nav-links{display:flex;align-items:center;gap:2rem;}
+        .nav-links a{font-size:13px;color:var(--ink2);text-decoration:none;font-weight:400;letter-spacing:.01em;}
+        .nav-links a:hover{color:var(--ink);}
+        .nav-cta{
+            display:flex;align-items:center;gap:8px;
+            background:var(--ink);color:var(--paper);
+            border:none;border-radius:8px;
+            padding:8px 18px;font-family:var(--sans);font-size:13px;font-weight:500;
+            cursor:pointer;text-decoration:none;
+            transition:background .15s,transform .1s;
+        }
+        .nav-cta:hover{background:#2a2a28;transform:translateY(-1px);}
+        .nav-cta:active{transform:translateY(0);}
+        .nav-cta svg{width:15px;height:15px;}
+
+        /* ── HERO ── */
+        .hero{
+            display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;
+            padding:clamp(4rem,8vw,7rem) clamp(1.5rem,5vw,4rem);
+            max-width:1200px;margin:0 auto;
+        }
+        .hero-eyebrow{
+            display:inline-flex;align-items:center;gap:6px;
+            background:var(--paper2);border:0.5px solid var(--paper3);
+            border-radius:20px;padding:5px 12px;
+            font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;
+            color:var(--ink2);margin-bottom:1.5rem;
+        }
+        .hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--acc);}
+        h1{
+            font-family:var(--serif);
+            font-size:clamp(2.8rem,5vw,4.2rem);
+            line-height:1.08;letter-spacing:-.03em;
+            color:var(--ink);margin-bottom:1.5rem;
+        }
+        h1 em{font-style:italic;color:var(--acc);}
+        .hero-sub{
+            font-size:clamp(15px,2vw,17px);color:var(--ink2);line-height:1.65;
+            font-weight:300;margin-bottom:2.5rem;max-width:460px;
+        }
+        .hero-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+        .btn-primary{
+            display:inline-flex;align-items:center;gap:10px;
+            background:var(--ink);color:var(--paper);
+            border:none;border-radius:10px;padding:14px 24px;
+            font-family:var(--sans);font-size:14px;font-weight:500;
+            cursor:pointer;text-decoration:none;
+            transition:background .15s,transform .1s,box-shadow .15s;
+        }
+        .btn-primary:hover{background:#2a2a28;transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.15);}
+        .btn-primary:active{transform:translateY(0);box-shadow:none;}
+        .btn-primary svg{width:18px;height:18px;}
+        .btn-secondary{
+            display:inline-flex;align-items:center;gap:8px;
+            color:var(--ink2);background:transparent;
+            border:0.5px solid var(--paper3);border-radius:10px;
+            padding:14px 20px;font-family:var(--sans);font-size:14px;
+            cursor:pointer;text-decoration:none;
+            transition:border-color .15s,color .15s;
+        }
+        .btn-secondary:hover{border-color:var(--ink3);color:var(--ink);}
+        .hero-note{font-size:12px;color:var(--ink3);margin-top:1rem;display:flex;align-items:center;gap:6px;}
+        .hero-note svg{width:13px;height:13px;}
+
+        /* ── DASHBOARD PREVIEW ── */
+        .hero-visual{position:relative;}
+        .dashboard-frame{
+            background:var(--paper);
+            border:0.5px solid var(--paper3);
+            border-radius:var(--radius-lg);
+            padding:20px;
+            box-shadow:0 24px 64px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.04);
+            transform:perspective(1000px) rotateY(-4deg) rotateX(2deg);
+            transform-origin:left center;
+        }
+        .df-header{
+            display:flex;justify-content:space-between;align-items:center;
+            margin-bottom:16px;padding-bottom:16px;
+            border-bottom:0.5px solid var(--paper3);
+        }
+        .df-month{font-family:var(--serif);font-size:18px;}
+        .df-bal{text-align:right;}
+        .df-bal-label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:2px;}
+        .df-bal-val{font-family:'DM Mono','Courier New',monospace;font-size:20px;font-weight:500;color:var(--acc);}
+        .df-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}
+        .df-metric{background:var(--paper2);border-radius:8px;padding:10px 12px;}
+        .df-metric-label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:4px;}
+        .df-metric-val{font-family:'DM Mono','Courier New',monospace;font-size:13px;font-weight:500;}
+        .df-txs{display:flex;flex-direction:column;gap:0;}
+        .df-tx{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--paper3);}
+        .df-tx:last-child{border-bottom:none;}
+        .df-tx-left{display:flex;align-items:center;gap:8px;}
+        .df-tx-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+        .df-tx-name{font-size:12px;font-weight:500;}
+        .df-tx-cat{font-size:10px;color:var(--ink3);}
+        .df-tx-amt{font-family:'DM Mono','Courier New',monospace;font-size:12px;font-weight:500;}
+
+        /* ── STATS BAR ── */
+        .stats-bar{
+            background:var(--ink);color:var(--paper);
+            padding:3rem clamp(1.5rem,5vw,4rem);
+        }
+        .stats-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;}
+        .stat{text-align:center;}
+        .stat-num{font-family:var(--serif);font-size:2.5rem;margin-bottom:6px;}
+        .stat-label{font-size:12px;color:rgba(250,249,246,.5);letter-spacing:.06em;text-transform:uppercase;}
+
+        /* ── FEATURES ── */
+        .features-section{padding:clamp(4rem,8vw,7rem) clamp(1.5rem,5vw,4rem);max-width:1200px;margin:0 auto;}
+        .section-eyebrow{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:1rem;}
+        .section-title{font-family:var(--serif);font-size:clamp(2rem,4vw,3rem);letter-spacing:-.03em;line-height:1.1;margin-bottom:1rem;}
+        .section-sub{font-size:15px;color:var(--ink2);font-weight:300;max-width:520px;line-height:1.6;margin-bottom:3.5rem;}
+        .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5px;background:var(--paper3);border:0.5px solid var(--paper3);border-radius:var(--radius-lg);overflow:hidden;}
+        .feature-card{background:var(--paper);padding:2rem;}
+        .feature-card:hover{background:var(--paper2);}
+        .feature-icon{
+            width:40px;height:40px;border-radius:10px;
+            display:flex;align-items:center;justify-content:center;
+            margin-bottom:1rem;font-size:18px;
+        }
+        .feature-title{font-size:14px;font-weight:500;margin-bottom:6px;}
+        .feature-desc{font-size:13px;color:var(--ink2);line-height:1.6;font-weight:300;}
+
+        /* ── HOW IT WORKS ── */
+        .how-section{background:var(--paper2);padding:clamp(4rem,8vw,7rem) clamp(1.5rem,5vw,4rem);}
+        .how-inner{max-width:1200px;margin:0 auto;}
+        .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;margin-top:3.5rem;}
+        .step-num{font-family:var(--serif);font-size:3rem;color:var(--paper3);line-height:1;margin-bottom:1rem;}
+        .step-title{font-size:15px;font-weight:500;margin-bottom:8px;}
+        .step-desc{font-size:13px;color:var(--ink2);line-height:1.6;font-weight:300;}
+
+        /* ── CTA SECTION ── */
+        .cta-section{
+            padding:clamp(4rem,8vw,7rem) clamp(1.5rem,5vw,4rem);
+            text-align:center;max-width:680px;margin:0 auto;
+        }
+        .cta-section h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3rem);letter-spacing:-.03em;line-height:1.1;margin-bottom:1rem;}
+        .cta-section p{font-size:15px;color:var(--ink2);font-weight:300;margin-bottom:2.5rem;line-height:1.6;}
+
+        /* ── FOOTER ── */
+        footer{
+            background:var(--ink);color:rgba(250,249,246,.5);
+            padding:2rem clamp(1.5rem,5vw,4rem);
+            display:flex;justify-content:space-between;align-items:center;
+            font-size:12px;
+        }
+        footer a{color:rgba(250,249,246,.5);text-decoration:none;}
+        footer a:hover{color:var(--paper);}
+
+        /* ── ANIMATIONS ── */
+        @keyframes fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+        .fade-up{animation:fadeUp .6s ease both;}
+        .fade-up-1{animation-delay:.1s;}
+        .fade-up-2{animation-delay:.2s;}
+        .fade-up-3{animation-delay:.3s;}
+        .fade-up-4{animation-delay:.45s;}
+        .fade-up-5{animation-delay:.6s;}
+
+        /* ── MOBILE ── */
+        @media(max-width:900px){
+            .hero{grid-template-columns:1fr;gap:3rem;}
+            .hero-visual{display:none;}
+            .stats-inner{grid-template-columns:repeat(2,1fr);}
+            .features-grid{grid-template-columns:repeat(2,1fr);}
+            .steps{grid-template-columns:1fr;gap:2rem;}
+            .nav-links{display:none;}
+        }
+        @media(max-width:540px){
+            .features-grid{grid-template-columns:1fr;}
+            .stats-inner{grid-template-columns:1fr 1fr;}
+            .btn-primary,.btn-secondary{width:100%;justify-content:center;}
+            .hero-actions{flex-direction:column;align-items:stretch;}
+        }
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+    <div class="nav-logo">
+        <div class="nav-logo-mark">
+            <svg viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 13L6.5 8L9.5 11L13 5" stroke="#faf9f6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="13.5" cy="4.5" r="1.8" fill="#1D9E75"/>
+            </svg>
+        </div>
+        <span class="nav-logo-text">Budget Tracker</span>
+    </div>
+    <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+    </div>
+    <a href="#" onclick="signInWithGoogle()" class="nav-cta">
+        <svg viewBox="0 0 18 18" fill="none"><path d="M9 1.5C4.86 1.5 1.5 4.86 1.5 9s3.36 7.5 7.5 7.5 7.5-3.36 7.5-7.5S13.14 1.5 9 1.5z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Sign in free
+    </a>
+</nav>
+
+<!-- HERO -->
+<section style="max-width:1200px;margin:0 auto;">
+    <div class="hero">
+        <div>
+            <div class="hero-eyebrow fade-up fade-up-1">
+                <span class="hero-eyebrow-dot"></span>
+                Free · No credit card · Google sign-in
+            </div>
+            <h1 class="fade-up fade-up-2">Your money,<br/><em>clearly</em> tracked.</h1>
+            <p class="hero-sub fade-up fade-up-3">
+                Budget Tracker gives you a complete picture of your income, expenses,
+                savings goals, and debt — all in one clean dashboard. Built for Nigeria,
+                works everywhere.
+            </p>
+            <div class="hero-actions fade-up fade-up-4">
+                <a href="#" onclick="signInWithGoogle()" class="btn-primary">
+                    <svg viewBox="0 0 20 20" width="18" height="18"><path d="M18.17 10.2c0-.63-.06-1.25-.16-1.84H10v3.48h4.59a3.93 3.93 0 01-1.7 2.58v2.14h2.75c1.6-1.48 2.53-3.65 2.53-6.36z" fill="#4285F4"/><path d="M10 18.5c2.3 0 4.23-.76 5.64-2.05l-2.75-2.14c-.76.51-1.74.81-2.89.81-2.22 0-4.1-1.5-4.77-3.52H2.38v2.21A8.5 8.5 0 0010 18.5z" fill="#34A853"/><path d="M5.23 11.6A5.1 5.1 0 014.96 10c0-.55.1-1.09.27-1.6V6.19H2.38A8.5 8.5 0 001.5 10c0 1.37.33 2.67.88 3.81l2.85-2.21z" fill="#FBBC05"/><path d="M10 4.88c1.25 0 2.37.43 3.25 1.27l2.44-2.44A8.46 8.46 0 0010 1.5 8.5 8.5 0 002.38 6.19l2.85 2.21C5.9 6.38 7.78 4.88 10 4.88z" fill="#EA4335"/></svg>
+                    Continue with Google
+                </a>
+                <a href="#features" class="btn-secondary">See what's inside</a>
+            </div>
+            <p class="hero-note fade-up fade-up-5">
+                <svg viewBox="0 0 13 13" fill="none"><path d="M6.5 1.5a5 5 0 100 10 5 5 0 000-10zM6.5 5v3.5M6.5 9.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                Your data is stored in your own Google Sheet. We never sell or share it.
+            </p>
+        </div>
+
+        <!-- Dashboard preview -->
+        <div class="hero-visual fade-up fade-up-3">
+            <div class="dashboard-frame">
+                <div class="df-header">
+                    <div>
+                        <div style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:3px;">Budget Tracker</div>
+                        <div class="df-month">March 2026</div>
+                    </div>
+                    <div class="df-bal">
+                        <div class="df-bal-label">Net Balance</div>
+                        <div class="df-bal-val">₦286,800</div>
+                    </div>
+                </div>
+                <div class="df-metrics">
+                    <div class="df-metric"><div class="df-metric-label">Income</div><div class="df-metric-val" style="color:var(--acc);">₦450k</div></div>
+                    <div class="df-metric"><div class="df-metric-label">Expenses</div><div class="df-metric-val" style="color:var(--red);">₦133k</div></div>
+                    <div class="df-metric"><div class="df-metric-label">Saved</div><div class="df-metric-val" style="color:var(--blue);">₦30k</div></div>
+                    <div class="df-metric"><div class="df-metric-label">Remaining</div><div class="df-metric-val" style="color:var(--acc);">₦287k</div></div>
+                </div>
+                <div class="df-txs">
+                    <div class="df-tx"><div class="df-tx-left"><span class="df-tx-dot" style="background:#639922;"></span><div><div class="df-tx-name">Salary</div><div class="df-tx-cat">Salary</div></div></div><span class="df-tx-amt" style="color:var(--acc);">+₦450,000</span></div>
+                    <div class="df-tx"><div class="df-tx-left"><span class="df-tx-dot" style="background:#185FA5;"></span><div><div class="df-tx-name">Rent</div><div class="df-tx-cat">Housing</div></div></div><span class="df-tx-amt" style="color:var(--red);">−₦120,000</span></div>
+                    <div class="df-tx"><div class="df-tx-left"><span class="df-tx-dot" style="background:#1D9E75;"></span><div><div class="df-tx-name">Groceries</div><div class="df-tx-cat">Food</div></div></div><span class="df-tx-amt" style="color:var(--red);">−₦18,500</span></div>
+                    <div class="df-tx"><div class="df-tx-left"><span class="df-tx-dot" style="background:#378ADD;"></span><div><div class="df-tx-name">Emergency Fund</div><div class="df-tx-cat">Savings</div></div></div><span class="df-tx-amt" style="color:var(--blue);">−₦30,000</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- STATS -->
+<div class="stats-bar">
+    <div class="stats-inner">
+        <div class="stat"><div class="stat-num">15</div><div class="stat-label">Screens & tabs</div></div>
+        <div class="stat"><div class="stat-num">₦0</div><div class="stat-label">Cost to use</div></div>
+        <div class="stat"><div class="stat-num">8</div><div class="stat-label">Data categories</div></div>
+        <div class="stat"><div class="stat-num">∞</div><div class="stat-label">Months of history</div></div>
+    </div>
+</div>
+
+<!-- FEATURES -->
+<section class="features-section" id="features">
+    <div class="section-eyebrow">Everything you need</div>
+    <h2 class="section-title">A complete personal<br/>finance toolkit</h2>
+    <p class="section-sub">Every feature you'd pay for in a premium app — built in, free, with your data staying on Google Sheets.</p>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#e8f5ef;">💸</div>
+            <div class="feature-title">Transaction tracking</div>
+            <div class="feature-desc">Log income, expenses, and savings deposits. Multi-month history with CSV import/export.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#eaf0fa;">🎯</div>
+            <div class="feature-title">Budget goals</div>
+            <div class="feature-desc">Set per-category spending limits. Live progress bars and over-budget alerts.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#fdf3e8;">📊</div>
+            <div class="feature-title">Analytics & charts</div>
+            <div class="feature-desc">Bar charts, donut breakdowns, 6-month trend views, cash flow forecast.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#fdf3e8;">🧾</div>
+            <div class="feature-title">Bills manager</div>
+            <div class="feature-desc">Track recurring bills by due date. Automatic alerts 5 days before payment is due.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#e8f5ef;">🏦</div>
+            <div class="feature-title">Savings goals</div>
+            <div class="feature-desc">Named savings targets (Emergency Fund, Holiday, etc.) with auto-credit on deposits.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#fceceb;">💳</div>
+            <div class="feature-title">Debt tracker</div>
+            <div class="feature-desc">Loans and credit cards with interest rates, payoff ETA, and payment history.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#eaf0fa;">📈</div>
+            <div class="feature-title">Net worth</div>
+            <div class="feature-desc">Assets minus liabilities. Your complete financial snapshot in one view.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#fdf3e8;">🔄</div>
+            <div class="feature-title">Recurring transactions</div>
+            <div class="feature-desc">Set salary and rent once. Auto-applied every month when you navigate forward.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background:#e8f5ef;">🌙</div>
+            <div class="feature-title">Dark mode + multi-currency</div>
+            <div class="feature-desc">Full dark theme. Toggle between ₦ NGN, $ USD, € EUR, and £ GBP instantly.</div>
+        </div>
+    </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<div class="how-section" id="how-it-works">
+    <div class="how-inner">
+        <div class="section-eyebrow">How it works</div>
+        <h2 class="section-title">Up and running<br/>in 30 seconds</h2>
+        <div class="steps">
+            <div>
+                <div class="step-num">01</div>
+                <div class="step-title">Sign in with Google</div>
+                <div class="step-desc">No password to create. Click "Continue with Google" and you're in. Your data is stored in a private Google Sheet tied to your account.</div>
+            </div>
+            <div>
+                <div class="step-num">02</div>
+                <div class="step-title">Add your first transactions</div>
+                <div class="step-desc">Log income, expenses, and savings deposits on the Overview tab. Import existing data via CSV if you have it.</div>
+            </div>
+            <div>
+                <div class="step-num">03</div>
+                <div class="step-title">Set goals and watch the dashboard</div>
+                <div class="step-desc">Create budget goals for each spending category. The app alerts you when you're approaching or over the limit.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CTA -->
+<section class="cta-section">
+    <h2>Start tracking<br/>your finances today</h2>
+    <p>Free forever. No credit card. Your data stays in your Google account — we never store it on our servers.</p>
+    <a href="#" onclick="signInWithGoogle()" class="btn-primary" style="display:inline-flex;">
+        <svg viewBox="0 0 20 20" width="18" height="18"><path d="M18.17 10.2c0-.63-.06-1.25-.16-1.84H10v3.48h4.59a3.93 3.93 0 01-1.7 2.58v2.14h2.75c1.6-1.48 2.53-3.65 2.53-6.36z" fill="#4285F4"/><path d="M10 18.5c2.3 0 4.23-.76 5.64-2.05l-2.75-2.14c-.76.51-1.74.81-2.89.81-2.22 0-4.1-1.5-4.77-3.52H2.38v2.21A8.5 8.5 0 0010 18.5z" fill="#34A853"/><path d="M5.23 11.6A5.1 5.1 0 014.96 10c0-.55.1-1.09.27-1.6V6.19H2.38A8.5 8.5 0 001.5 10c0 1.37.33 2.67.88 3.81l2.85-2.21z" fill="#FBBC05"/><path d="M10 4.88c1.25 0 2.37.43 3.25 1.27l2.44-2.44A8.46 8.46 0 0010 1.5 8.5 8.5 0 002.38 6.19l2.85 2.21C5.9 6.38 7.78 4.88 10 4.88z" fill="#EA4335"/></svg>
+        Continue with Google — it's free
+    </a>
+</section>
+
+<footer>
+    <span>© 2026 Budget Tracker</span>
+    <span>Data stored in your Google Sheets · Built with Google Apps Script</span>
+</footer>
+
+<script>
+    /**
+     * signInWithGoogle()
+     *
+     * In Apps Script with executeAs: USER_ACCESSING, simply navigating to the
+     * web app URL triggers Google OAuth automatically. The user signs in via
+     * Google's standard OAuth consent screen, then doGet() receives their email.
+     *
+     * This function redirects to the app URL without the ?page=landing param,
+     * which causes doGet() to route to the authenticated app shell.
+     */
+    function signInWithGoogle() {
+        // Remove the ?page=landing param to trigger auth routing in doGet().
+        var appUrl = window.location.href.split('?')[0];
+        window.location.href = appUrl;
+    }
+</script>
+
+</body>
+</html>

@@ -1,20 +1,18 @@
 <style>
     /*
      * styles.css.html — Budget Tracker Master Stylesheet
-     *
-     * Included in the page via <?!= include('src/client/utils/styles.css') ?>
-     * All 20 sections implemented. Do not add inline styles to screen files —
-     * add a class here instead to keep the design system centralised.
+     * Updated: wider desktop layout, improved mobile responsiveness,
+     * profile drawer styling.
      */
 
 
     /* ─── 1. CSS CUSTOM PROPERTIES ─────────────────────────────────────────────── */
     :root {
-        --acc:       #1D9E75;  /* income, positive, success    */
-        --red:       #D85A30;  /* expenses, over-budget, danger */
-        --blue:      #185FA5;  /* savings                       */
-        --amber:     #BA7517;  /* warnings, approaching limit   */
-        --purple:    #7F77DD;  /* entertainment category        */
+        --acc:       #1D9E75;
+        --red:       #D85A30;
+        --blue:      #185FA5;
+        --amber:     #BA7517;
+        --purple:    #7F77DD;
 
         --bg:        #ffffff;
         --bg2:       #f5f5f3;
@@ -31,7 +29,10 @@
         --radius:    8px;
         --radius-lg: 12px;
         --transition: 0.15s ease;
-        --max-width:  720px;
+
+        /* Desktop: wider, more breathing room */
+        --max-width:  1100px;
+        --page-pad:   clamp(1rem, 3vw, 2.5rem);
     }
 
 
@@ -42,11 +43,17 @@
         padding: 0;
     }
 
+    html {
+        /* Prevent iOS text-size-adjust which makes fonts tiny */
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+    }
+
     body {
         background: var(--bg);
         color: var(--text);
         font-family: var(--font);
-        font-size: 14px;
+        font-size: 15px; /* slightly larger base → better mobile readability */
         line-height: 1.5;
         min-height: 100vh;
         -webkit-font-smoothing: antialiased;
@@ -57,16 +64,17 @@
     .app {
         max-width: var(--max-width);
         margin: 0 auto;
-        padding: 1.5rem 1rem;
+        padding: 1.5rem var(--page-pad);
     }
 
     .app-header {
         display: flex;
         justify-content: space-between;
-        align-items: flex-end;
+        align-items: center;
         margin-bottom: 1.5rem;
         padding-bottom: 1.25rem;
         border-bottom: 0.5px solid var(--border);
+        gap: 16px;
     }
 
 
@@ -105,25 +113,24 @@
     .row2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 10px;
+        margin-bottom: 10px;
     }
 
     .row3 {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 10px;
+        gap: 12px;
         margin-bottom: 1.25rem;
     }
 
     .row4 {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
+        gap: 12px;
         margin-bottom: 1.25rem;
     }
 
-    /* Section heading — label-caps with spacing */
     .sec {
         font-size: 11px;
         font-weight: 500;
@@ -138,7 +145,7 @@
     .metric {
         background: var(--bg2);
         border-radius: var(--radius);
-        padding: 12px 14px;
+        padding: 14px 16px;
     }
 
     .metric .lbl {
@@ -147,12 +154,12 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--text2);
-        margin-bottom: 4px;
+        margin-bottom: 5px;
     }
 
     .metric .val {
         font-family: var(--mono);
-        font-size: 15px;
+        font-size: 16px;
         font-weight: 500;
         color: var(--text);
     }
@@ -165,7 +172,6 @@
         border-bottom: 0.5px solid var(--border);
         margin-bottom: 1.5rem;
         overflow-x: auto;
-        /* Hide scrollbar — still scrollable on mobile */
         scrollbar-width: none;
         -ms-overflow-style: none;
     }
@@ -178,9 +184,9 @@
         background: none;
         border: none;
         border-bottom: 2px solid transparent;
-        padding: 8px 11px 10px;
-        margin-bottom: -1px; /* overlaps the strip border so active border sits on top */
-        font-size: 11px;
+        padding: 8px 13px 10px;
+        margin-bottom: -1px;
+        font-size: 12px;
         font-weight: 400;
         font-family: var(--font);
         cursor: pointer;
@@ -200,7 +206,6 @@
         font-weight: 500;
     }
 
-    /* Screen pane — hidden by default, shown when .active */
     .pane {
         display: none;
     }
@@ -215,7 +220,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 9px 0;
+        padding: 10px 0;
         border-bottom: 0.5px solid var(--border);
     }
 
@@ -228,7 +233,7 @@
         align-items: center;
         gap: 10px;
         flex: 1;
-        min-width: 0; /* allows text-overflow on long names */
+        min-width: 0;
     }
 
     .tx-dot {
@@ -243,7 +248,7 @@
     }
 
     .tx-name {
-        font-size: 13px;
+        font-size: 14px;
         color: var(--text);
         white-space: nowrap;
         overflow: hidden;
@@ -251,7 +256,7 @@
     }
 
     .tx-cat {
-        font-size: 11px;
+        font-size: 12px;
         color: var(--text2);
         margin-top: 1px;
     }
@@ -271,7 +276,7 @@
 
     .tx-amount {
         font-family: var(--mono);
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
     }
 
@@ -280,7 +285,7 @@
         border: none;
         cursor: pointer;
         color: var(--text2);
-        font-size: 16px;
+        font-size: 18px;
         line-height: 1;
         padding: 0 2px;
         transition: color var(--transition);
@@ -293,16 +298,16 @@
 
     /* ─── 10. PROGRESS BARS ─────────────────────────────────────────────────────── */
     .prog-track {
-        height: 4px;
+        height: 5px;
         background: var(--border);
-        border-radius: 2px;
+        border-radius: 3px;
         overflow: hidden;
-        margin: 5px 0;
+        margin: 6px 0;
     }
 
     .prog-fill {
         height: 100%;
-        border-radius: 2px;
+        border-radius: 3px;
         transition: width 0.5s ease;
     }
 
@@ -312,7 +317,7 @@
         border-radius: var(--radius);
         padding: 10px 14px;
         margin-bottom: 0.5rem;
-        font-size: 12px;
+        font-size: 13px;
         line-height: 1.5;
     }
 
@@ -334,7 +339,6 @@
         color: #042C53;
     }
 
-    /* Container zones — margin only when they have children */
     #alerts-budget:not(:empty),
     #alerts-bills:not(:empty) {
         margin-bottom: 1rem;
@@ -345,7 +349,7 @@
     .card {
         background: var(--bg2);
         border-radius: var(--radius-lg);
-        padding: 14px 16px;
+        padding: 16px 18px;
         margin-bottom: 10px;
     }
 
@@ -366,25 +370,10 @@
         border-radius: 4px;
     }
 
-    .badge-red {
-        background: #FCEBEB;
-        color: #791F1F;
-    }
-
-    .badge-green {
-        background: #EAF3DE;
-        color: #27500A;
-    }
-
-    .badge-blue {
-        background: #E6F1FB;
-        color: #042C53;
-    }
-
-    .badge-amber {
-        background: #FAEEDA;
-        color: #412402;
-    }
+    .badge-red   { background: #FCEBEB; color: #791F1F; }
+    .badge-green { background: #EAF3DE; color: #27500A; }
+    .badge-blue  { background: #E6F1FB; color: #042C53; }
+    .badge-amber { background: #FAEEDA; color: #412402; }
 
 
     /* ─── 14. FORM INPUTS ───────────────────────────────────────────────────────── */
@@ -392,9 +381,9 @@
         background: transparent;
         border: 0.5px solid var(--border2);
         border-radius: var(--radius);
-        padding: 8px 10px;
+        padding: 9px 11px;
         font-family: var(--font);
-        font-size: 13px;
+        font-size: 14px;
         color: var(--text);
         box-sizing: border-box;
         width: 100%;
@@ -406,19 +395,14 @@
         border-color: var(--acc);
     }
 
-    /* Remove default select arrow on WebKit so we control the look */
     select.inp {
         -webkit-appearance: none;
         appearance: none;
         cursor: pointer;
-    }
-
-    /* Restore a minimal custom arrow for selects */
-    select.inp {
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
         background-position: right 10px center;
-        padding-right: 28px;
+        padding-right: 30px;
     }
 
     textarea.inp {
@@ -433,9 +417,9 @@
         color: var(--bg);
         border: none;
         border-radius: var(--radius);
-        padding: 9px 16px;
+        padding: 10px 18px;
         font-family: var(--font);
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
         cursor: pointer;
         white-space: nowrap;
@@ -450,9 +434,9 @@
         background: transparent;
         border: 0.5px solid var(--border2);
         border-radius: var(--radius);
-        padding: 5px 10px;
+        padding: 6px 11px;
         font-family: var(--font);
-        font-size: 11px;
+        font-size: 12px;
         cursor: pointer;
         color: var(--text2);
         white-space: nowrap;
@@ -480,7 +464,7 @@
     table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        font-size: 13px;
     }
 
     th {
@@ -490,16 +474,14 @@
         letter-spacing: 0.06em;
         color: var(--text2);
         border-bottom: 0.5px solid var(--border);
-        padding: 6px 8px;
+        padding: 7px 8px;
         text-align: right;
     }
 
-    th:first-child {
-        text-align: left;
-    }
+    th:first-child { text-align: left; }
 
     td {
-        padding: 7px 8px;
+        padding: 8px 8px;
         border-bottom: 0.5px solid var(--border);
         font-family: var(--mono);
         text-align: right;
@@ -536,191 +518,177 @@
         color: var(--text);
     }
 
-    /* Dark mode: alert banners — slightly more muted */
-    .app.dark .alert-danger {
-        background: rgba(216, 90, 48, 0.15);
-        border-color: rgba(216, 90, 48, 0.3);
-        color: #f0a080;
-    }
+    .app.dark .alert-danger  { background: rgba(216,90,48,.15);  border-color: rgba(216,90,48,.3);  color: #f0a080; }
+    .app.dark .alert-warning { background: rgba(186,117,23,.15); border-color: rgba(186,117,23,.3); color: #e0b060; }
+    .app.dark .alert-info    { background: rgba(24,95,165,.15);  border-color: rgba(24,95,165,.3);  color: #80b0e0; }
 
-    .app.dark .alert-warning {
-        background: rgba(186, 117, 23, 0.15);
-        border-color: rgba(186, 117, 23, 0.3);
-        color: #e0b060;
-    }
+    .app.dark .badge-red   { background: rgba(216,90,48,.2);  color: #f0a080; }
+    .app.dark .badge-green { background: rgba(29,158,117,.2); color: #7dd8a8; }
+    .app.dark .badge-blue  { background: rgba(24,95,165,.2);  color: #80b0e0; }
+    .app.dark .badge-amber { background: rgba(186,117,23,.2); color: #e0b060; }
 
-    .app.dark .alert-info {
-        background: rgba(24, 95, 165, 0.15);
-        border-color: rgba(24, 95, 165, 0.3);
-        color: #80b0e0;
-    }
+    .app.dark .inp { color: var(--text); }
+    .app.dark .inp:focus { border-color: var(--acc); }
 
-    /* Dark mode: badges — invert to remain readable */
-    .app.dark .badge-red   { background: rgba(216, 90, 48,  0.2); color: #f0a080; }
-    .app.dark .badge-green { background: rgba(29,  158, 117, 0.2); color: #7dd8a8; }
-    .app.dark .badge-blue  { background: rgba(24,  95,  165, 0.2); color: #80b0e0; }
-    .app.dark .badge-amber { background: rgba(186, 117, 23,  0.2); color: #e0b060; }
-
-    /* Dark mode: inputs */
-    .app.dark .inp {
-        color: var(--text);
-    }
-
-    .app.dark .inp:focus {
-        border-color: var(--acc);
-    }
+    /* Dark mode: profile sheet */
+    .app.dark #profile-sheet-panel { background: var(--bg); }
 
 
     /* ─── 19. PRINT STYLES ──────────────────────────────────────────────────────── */
     @media print {
-        /* Hide everything that isn't the report pane */
-        .app-header,
-        .tabs,
-        #alerts-budget,
-        #alerts-bills,
-        .pane:not(#pane-report) {
-            display: none !important;
-        }
+        .app-header, .tabs,
+        #alerts-budget, #alerts-bills,
+        .pane:not(#pane-report),
+        #bottom-nav { display: none !important; }
 
-        /* Force the report pane to be visible */
-        #pane-report {
-            display: block !important;
-        }
+        #pane-report { display: block !important; }
 
-        /* Remove the app container max-width and padding */
         .app {
             max-width: 100%;
             padding: 0;
             margin: 0;
         }
 
-        body {
-            background: #fff;
-            color: #000;
-            font-size: 12px;
-        }
+        body { background: #fff; color: #000; font-size: 12px; }
 
-        /* Remove backgrounds and shadows for clean print */
-        .metric,
-        .card {
-            background: none;
-            border: 0.5px solid #ccc;
-        }
+        .metric, .card { background: none; border: 0.5px solid #ccc; }
 
-        /* Hide action buttons in the report */
-        .btn-primary,
-        .btn-sm,
-        .tx-delete {
-            display: none !important;
-        }
+        .btn-primary, .btn-sm, .tx-delete { display: none !important; }
 
-        /* Ensure page breaks don't split mid-section */
-        .card,
-        .tx-row {
-            page-break-inside: avoid;
-        }
+        .card, .tx-row { page-break-inside: avoid; }
     }
 
 
-    /* ─── 20. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────── */
+    /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
 
-    /* ── Tablet (max 768px) ─────────────────────────────────────────────────── */
-    @media (max-width: 768px) {
-        /* Slightly tighter app padding */
-        .app { padding: 1rem 0.875rem; }
+    /* ── Large desktop (> 1100px) ───────────────────────────────────────────── */
+    @media (min-width: 1100px) {
+        /* On very wide screens give a subtle centered feel */
+        body { background: var(--bg2); }
+        .app {
+            background: var(--bg);
+            margin: 0 auto;
+            min-height: 100vh;
+            box-shadow: 0 0 0 0.5px var(--border);
+        }
+        .app.dark { background: var(--bg); }
+    }
 
-        /* 3-col metric rows collapse to 2 */
+    /* ── Tablet (≤ 900px) ────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+        :root { --page-pad: 1.25rem; }
+
         .row3 { grid-template-columns: 1fr 1fr; }
 
-        /* Net worth 3-col header collapses to 2 */
+        /* Net worth keeps 3-col */
         #pane-networth .row3 { grid-template-columns: 1fr 1fr 1fr; }
     }
 
+    /* ── Mobile (≤ 600px) — main breakpoint ─────────────────────────────────── */
+    @media (max-width: 600px) {
+        :root { --page-pad: 1rem; }
 
-    /* ── Mobile (max 480px) ─────────────────────────────────────────────────── */
-    @media (max-width: 480px) {
-
-        /* Core layout */
-        .app {
-            padding: 1rem 0.75rem;
-            /* Extra bottom padding so content clears the bottom nav bar */
-            padding-bottom: calc(1rem + 68px);
+        body {
+            font-size: 15px;
         }
 
-        /* Grid collapses */
+        .app {
+            padding: 1rem var(--page-pad);
+            /* Extra bottom padding so content clears the fixed bottom nav bar */
+            padding-bottom: calc(1rem + 72px);
+        }
+
+        /* ── Header ───────────────────────────────────────────────────────── */
+        .app-header {
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 12px;
+            padding-bottom: 1rem;
+        }
+
+        /* Keep header-left and header-right side by side */
+        .header-left {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .header-right {
+            flex-shrink: 0;
+            gap: 10px;
+        }
+
+        /* Tighter month nav on small screens */
+        .header-month-label {
+            font-size: 15px !important;
+            min-width: 100px !important;
+        }
+
+        .month-nav-btn {
+            width: 32px !important;
+            height: 32px !important;
+        }
+
+        /* Net balance smaller */
+        #hd-bal {
+            font-size: 18px !important;
+        }
+
+        /* ── Grids ────────────────────────────────────────────────────────── */
         .row4 { grid-template-columns: 1fr 1fr; }
         .row3 { grid-template-columns: 1fr 1fr; }
         .row2 { grid-template-columns: 1fr; }
 
-        /* Header — stack vertically on small screens */
-        .app-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 12px;
-            padding-bottom: 1rem;
-        }
-        .app-header > div:last-child {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        /* ── Tab strip hidden — replaced by bottom nav ──────────────────── */
+        .tabs { display: none; }
 
-        /* Month navigation — bigger tap targets */
+        /* ── Metric cards ─────────────────────────────────────────────────── */
+        .metric { padding: 12px 12px; }
+        .metric .val { font-size: 15px; }
+
+        /* ── Transaction rows ────────────────────────────────────────────── */
+        .tx-name { font-size: 14px; }
+        .tx-amount { white-space: nowrap; font-size: 14px; }
+        .tx-delete { font-size: 18px; min-width: 28px; min-height: 28px; }
+
+        /* ── Buttons ─────────────────────────────────────────────────────── */
         .btn-sm {
-            min-height: 36px;
-            min-width: 36px;
+            min-height: 34px;
             padding: 6px 12px;
         }
 
-        /* Net balance — slightly smaller on mobile */
-        #hd-bal { font-size: 18px !important; }
-
-        /* Month label centred */
-        #hd-month { font-size: 16px !important; min-width: 130px !important; }
-
-        /* Currency selector full width */
-        #currency-sel { width: 100% !important; }
-
-        /* Forms: 2-col grids become 1-col */
-        .row2[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
-
-        /* Debt add form: 2-col grid */
-        #pane-debt .row2 { grid-template-columns: 1fr !important; }
-
-        /* Net worth 4-col add form → 2+2 */
-        #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
-            grid-template-columns: 1fr 1fr !important;
+        .btn-primary {
+            padding: 12px 18px;
+            font-size: 15px;
         }
 
-        /* Bills 4-col add form → name full width, then 3-col */
+        /* ── Inputs ──────────────────────────────────────────────────────── */
+        .inp {
+            font-size: 15px;
+            padding: 10px 12px;
+        }
+
+        /* ── Forms: inline grids become single column ────────────────────── */
+        /* Override any inline grid-template-columns in screen files */
+        #pane-debt .row2,
+        #pane-goals [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-savings [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-recurring .row2 {
+            grid-template-columns: 1fr !important;
+        }
+
+        /* Bills 4-col add form → bill name full width + 3 inline */
         #pane-bills [style*="grid-template-columns: 1fr 1fr 70px auto"] {
             grid-template-columns: 1fr 1fr auto !important;
         }
         #b-name { grid-column: 1 / -1; }
 
-        /* Goals 3-col form stays 3-col (short fields) */
+        /* Net worth 4-col add form → 2-col */
+        #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
+            grid-template-columns: 1fr 1fr !important;
+        }
+        #nw-name { grid-column: 1 / -1; }
 
-        /* Tab strip — hide on mobile (replaced by bottom nav) */
-        .tabs { display: none; }
-
-        /* Cards get slightly more breathing room */
-        .card { padding: 12px 14px; }
-
-        /* Transaction rows — ensure amounts don't wrap */
-        .tx-row { gap: 8px; }
-        .tx-amount { white-space: nowrap; }
-
-        /* Progress labels — smaller */
-        .prog-track { margin: 6px 0; }
-
-        /* Section headings — a touch smaller */
-        .sec { font-size: 10px; }
-
-        /* Metric values — slightly smaller */
-        .metric .val { font-size: 14px; }
-
-        /* Report / multi-month table — horizontal scroll */
+        /* ── Report / multi-month table — horizontal scroll ─────────────── */
         #report-body table,
         #month-table table {
             min-width: 480px;
@@ -731,25 +699,42 @@
             -webkit-overflow-scrolling: touch;
         }
 
-        /* Charts — allow shorter height on mobile */
-        #pane-charts [style*="height:200px"] { height: 160px !important; }
-        #pane-charts [style*="height:240px"] { height: 180px !important; }
-        #pane-multimonth [style*="height:220px"] { height: 160px !important; }
-        #pane-forecast [style*="height:220px"] { height: 160px !important; }
+        /* ── Charts — shorter on mobile ──────────────────────────────────── */
+        #pane-charts [style*="height:200px"] { height: 170px !important; }
+        #pane-charts [style*="height:240px"] { height: 200px !important; }
+        #pane-multimonth [style*="height:220px"] { height: 170px !important; }
+        #pane-forecast [style*="height:220px"] { height: 170px !important; }
 
-        h1 { font-size: 18px; }
+        h1 { font-size: 20px; }
+
+        /* ── Section labels ──────────────────────────────────────────────── */
+        .sec { font-size: 10px; }
+    }
+
+    /* ── Very small phones (≤ 390px) ─────────────────────────────────────────── */
+    @media (max-width: 390px) {
+        :root { --page-pad: 0.875rem; }
+
+        .header-month-label {
+            font-size: 14px !important;
+            min-width: 88px !important;
+        }
+
+        .month-nav-btn {
+            width: 28px !important;
+            height: 28px !important;
+            font-size: 14px !important;
+        }
+
+        #hd-bal { font-size: 16px !important; }
+
+        .row4 { grid-template-columns: 1fr 1fr; gap: 8px; }
     }
 
 
     /* ─── BOTTOM NAVIGATION BAR (mobile only) ───────────────────────────────── */
-    /*
-     * On mobile (≤ 480px) the horizontal tab strip is hidden and replaced with
-     * a fixed bottom navigation bar showing 5 primary tabs.
-     * The "More" button opens a tab picker overlay for the remaining tabs.
-     */
-
     #bottom-nav {
-        display: none; /* shown via media query below */
+        display: none;
         position: fixed;
         bottom: 0;
         left: 0;
@@ -758,16 +743,15 @@
         background: var(--bg);
         border-top: 0.5px solid var(--border);
         padding: 8px 0 max(8px, env(safe-area-inset-bottom));
-        /* Frosted glass on modern browsers */
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
     }
 
     .bnav-inner {
         display: flex;
         justify-content: space-around;
         align-items: flex-end;
-        max-width: 480px;
+        max-width: 600px;
         margin: 0 auto;
     }
 
@@ -781,8 +765,8 @@
         cursor: pointer;
         padding: 4px 8px;
         border-radius: 8px;
-        min-width: 48px;
-        min-height: 44px;
+        min-width: 52px;
+        min-height: 48px;
         justify-content: center;
         color: var(--text2);
         font-family: var(--font);
@@ -793,8 +777,8 @@
     .bnav-item.active { color: var(--text); }
 
     .bnav-item svg {
-        width: 22px;
-        height: 22px;
+        width: 24px;
+        height: 24px;
         stroke: currentColor;
         fill: none;
         stroke-width: 1.5;
@@ -817,12 +801,13 @@
         inset: 0;
         z-index: 300;
     }
+
     #tab-sheet.open { display: block; }
 
     #tab-sheet-backdrop {
         position: absolute;
         inset: 0;
-        background: rgba(0,0,0,.35);
+        background: rgba(0, 0, 0, 0.35);
     }
 
     #tab-sheet-panel {
@@ -863,25 +848,25 @@
         color: var(--text2);
         -webkit-tap-highlight-color: transparent;
     }
+
     .tab-sheet-item.active { color: var(--text); border-color: var(--border2); }
+
     .tab-sheet-item svg {
         width: 22px; height: 22px;
         stroke: currentColor; fill: none;
         stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
     }
 
-    @media (max-width: 480px) {
+    @media (max-width: 600px) {
         #bottom-nav { display: flex; flex-direction: column; }
     }
 
-
-    /* ─── SWIPE INDICATOR (month nav hint on first load) ────────────────────── */
+    /* ─── SWIPE HINT ANIMATION ──────────────────────────────────────────────── */
     @keyframes swipeHint {
-        0%   { transform: translateX(0);   opacity: 0; }
-        20%  { transform: translateX(0);   opacity: .7; }
+        0%   { transform: translateX(0);    opacity: 0; }
+        20%  { transform: translateX(0);    opacity: .7; }
         60%  { transform: translateX(-18px); opacity: .7; }
         80%  { transform: translateX(-18px); opacity: 0; }
-        100% { transform: translateX(0);   opacity: 0; }
+        100% { transform: translateX(0);    opacity: 0; }
     }
 </style>
-

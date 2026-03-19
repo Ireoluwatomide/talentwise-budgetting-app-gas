@@ -1,87 +1,312 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Header.html — Top Bar Component
 
-     Renders the persistent top bar with app label, month navigation,
-     currency selector, dark mode toggle, CSV export, and net balance.
-
-     DOM is static — updateHeader() updates text/colour values on each renderAll().
+     Desktop: full header with all controls inline.
+     Mobile (≤ 480px): stripped header (logo + month nav + balance + avatar).
+       Currency, dark mode, CSV export, and sign-out live inside a profile
+       drawer that slides up from the bottom — triggered by tapping the avatar.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="app-header">
 
     <!-- LEFT: App label + month navigation ──────────────────────────────────── -->
-    <div>
-        <div class="label-caps" style="margin-bottom:5px;">Budget Tracker</div>
+    <div class="header-left">
+        <div class="label-caps header-app-label">Budget Tracker</div>
 
         <div style="display:flex;align-items:center;gap:8px;">
-            <!-- prev month button — 26×26px square feel -->
             <button
                     onclick="prevMonth()"
-                    class="btn-sm"
-                    style="width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;font-size:14px;"
+                    class="btn-sm month-nav-btn"
                     title="Previous month">‹</button>
 
-            <!-- month label — min-width prevents layout shift between long/short names -->
-            <div id="hd-month" style="font-size:14px;font-weight:500;min-width:130px;text-align:center;">
+            <div id="hd-month" class="header-month-label">
                 <!-- updated by updateHeader() -->
             </div>
 
-            <!-- next month button -->
             <button
                     onclick="nextMonth()"
-                    class="btn-sm"
-                    style="width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;font-size:14px;"
+                    class="btn-sm month-nav-btn"
                     title="Next month">›</button>
         </div>
     </div>
 
     <!-- RIGHT: Controls + Net Balance ───────────────────────────────────────── -->
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+    <div class="header-right">
 
-        <!-- Currency selector -->
-        <select
-                id="currency-sel"
-                onchange="setCurrency(this.value)"
-                class="inp"
-                style="width:auto;padding:5px 28px 5px 8px;font-size:11px;">
-            <option value="NGN">₦ NGN</option>
-            <option value="USD">$ USD</option>
-            <option value="EUR">€ EUR</option>
-            <option value="GBP">£ GBP</option>
-        </select>
+        <!-- ── DESKTOP controls (hidden on mobile) ─────────────────────────── -->
+        <div class="header-desktop-controls">
+            <select
+                    id="currency-sel"
+                    onchange="setCurrency(this.value)"
+                    class="inp header-currency-sel">
+                <option value="NGN">₦ NGN</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">€ EUR</option>
+                <option value="GBP">£ GBP</option>
+            </select>
 
-        <!-- Dark mode toggle -->
-        <button
-                id="dark-btn"
-                onclick="toggleDark()"
-                class="btn-sm">Dark</button>
+            <button id="dark-btn"  onclick="toggleDark()"  class="btn-sm">Dark</button>
+            <button onclick="exportCSV()" class="btn-sm" title="Export current month as CSV">CSV</button>
+        </div>
 
-        <!-- CSV export -->
-        <button
-                onclick="exportCSV()"
-                class="btn-sm"
-                title="Export current month as CSV">CSV</button>
-
-        <!-- Net Balance display -->
-        <div style="text-align:right;margin-left:4px;">
+        <!-- Net Balance display — always visible -->
+        <div class="header-balance">
             <div class="label-caps" style="margin-bottom:2px;">Net Balance</div>
-            <div
-                    id="hd-bal"
-                    style="font-family:var(--mono);font-size:22px;font-weight:500;color:var(--acc);">
+            <div id="hd-bal" style="font-family:var(--mono);font-size:22px;font-weight:500;color:var(--acc);">
                 <!-- updated by updateHeader() -->
             </div>
+        </div>
+
+        <!-- Avatar / profile button — always visible, opens profile drawer on mobile,
+             shows signout inline on desktop -->
+        <div class="header-profile-wrap" id="header-profile-wrap">
+            <!-- populated by updateHeader() once __USER__ is known -->
         </div>
 
     </div>
 </div>
 
+<!-- ── PROFILE DRAWER (mobile) ────────────────────────────────────────────── -->
+<div id="profile-sheet">
+    <div id="profile-sheet-backdrop" onclick="closeProfileSheet()"></div>
+    <div id="profile-sheet-panel">
+        <div class="profile-sheet-handle"></div>
+
+        <!-- User info row -->
+        <div id="profile-sheet-user" style="margin-bottom:1.25rem;"></div>
+
+        <!-- Currency selector -->
+        <div style="margin-bottom:12px;">
+            <div class="label-caps" style="margin-bottom:6px;">Currency</div>
+            <select
+                    id="currency-sel-mobile"
+                    onchange="setCurrency(this.value)"
+                    class="inp"
+                    style="width:100%;">
+                <option value="NGN">₦ NGN</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">€ EUR</option>
+                <option value="GBP">£ GBP</option>
+            </select>
+        </div>
+
+        <!-- Action rows -->
+        <div class="profile-sheet-actions">
+
+            <button class="profile-sheet-action-btn" onclick="toggleDark();updateProfileSheet();">
+                <span id="profile-dark-icon">🌙</span>
+                <span id="profile-dark-label">Dark mode</span>
+                <span class="profile-sheet-action-chevron" id="profile-dark-state">Off</span>
+            </button>
+
+            <button class="profile-sheet-action-btn" onclick="exportCSV();closeProfileSheet();">
+                <span>📥</span>
+                <span>Export CSV</span>
+                <span class="profile-sheet-action-chevron">→</span>
+            </button>
+
+            <button class="profile-sheet-action-btn profile-sheet-signout" onclick="signOut()">
+                <span>🚪</span>
+                <span>Sign out</span>
+                <span class="profile-sheet-action-chevron">→</span>
+            </button>
+
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ── Header layout ─────────────────────────────────────────────────────── */
+    .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .header-app-label {
+        margin-bottom: 0;
+    }
+
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+
+    .header-desktop-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .header-currency-sel {
+        width: auto;
+        padding: 5px 28px 5px 8px;
+        font-size: 11px;
+    }
+
+    .header-balance {
+        text-align: right;
+        margin-left: 4px;
+    }
+
+    .header-month-label {
+        font-size: 20px;
+        font-weight: 400;
+        min-width: 155px;
+        text-align: center;
+    }
+
+    .month-nav-btn {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+    }
+
+    /* ── Avatar pill ─────────────────────────────────────────────────────── */
+    .header-avatar-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        flex-shrink: 0;
+    }
+
+    .header-avatar-circle {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--text);
+        color: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: var(--font);
+        flex-shrink: 0;
+    }
+
+    .header-signout-desktop {
+        font-size: 11px;
+    }
+
+    /* ── Profile drawer ───────────────────────────────────────────────────── */
+    #profile-sheet {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+    }
+
+    #profile-sheet.open {
+        display: block;
+    }
+
+    #profile-sheet-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    #profile-sheet-panel {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .profile-sheet-handle {
+        width: 36px;
+        height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 20px;
+    }
+
+    .profile-sheet-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 8px;
+    }
+
+    .profile-sheet-action-btn {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        background: var(--bg2);
+        border: none;
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        font-family: var(--font);
+        font-size: 14px;
+        color: var(--text);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .profile-sheet-action-btn:active {
+        opacity: 0.7;
+    }
+
+    .profile-sheet-action-chevron {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--text2);
+    }
+
+    .profile-sheet-signout {
+        color: var(--red);
+        margin-top: 8px;
+    }
+
+    /* ── Mobile overrides ─────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+        .header-desktop-controls {
+            display: none; /* moved into profile drawer */
+        }
+
+        .header-balance {
+            margin-left: 0;
+        }
+
+        #hd-bal {
+            font-size: 18px !important;
+        }
+
+        .header-month-label {
+            font-size: 16px !important;
+            min-width: 120px !important;
+        }
+    }
+
+    /* ── Desktop: hide profile drawer, show signout inline ──────────────── */
+    @media (min-width: 481px) {
+        #profile-sheet {
+            display: none !important; /* never shown on desktop */
+        }
+    }
+</style>
+
 <script>
     /**
      * updateHeader()
-     *
      * Called from renderAll() after every state change.
-     * Updates the month label, net balance value + colour,
-     * currency selector, and dark mode button text.
      */
     function updateHeader() {
         // 1. Month label
@@ -90,7 +315,7 @@
             monthEl.textContent = monthLabel(AppState.curYear, AppState.curMonth);
         }
 
-        // 2. Net balance — computed from client-side AppState cache
+        // 2. Net balance
         var stats  = getMonthStats(curKey());
         var bal    = stats.bal;
         var balEl  = document.getElementById('hd-bal');
@@ -99,12 +324,126 @@
             balEl.style.color = bal >= 0 ? 'var(--acc)' : 'var(--red)';
         }
 
-        // 3. Sync currency selector to AppState
+        // 3. Sync currency selectors to AppState
         var currSel = document.getElementById('currency-sel');
         if (currSel) currSel.value = AppState.currency;
+        var currSelM = document.getElementById('currency-sel-mobile');
+        if (currSelM) currSelM.value = AppState.currency;
 
         // 4. Dark mode button label
         var darkBtn = document.getElementById('dark-btn');
         if (darkBtn) darkBtn.textContent = AppState.darkMode ? 'Light' : 'Dark';
+
+        // 5. Build avatar / profile control
+        _buildProfileControl();
+    }
+
+    /**
+     * _buildProfileControl()
+     * Renders the avatar button in the header.
+     * On desktop shows avatar + sign-out button inline.
+     * On mobile shows avatar only (sign-out is in the profile drawer).
+     */
+    function _buildProfileControl() {
+        var wrap = document.getElementById('header-profile-wrap');
+        if (!wrap) return;
+
+        var user      = window.__USER__;
+        var name      = user && user.display_name ? user.display_name
+            : user && user.email        ? user.email.split('@')[0]
+                : '';
+        var initials  = name ? name.slice(0, 2).toUpperCase() : '?';
+        var isMobile  = window.innerWidth <= 480;
+
+        // Avatar circle
+        var avatarHtml = (
+            '<div class="header-avatar-circle">' + initials + '</div>'
+        );
+
+        if (isMobile) {
+            // Mobile: avatar opens profile drawer
+            wrap.innerHTML = (
+                '<button class="header-avatar-btn" onclick="openProfileSheet()" ' +
+                'aria-label="Open profile menu">' +
+                avatarHtml +
+                '</button>'
+            );
+        } else {
+            // Desktop: avatar + signout button inline
+            var signOutHtml = user
+                ? '<button class="btn-sm header-signout-desktop" onclick="signOut()">' +
+                'Sign out</button>'
+                : '';
+            wrap.innerHTML = (
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                avatarHtml +
+                signOutHtml +
+                '</div>'
+            );
+        }
+
+        // Populate the profile sheet user row
+        _updateProfileSheetUser(name, user && user.email ? user.email : '');
+    }
+
+    /**
+     * _updateProfileSheetUser(name, email)
+     */
+    function _updateProfileSheetUser(name, email) {
+        var el = document.getElementById('profile-sheet-user');
+        if (!el) return;
+
+        var initials = name ? name.slice(0, 2).toUpperCase() : '?';
+        el.innerHTML = (
+            '<div style="display:flex;align-items:center;gap:12px;">' +
+            '<div class="header-avatar-circle" style="width:44px;height:44px;font-size:15px;">' +
+            initials +
+            '</div>' +
+            '<div>' +
+            '<div style="font-size:14px;font-weight:500;">' + (name || 'User') + '</div>' +
+            (email ? '<div style="font-size:12px;color:var(--text2);">' + email + '</div>' : '') +
+            '</div>' +
+            '</div>'
+        );
+    }
+
+    /**
+     * openProfileSheet()
+     * Opens the mobile profile drawer.
+     */
+    function openProfileSheet() {
+        updateProfileSheet();
+        var sheet = document.getElementById('profile-sheet');
+        if (sheet) {
+            sheet.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    /**
+     * closeProfileSheet()
+     */
+    function closeProfileSheet() {
+        var sheet = document.getElementById('profile-sheet');
+        if (sheet) {
+            sheet.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    }
+
+    /**
+     * updateProfileSheet()
+     * Syncs the profile sheet controls to current AppState.
+     */
+    function updateProfileSheet() {
+        var darkLabel = document.getElementById('profile-dark-label');
+        var darkState = document.getElementById('profile-dark-state');
+        var darkIcon  = document.getElementById('profile-dark-icon');
+        var currMob   = document.getElementById('currency-sel-mobile');
+
+        if (darkLabel) darkLabel.textContent = AppState.darkMode ? 'Light mode' : 'Dark mode';
+        if (darkState) darkState.textContent = AppState.darkMode ? 'On' : 'Off';
+        if (darkIcon)  darkIcon.textContent  = AppState.darkMode ? '☀️' : '🌙';
+        if (currMob)   currMob.value         = AppState.currency;
     }
 </script>

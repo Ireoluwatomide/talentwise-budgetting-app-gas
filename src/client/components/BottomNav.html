@@ -1,29 +1,18 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      BottomNav.html — Mobile Bottom Navigation Bar
-     src/client/components/BottomNav.html
 
-     INCLUDED VIA:
-       <?!= include('src/client/components/BottomNav') ?>
-       Place this AFTER the tab strip include in Index.html.
+     On mobile (≤ 600px), replaces the horizontal tab strip with a fixed
+     bottom nav showing 5 primary tabs plus a "More" sheet.
 
-     PURPOSE:
-       On mobile (≤ 480px), replaces the horizontal tab strip with a fixed
-       bottom nav bar showing 5 primary tabs plus a "More" sheet.
-       The horizontal .tabs strip is hidden via CSS on mobile.
-
-     PRIMARY TABS (bottom bar):
-       Overview · Goals · Bills · Savings · More ···
-
-     SECONDARY TABS (More sheet):
-       Charts · Categories · Insights · Forecast · Multi-Month
-       Report · Debt · Net Worth · Recurring · Templates · Settings
+     PRIMARY TABS: Overview · Goals · Bills · Savings · More ···
+     SECONDARY TABS (More sheet): all remaining tabs
      ───────────────────────────────────────────────────────────────────────── -->
 
 <!-- Bottom navigation bar -->
 <div id="bottom-nav">
     <div class="bnav-inner">
 
-        <button class="bnav-item active" id="bnav-overview" onclick="switchTabMobile('overview')">
+        <button class="bnav-item" id="bnav-overview" onclick="switchTabMobile('overview')">
             <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
             <span class="bnav-label">Overview</span>
         </button>
@@ -101,17 +90,14 @@
     // Bottom navigation + swipe gesture
     // =============================================================================
 
-    // Primary tabs visible in the bottom bar
     var BNAV_PRIMARY = ['overview', 'goals', 'bills', 'savings'];
 
     /**
      * switchTabMobile(tabId)
-     *
      * Wrapper around switchTab() that also updates bottom nav active states.
-     * Used by both the bottom nav buttons and the More sheet items.
      */
     function switchTabMobile(tabId) {
-        switchTab(tabId); // from utils.js
+        switchTab(tabId);
 
         // Update bottom nav active state
         BNAV_PRIMARY.forEach(function(id) {
@@ -119,24 +105,19 @@
             if (el) el.classList.toggle('active', id === tabId);
         });
 
-        // If none of the primary tabs match, "More" gets active treatment
         var moreBtn = document.getElementById('bnav-more');
         if (moreBtn) {
             moreBtn.classList.toggle('active', BNAV_PRIMARY.indexOf(tabId) === -1);
         }
 
         // Update More sheet item active state
-        var tsItem = document.getElementById('tsitem-' + tabId);
         document.querySelectorAll('.tab-sheet-item').forEach(function(el) {
             el.classList.remove('active');
         });
+        var tsItem = document.getElementById('tsitem-' + tabId);
         if (tsItem) tsItem.classList.add('active');
     }
 
-    /**
-     * openTabSheet()
-     * Opens the "More" bottom sheet.
-     */
     function openTabSheet() {
         var sheet = document.getElementById('tab-sheet');
         if (sheet) {
@@ -145,10 +126,6 @@
         }
     }
 
-    /**
-     * closeTabSheet()
-     * Closes the "More" bottom sheet.
-     */
     function closeTabSheet() {
         var sheet = document.getElementById('tab-sheet');
         if (sheet) {
@@ -157,16 +134,13 @@
         }
     }
 
-    // ─── SWIPE GESTURE FOR MONTH NAVIGATION ──────────────────────────────────────
-    //
-    // On mobile, swipe left to go to next month, swipe right to go to prev month.
-    // Applied to the #app div so it captures swipes anywhere on the screen.
 
+    // ─── SWIPE GESTURE FOR MONTH NAVIGATION ──────────────────────────────────────
     (function() {
         var touchStartX = 0;
         var touchStartY = 0;
-        var SWIPE_THRESHOLD = 60;  // minimum px horizontal travel
-        var DIRECTION_LOCK  = 30;  // max px vertical deviation to count as horizontal
+        var SWIPE_THRESHOLD = 60;
+        var DIRECTION_LOCK  = 30;
 
         var app = document.getElementById('app');
         if (!app) return;
@@ -180,11 +154,9 @@
             var dx = e.changedTouches[0].clientX - touchStartX;
             var dy = e.changedTouches[0].clientY - touchStartY;
 
-            // Only register horizontal swipes — ignore near-vertical gestures
             if (Math.abs(dy) > DIRECTION_LOCK) return;
             if (Math.abs(dx) < SWIPE_THRESHOLD) return;
 
-            // Ignore swipes that start inside scrollable elements (tables, tab sheet)
             var target = e.target;
             while (target && target !== app) {
                 var style = window.getComputedStyle(target);
@@ -193,50 +165,16 @@
             }
 
             if (dx < 0) {
-                // Swipe left → next month
                 if (typeof nextMonth === 'function') nextMonth();
             } else {
-                // Swipe right → previous month
                 if (typeof prevMonth === 'function') prevMonth();
             }
         }, { passive: true });
     })();
 
-    // ─── HEADER USER DISPLAY ─────────────────────────────────────────────────────
-    //
-    // If window.__USER__ was injected by Main.gs, display the user's name/avatar
-    // in the header. Falls back gracefully if not present.
-
-    (function() {
-        var user = window.__USER__;
-        if (!user || !user.email) return;
-
-        var headerEl = document.querySelector('.app-header, [style*="justify-content:space-between"]');
-        if (!headerEl) return;
-
-        // Build a small avatar pill and sign-out link
-        var name    = user.display_name || user.email.split('@')[0];
-        var initials = name.slice(0, 2).toUpperCase();
-
-        var avatarHtml = (
-            '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-            '<div style="width:28px;height:28px;border-radius:50%;background:var(--text);' +
-            'color:var(--bg);display:flex;align-items:center;justify-content:center;' +
-            'font-size:11px;font-weight:500;">' + initials + '</div>' +
-            '<button class="btn-sm" onclick="signOut()" ' +
-            'style="font-size:11px;" title="Sign out">Sign out</button>' +
-            '</div>'
-        );
-
-        // Insert avatar before the last child of the header
-        var tempDiv = document.createElement('div');
-        tempDiv.innerHTML = avatarHtml;
-        headerEl.insertBefore(tempDiv.firstChild, headerEl.lastChild);
-    })();
-
     /**
      * signOut()
-     * Redirects to the landing page. Google handles actual session termination.
+     * Redirects to the landing page.
      */
     function signOut() {
         if (typeof google !== 'undefined' && google.script && google.script.run) {

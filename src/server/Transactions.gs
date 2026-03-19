@@ -39,7 +39,7 @@ const VALID_TYPES = ['income', 'expense', 'savings'];
 function getTransactionsByMonth(monthKey) {
   if (!monthKey) throw new Error('Transactions.gs: monthKey is required.');
 
-  return getRowsByFilter(SHEET_NAMES.TRANSACTIONS, function(row) {
+  return getUserRowsByFilter('TRANSACTIONS', function(row) {
     return String(row.month_key).trim() === String(monthKey).trim();
   }).map(_castTransaction);
 }
@@ -51,7 +51,7 @@ function getTransactionsByMonth(monthKey) {
  * Used by Report tab, multi-month analytics, and getAllMonthSummaries().
  */
 function getAllTransactions() {
-  return getAllRows(SHEET_NAMES.TRANSACTIONS).map(_castTransaction);
+  return getUserAllRows('Transactions').map(_castTransaction);
 }
 
 
@@ -102,7 +102,7 @@ function addTransaction(monthKey, name, amount, type, category, note) {
     note:      note     ? String(note).trim()     : ''
   };
 
-  appendRow(SHEET_NAMES.TRANSACTIONS, tx);
+  getUserAppendRow('TRANSACTIONS', tx);
 
   // ── Side-effect: credit savings goal if applicable ───────────────────────
   // Guard with typeof so this still works before Savings.gs is deployed.
@@ -129,7 +129,7 @@ function addTransaction(monthKey, name, amount, type, category, note) {
 function deleteTransaction(transactionId) {
   if (!transactionId) throw new Error('Transactions.gs: transactionId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.TRANSACTIONS, function(row) {
+  var rowIndex = getUserFindRowIndex('TRANSACTIONS', function(row) {
     return String(row.id) === String(transactionId);
   });
 
@@ -137,7 +137,7 @@ function deleteTransaction(transactionId) {
     throw new Error('Transactions.gs: Transaction "' + transactionId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.TRANSACTIONS, rowIndex);
+  getUserDeleteRow('TRANSACTIONS', rowIndex);
   return { success: true };
 }
 

@@ -68,7 +68,7 @@ const PREF_KEYS = {
  * Private convention: prefix _ means "do not call from client via google.script.run".
  */
 function _getPrefsMap() {
-  const rows = getAllRows(SHEET_NAMES.PREFERENCES);
+  const rows = getUserAllRows('Preferences');
   const map  = {};
   rows.forEach(function(row) {
     if (row.key) map[String(row.key).trim()] = row.value;
@@ -145,16 +145,16 @@ function setPreference(key, value) {
     : String(value);
 
   // Try to find an existing row for this key.
-  var rowIndex = findRowIndex(SHEET_NAMES.PREFERENCES, function(row) {
+  var rowIndex = getUserFindRowIndex('PREFERENCES', function(row) {
     return String(row.key).trim() === String(key).trim();
   });
 
   if (rowIndex !== -1) {
     // Update the existing row in place.
-    updateRow(SHEET_NAMES.PREFERENCES, rowIndex, { key: key, value: storedValue });
+    getUserUpdateRow('PREFERENCES', rowIndex, { key: key, value: storedValue });
   } else {
     // First time this preference is being set — append a new row.
-    appendRow(SHEET_NAMES.PREFERENCES, { key: key, value: storedValue });
+    getUserAppendRow('PREFERENCES', { key: key, value: storedValue });
   }
 
   return { success: true };

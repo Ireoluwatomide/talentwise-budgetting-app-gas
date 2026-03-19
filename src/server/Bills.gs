@@ -23,7 +23,7 @@
  * or booleans depending on cell format, so we handle both.
  */
 function getAllBills() {
-  return getAllRows(SHEET_NAMES.BILLS).map(_castBill);
+  return getUserAllRows('Bills').map(_castBill);
 }
 
 /**
@@ -87,7 +87,7 @@ function addBill(name, amount, dueDay) {
     paid:    false
   };
 
-  appendRow(SHEET_NAMES.BILLS, bill);
+  getUserAppendRow('BILLS', bill);
   return bill;
 }
 
@@ -100,7 +100,7 @@ function addBill(name, amount, dueDay) {
 function toggleBillPaid(billId) {
   if (!billId) throw new Error('Bills.gs: billId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.BILLS, function(row) {
+  var rowIndex = getUserFindRowIndex('BILLS', function(row) {
     return String(row.id) === String(billId);
   });
 
@@ -113,7 +113,7 @@ function toggleBillPaid(billId) {
   if (!existing) throw new Error('Bills.gs: Bill "' + billId + '" not found after index lookup.');
 
   var updated = Object.assign({}, existing, { paid: !existing.paid });
-  updateRow(SHEET_NAMES.BILLS, rowIndex, updated);
+  getUserUpdateRow('BILLS', rowIndex, updated);
   return updated;
 }
 
@@ -132,7 +132,7 @@ function deleteBill(billId) {
     throw new Error('Bills.gs: Bill "' + billId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.BILLS, rowIndex);
+  getUserDeleteRow('BILLS', rowIndex);
   return { success: true };
 }
 

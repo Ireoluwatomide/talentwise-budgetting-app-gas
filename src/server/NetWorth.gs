@@ -24,7 +24,7 @@ var VALID_NW_TYPES = ['asset', 'liability'];
  * amount is cast to a number.
  */
 function getAllNetWorthItems() {
-  return getAllRows(SHEET_NAMES.NET_WORTH).map(function(row) {
+  return getUserAllRows('NetWorth').map(function(row) {
     return {
       id:     String(row.id   || '').trim(),
       name:   String(row.name || '').trim(),
@@ -88,7 +88,7 @@ function addNetWorthItem(name, type, amount) {
     amount: parsedAmount
   };
 
-  appendRow(SHEET_NAMES.NET_WORTH, item);
+  getUserAppendRow('NET_WORTH', item);
   return item;
 }
 
@@ -99,7 +99,7 @@ function addNetWorthItem(name, type, amount) {
 function deleteNetWorthItem(itemId) {
   if (!itemId) throw new Error('NetWorth.gs: itemId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.NET_WORTH, function(row) {
+  var rowIndex = getUserFindRowIndex('NET_WORTH', function(row) {
     return String(row.id) === String(itemId);
   });
 
@@ -107,6 +107,6 @@ function deleteNetWorthItem(itemId) {
     throw new Error('NetWorth.gs: Item "' + itemId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.NET_WORTH, rowIndex);
+  getUserDeleteRow('NET_WORTH', rowIndex);
   return { success: true };
 }

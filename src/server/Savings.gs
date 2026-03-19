@@ -26,7 +26,7 @@
  * All numeric fields cast to numbers — Sheets can return strings.
  */
 function getAllSavingsGoals() {
-  return getAllRows(SHEET_NAMES.SAVINGS_GOALS).map(_castGoal);
+  return getUserAllRows('SavingsGoals').map(_castGoal);
 }
 
 /**
@@ -67,7 +67,7 @@ function addSavingsGoal(name, targetAmount) {
     saved_amount:  0
   };
 
-  appendRow(SHEET_NAMES.SAVINGS_GOALS, goal);
+  getUserAppendRow('SAVINGS_GOALS', goal);
 
   return _castGoal(goal);
 }
@@ -89,7 +89,7 @@ function deleteSavingsGoal(goalId) {
     throw new Error('Savings.gs: Savings goal "' + goalId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.SAVINGS_GOALS, rowIndex);
+  getUserDeleteRow('SAVINGS_GOALS', rowIndex);
   return { success: true };
 }
 
@@ -113,7 +113,7 @@ function updateSavingsGoalOnDeposit(goalName, depositAmount) {
   var trimmedName = String(goalName).trim().toLowerCase();
 
   // Find the matching goal row.
-  var rowIndex = findRowIndex(SHEET_NAMES.SAVINGS_GOALS, function(row) {
+  var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
     return String(row.name || '').trim().toLowerCase() === trimmedName;
   });
 
@@ -140,7 +140,7 @@ function updateSavingsGoalOnDeposit(goalName, depositAmount) {
     saved_amount:  newSaved
   };
 
-  updateRow(SHEET_NAMES.SAVINGS_GOALS, rowIndex, updated);
+  getUserUpdateRow('SAVINGS_GOALS', rowIndex, updated);
 
   return _castGoal(updated);
 }

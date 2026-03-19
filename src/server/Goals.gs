@@ -21,7 +21,7 @@
  * monthly_limit is cast to a number so the client never receives strings.
  */
 function getAllGoals() {
-  return getAllRows(SHEET_NAMES.GOALS).map(function(row) {
+  return getUserAllRows('Goals').map(function(row) {
     return {
       id:            String(row.id       || '').trim(),
       category:      String(row.category || '').trim(),
@@ -71,7 +71,7 @@ function addGoal(category, monthlyLimit) {
     monthly_limit: limit
   };
 
-  appendRow(SHEET_NAMES.GOALS, goal);
+  getUserAppendRow('GOALS', goal);
   return goal;
 }
 
@@ -89,7 +89,7 @@ function updateGoal(goalId, monthlyLimit) {
     throw new Error('Goals.gs: monthlyLimit must be a positive number.');
   }
 
-  var rowIndex = findRowIndex(SHEET_NAMES.GOALS, function(row) {
+  var rowIndex = getUserFindRowIndex('GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
 
@@ -108,7 +108,7 @@ function updateGoal(goalId, monthlyLimit) {
     monthly_limit: limit
   };
 
-  updateRow(SHEET_NAMES.GOALS, rowIndex, updated);
+  getUserUpdateRow('GOALS', rowIndex, updated);
   return updated;
 }
 
@@ -127,7 +127,7 @@ function deleteGoal(goalId) {
     throw new Error('Goals.gs: Goal "' + goalId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.GOALS, rowIndex);
+  getUserDeleteRow('GOALS', rowIndex);
   return { success: true };
 }
 

@@ -1,84 +1,202 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     MultiMonth.html — 6-Month Trend Chart & Summary Table Screen
+     MultiMonth.html — 6-Month Trend Chart & Summary Table
 
      TAB: Multi-Month
 
      SECTIONS:
        1. HTML legend (Income / Expenses / Savings)
-       2. Grouped bar chart — last 6 months (Chart.js)
-       3. Month-by-month summary table (Month | Income | Expenses | Saved | Balance | Save %)
+       2. Grouped bar chart — last 6 months ending at curKey()
+       3. Month-by-month summary table
 
-     SERVER CALLS: None — from AppState
+     All data computed client-side from AppState.transactions.
+     switchTab('multimonth') calls renderMultiMonth() after a 50ms delay.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-multimonth">
 
-    <!-- TODO: HTML legend row — same 3-item pattern as Charts.html -->
-    <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text2);">
-        <!-- TODO: Income (--acc), Expenses (--red), Savings (--blue) legend items -->
+    <!-- HTML legend -->
+    <div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block;"></span>Income
+    </span>
+        <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block;"></span>Expenses
+    </span>
+        <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--blue);display:inline-block;"></span>Savings
+    </span>
     </div>
 
-    <!-- ── Grouped Bar Chart ───────────────────────────────────────────────── -->
-    <!-- TODO: canvas id="trend-chart", wrapper height 220px, margin-bottom 1.5rem -->
-    <div style="position: relative; width: 100%; height: 220px; margin-bottom: 1.5rem;">
+    <!-- Grouped bar chart -->
+    <div style="position:relative;width:100%;height:220px;margin-bottom:1.5rem;">
         <canvas id="trend-chart"></canvas>
     </div>
 
-    <!-- ── Summary Table ───────────────────────────────────────────────────── -->
-    <!-- TODO: id="month-table" — set by renderMultiMonth()
-
-         <table style="width:100%;border-collapse:collapse;font-size:12px;">
-           <thead>
-             <tr>
-               th: Month (left-align)
-               th: Income | Expenses | Saved | Balance | Save % (right-align each)
-               All th: 10px, 500 weight, uppercase, letter-spacing 0.06em, --text2
-                       border-bottom 0.5px solid var(--border)
-             </tr>
-           </thead>
-           <tbody>
-             For each of the 6 months (oldest → newest):
-               <tr style="background: var(--bg2)" if it's the current month else "">
-                 Opacity 0.4 if no data exists for the month
-                 Month label (short: "Mar 26")
-                 Income  → fmt(inc) in --acc, right-align, monospace
-                 Expenses → fmt(exp) in --red
-                 Saved   → fmt(sav) in --blue
-                 Balance → fmt(bal) in --text or --red (if negative)
-                 Save %  → savRate% (sav/inc*100, rounded)
-                 All "—" if no data for the month
-               </tr>
-           </tbody>
-         </table>
-    -->
+    <!-- Summary table -->
     <div id="month-table"></div>
 
 </div>
 
+
 <script>
+    // =============================================================================
+    // MultiMonth screen
+    // =============================================================================
+
     /**
      * renderMultiMonth()
      *
-     * TODO: Called by switchTab('multimonth') with 50ms delay.
+     * Builds an array of the last 6 month keys ending at curKey(),
+     * renders a grouped bar chart, then builds a summary table below it.
      *
-     * TODO: 1. Build array of last 6 month keys ending at curKey()
-     *            e.g. if curKey = '2026-03':
-     *            ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03']
-     *            Handle year rollback correctly when going back past January
-     *
-     * TODO: 2. destroyChart('trend-chart') then create grouped bar chart:
-     *            3 datasets: Income (rgba --acc, 0.85), Expenses (--red), Savings (--blue)
-     *            Each dataset: data = months.map(k => getMonthStats(k).inc/exp/sav)
-     *            X labels: short month+year ('Oct 25', 'Nov 25', ...)
-     *            Options from getChartDefaults(), borderRadius: 3, borderSkipped: false
-     *            maxTicksLimit: 5 on Y axis to avoid crowding
-     * TODO: 3. registerChart('trend-chart', instance)
-     *
-     * TODO: 4. Build #month-table HTML — table structure as described above
-     *            Highlight the row where key === curKey() with var(--bg2) background
-     *            Show 0.4 opacity for months with no data in AppState.transactions
+     * Called by switchTab('multimonth') after a 50ms delay (canvas must be visible).
+     * Also called by renderAll() if this pane is already active.
      */
     function renderMultiMonth() {
-        // TODO: Implement
+        var keys   = _buildSixMonthKeys();
+        var labels = keys.map(function(k) {
+            var parts = k.split('-');
+            return MONTHS[parseInt(parts[1], 10) - 1].slice(0, 3) + ' ' + parts[0].slice(2);
+        });
+
+        _renderTrendChart(keys, labels);
+        _renderMonthTable(keys, labels);
+    }
+
+
+    // ─── BAR CHART ───────────────────────────────────────────────────────────────
+
+    function _renderTrendChart(keys, labels) {
+        destroyChart('trend-chart');
+
+        var canvas = document.getElementById('trend-chart');
+        if (!canvas) return;
+
+        var incData = keys.map(function(k) { return getMonthStats(k).inc; });
+        var expData = keys.map(function(k) { return getMonthStats(k).exp; });
+        var savData = keys.map(function(k) { return getMonthStats(k).sav; });
+
+        var defaults = getChartDefaults();
+        defaults.scales.y.ticks.maxTicksLimit = 5;
+
+        var chart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label:           'Income',
+                        data:            incData,
+                        backgroundColor: 'rgba(29,158,117,0.85)',
+                        borderRadius:    3,
+                        borderSkipped:   false
+                    },
+                    {
+                        label:           'Expenses',
+                        data:            expData,
+                        backgroundColor: 'rgba(216,90,48,0.85)',
+                        borderRadius:    3,
+                        borderSkipped:   false
+                    },
+                    {
+                        label:           'Savings',
+                        data:            savData,
+                        backgroundColor: 'rgba(24,95,165,0.85)',
+                        borderRadius:    3,
+                        borderSkipped:   false
+                    }
+                ]
+            },
+            options: defaults
+        });
+
+        registerChart('trend-chart', chart);
+    }
+
+
+    // ─── SUMMARY TABLE ────────────────────────────────────────────────────────────
+
+    function _renderMonthTable(keys, labels) {
+        var tableEl = document.getElementById('month-table');
+        if (!tableEl) return;
+
+        var cur = curKey();
+
+        var headers = ['Month', 'Income', 'Expenses', 'Saved', 'Balance', 'Save %'];
+        var headerHtml = headers.map(function(h, i) {
+            return (
+                '<th style="text-align:' + (i === 0 ? 'left' : 'right') + ';' +
+                'padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;' +
+                'letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">' +
+                h +
+                '</th>'
+            );
+        }).join('');
+
+        var rowsHtml = keys.map(function(k, i) {
+            var s         = getMonthStats(k);
+            var hasData   = AppState.transactions[k] && AppState.transactions[k].length > 0;
+            var isActive  = k === cur;
+            var savRate   = s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0;
+            var rowStyle  = (isActive ? 'background:var(--bg2);' : '') +
+                (!hasData  ? 'opacity:0.4;' : '');
+
+            var td = function(content, color, extraStyle) {
+                var style = 'padding:7px 8px;text-align:right;font-family:var(--mono);' +
+                    'border-bottom:0.5px solid var(--border);' +
+                    (color      ? 'color:' + color + ';' : '') +
+                    (extraStyle ? extraStyle : '');
+                return '<td style="' + style + '">' + content + '</td>';
+            };
+
+            var dash = '—';
+
+            return (
+                '<tr style="' + rowStyle + '">' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);' +
+                'font-weight:' + (isActive ? '500' : '400') + ';">' +
+                labels[i] +
+                '</td>' +
+                td(hasData ? fmt(s.inc) : dash, 'var(--acc)') +
+                td(hasData ? fmt(s.exp) : dash, 'var(--red)') +
+                td(hasData ? fmt(s.sav) : dash, 'var(--blue)') +
+                td(hasData ? fmt(s.bal) : dash, s.bal >= 0 ? 'var(--text)' : 'var(--red)') +
+                td(hasData ? savRate + '%' : dash, '') +
+                '</tr>'
+            );
+        }).join('');
+
+        tableEl.innerHTML = (
+            '<table>' +
+            '<thead><tr>' + headerHtml + '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+            '</table>'
+        );
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    /**
+     * _buildSixMonthKeys()
+     *
+     * Returns an array of 6 YYYY-MM keys ending at curKey(), oldest first.
+     * Handles year rollback when stepping back past January.
+     *
+     * Example: if curKey() = '2026-03':
+     *   ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03']
+     */
+    function _buildSixMonthKeys() {
+        var keys = [];
+        var y = AppState.curYear;
+        var m = AppState.curMonth;
+
+        for (var i = 0; i < 6; i++) {
+            keys.unshift(monthKey(y, m));
+            m--;
+            if (m === 0) { m = 12; y--; }
+        }
+
+        return keys;
     }
 </script>

@@ -1,31 +1,140 @@
-<!-- ─
-     Categories.html — Category Spending Breakdown Screen
-     SERVER CALLS: None — computed from AppState.transactions client-side
-     ───────────────────────────────────────────────────────────────────────── -->
-<div class="pane" id="pane-categories">
-    <!-- TODO: id="cat-list" — innerHTML set by renderCategories()
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Categories.html — Category Spending Breakdown
 
-         For each category that has expense transactions this month, sorted by amount DESC:
-           <div style="margin-bottom: 1.25rem;">
-             Header row:
-               LEFT:  coloured square (10×10, getCategoryColor(cat)) + category name (13px/500)
-                      + .badge-red "Over limit" if over goal
-               RIGHT: fmt(amount) in monospace + percentage of total expenses (11px, --text2)
-             Progress bar: width = pct of total expenses, background = getCategoryColor(cat)
-             Sub-label (if goal exists): "Limit: ₦X — Y% used"
-           </div>
-    -->
-    <div id="cat-list"></div>
+     TAB: Categories
+
+     PURPOSE:
+       Shows expense spending ranked by category for the current month.
+       Each category row shows:
+         - Coloured square matching getCategoryColor()
+         - Category name + "Over limit" badge if applicable
+         - Amount spent + percentage of total expenses
+         - Progress bar (width = % of total expenses, colour = category colour)
+         - Sub-label: goal limit and % of limit used (only if a goal exists)
+
+     All data computed client-side from AppState.transactions + AppState.goals.
+     switchTab('categories') triggers renderCategories() immediately (no canvas).
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-categories">
+    <div id="cat-list">
+        <!-- populated by renderCategories() -->
+    </div>
 </div>
 
+
 <script>
+    // =============================================================================
+    // Categories screen
+    // =============================================================================
+
     /**
      * renderCategories()
      *
-     * TODO: Group curTxs() expenses by category → { cat: totalAmount }
-     * TODO: Sort descending by amount
-     * TODO: For each category, check if a goal exists in AppState.goals
-     * TODO: Build and set #cat-list innerHTML
+     * Groups current month expense transactions by category,
+     * sorts descending by amount, and renders one row per category.
+     * If a goal exists for the category, shows the limit sub-label.
+     *
+     * Called by switchTab('categories') and renderAll() when pane is active.
      */
-    function renderCategories() { /* TODO */ }
+    function renderCategories() {
+        var listEl = document.getElementById('cat-list');
+        if (!listEl) return;
+
+        // ── Build category totals map ─────────────────────────────────────────────
+        var catMap = {};
+        curTxs().forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            var cat = tx.category || 'Other';
+            catMap[cat] = (catMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        var entries = Object.keys(catMap)
+            .map(function(cat) { return { cat: cat, amt: catMap[cat] }; })
+            .sort(function(a, b) { return b.amt - a.amt; });
+
+        if (entries.length === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No expense data for this month.' +
+                '</div>'
+            );
+            return;
+        }
+
+        var totalExp = entries.reduce(function(sum, e) { return sum + e.amt; }, 0);
+
+        // Build a goal lookup: { categoryName: goal }
+        var goalMap = {};
+        (AppState.goals || []).forEach(function(g) {
+            goalMap[g.category] = g;
+        });
+
+        var html = '';
+
+        entries.forEach(function(entry) {
+            var cat   = entry.cat;
+            var amt   = entry.amt;
+            var p     = pct(amt, totalExp);           // % of all expenses
+            var color = getCategoryColor(cat);
+            var goal  = goalMap[cat];
+            var isOver = goal && amt > goal.monthly_limit;
+
+            var overBadge = isOver
+                ? ' <span class="badge badge-red">Over limit</span>'
+                : '';
+
+            // Goal sub-label — only shown when a goal exists for this category.
+            var goalLabel = '';
+            if (goal) {
+                var goalPct = pct(amt, goal.monthly_limit);
+                goalLabel = (
+                    '<div style="font-size:11px;color:var(--text2);margin-top:2px;">' +
+                    'Limit: ' + fmt(goal.monthly_limit) +
+                    ' — ' + goalPct + '% used' +
+                    '</div>'
+                );
+            }
+
+            html += (
+                '<div style="margin-bottom:1.25rem;">' +
+
+                // Header row: coloured square + name + badge | amount + percent
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="width:10px;height:10px;border-radius:2px;' +
+                'background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
+                '<span style="font-size:13px;font-weight:500;">' + _escCat(cat) + '</span>' +
+                overBadge +
+                '</div>' +
+                '<div style="display:flex;align-items:baseline;gap:6px;">' +
+                '<span style="font-family:var(--mono);font-size:13px;">' + fmt(amt) + '</span>' +
+                '<span style="font-size:11px;color:var(--text2);">' + p + '%</span>' +
+                '</div>' +
+                '</div>' +
+
+                // Progress bar — width = % of total expenses, colour = category colour
+                '<div class="prog-track">' +
+                '<div class="prog-fill" style="width:' + p + '%;background:' + color + ';"></div>' +
+                '</div>' +
+
+                // Goal sub-label
+                goalLabel +
+
+                '</div>'
+            );
+        });
+
+        listEl.innerHTML = html;
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _escCat(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 </script>

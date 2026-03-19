@@ -1,133 +1,185 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Settings.html — App Settings Screen
+     Settings.html — App Settings
 
      TAB: Settings
 
      SECTIONS:
-       1. Custom Categories — list existing categories, add new ones (name + colour picker)
+       1. Custom Categories — list + add with colour picker
        2. Divider
-       3. Danger Zone — "Clear Current Month" destructive action
+       3. Danger Zone — Clear Current Month
 
      STATE: AppState.categories
-
-     SERVER CALLS:
-       addCategory(name, color) → saves new category
-       deleteCategory(name) → removes user-added category (default categories protected)
-       Preferences.setCurrency / setDarkMode are handled by setCurrency() / toggleDark() in utils.js
+     SERVER CALLS: addCategory, deleteCategory, clearMonthTransactions
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-settings">
 
   <!-- ── 1. Custom Categories ────────────────────────────────────────────── -->
-  <!-- TODO: Section heading "Custom Categories" -->
-  <!-- TODO: id="cat-settings-list" — set by renderSettings():
-       For each category in AppState.categories:
-         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-           <span style="width:14px;height:14px;border-radius:3px;background:{color};"></span>
-           <span style="font-size:13px;flex:1;">{name}</span>
-           {if user-added (index >= 9)} × delete button onclick="deleteCat(cat.name)"
-         </div>
-       NOTE: Default 9 categories (indices 0–8) do NOT get a delete button
-  -->
-  <div class="sec" style="margin-top: 0;">Custom Categories</div>
-  <div id="cat-settings-list" style="margin-bottom: 1rem;"></div>
+  <div class="sec" style="margin-top:0;">Custom Categories</div>
+  <div id="cat-settings-list" style="margin-bottom:1rem;"></div>
 
-  <!-- ── Add Category Form ──────────────────────────────────────────────── -->
-  <!-- TODO: Flex row: category name input | colour picker input | "Add" button
-       <div style="display:flex;gap:8px;margin-bottom:1.5rem;">
-         <input id="new-cat-name" placeholder="Category name" class="inp"/>
-         <input id="new-cat-color" type="color" value="#1D9E75"
-                style="width:44px;height:38px;border:0.5px solid var(--border2);
-                       border-radius:var(--radius);padding:2px;cursor:pointer;background:transparent;"/>
-         <button onclick="addCategoryForm()" class="btn-primary">Add</button>
-       </div>
-  -->
-  <div style="display: flex; gap: 8px; margin-bottom: 1.5rem;">
-    <input id="new-cat-name" placeholder="Category name" class="inp"/>
-    <input id="new-cat-color" type="color" value="#1D9E75"
-           style="width: 44px; height: 38px; border: 0.5px solid var(--border2);
-                  border-radius: var(--radius); padding: 2px; cursor: pointer; background: transparent;"/>
+  <!-- Add category form -->
+  <div style="display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap;">
+    <input id="new-cat-name" class="inp" placeholder="Category name" style="flex:1;min-width:120px;"/>
+    <input
+            id="new-cat-color"
+            type="color"
+            value="#1D9E75"
+            style="width:44px;height:38px;border:0.5px solid var(--border2);border-radius:var(--radius);
+             padding:2px;cursor:pointer;background:transparent;flex-shrink:0;"/>
     <button onclick="addCategoryForm()" class="btn-primary">Add</button>
   </div>
 
-  <!-- ── 2. Divider ─────────────────────────────────────────────────────── -->
+  <!-- ── 2. Divider ──────────────────────────────────────────────────────── -->
   <hr class="divider"/>
 
-  <!-- ── 3. Danger Zone ─────────────────────────────────────────────────── -->
-  <!-- TODO: Section heading "Danger Zone" -->
-  <!-- TODO: Single .btn-sm styled with danger colours (color --red, border-color --red):
-       onclick="clearCurrentMonth()"
-       Text: "Clear Current Month"
-       Confirm dialog before proceeding: "Clear all transactions for [month]? This cannot be undone."
-  -->
+  <!-- ── 3. Danger Zone ──────────────────────────────────────────────────── -->
   <div class="sec">Danger Zone</div>
-  <button onclick="clearCurrentMonth()"
-          class="btn-sm"
-          style="color: var(--red); border-color: var(--red);">
+  <button
+          onclick="clearCurrentMonth()"
+          class="btn-sm btn-danger">
     Clear Current Month
   </button>
 
 </div>
 
+
 <script>
+  // =============================================================================
+  // Settings screen
+  // =============================================================================
+
   /**
    * renderSettings()
    *
-   * TODO: Build #cat-settings-list from AppState.categories
-   *         Default categories (first 9) → no delete button
-   *         User-added categories (index >= 9) → show × delete button
+   * Rebuilds the category list from AppState.categories.
+   * The first 9 entries are default categories — no delete button.
+   * Index 9+ are user-added — each gets a × delete button.
+   *
+   * Called by renderAll() when Settings pane is active.
    */
   function renderSettings() {
-    // TODO: Implement
+    var listEl = document.getElementById('cat-settings-list');
+    if (!listEl) return;
+
+    var cats = AppState.categories || [];
+
+    if (cats.length === 0) {
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories.</div>';
+      return;
+    }
+
+    var DEFAULT_COUNT = 9; // indices 0–8 are protected defaults
+
+    listEl.innerHTML = cats.map(function(cat, i) {
+      var isDefault  = i < DEFAULT_COUNT;
+      var deleteBtn  = isDefault
+              ? '' // defaults are protected
+              : '<button class="tx-delete" onclick="deleteCat(\'' + _escAttr(cat.name) + '\')" ' +
+              'title="Remove category">×</button>';
+
+      return (
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+              '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
+              ';display:inline-block;flex-shrink:0;"></span>' +
+              '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
+              deleteBtn +
+              '</div>'
+      );
+    }).join('');
   }
 
 
-  /**
-   * addCategoryForm()
-   *
-   * TODO: Read name (#new-cat-name), color (#new-cat-color)
-   * TODO: Validate: name must be non-empty, must not already exist (case-insensitive)
-   *         showToast('Category already exists.', 'error') if duplicate
-   * TODO: Call server 'addCategory' with name + color
-   * TODO: On success:
-   *         1. Push { name, color } to AppState.categories
-   *         2. clearInputs('new-cat-name')
-   *         3. renderAll() — updates category list + all <select> dropdowns
-   *         4. showToast('Category added!', 'success')
-   */
+  // ─── ADD CATEGORY ─────────────────────────────────────────────────────────────
+
   async function addCategoryForm() {
-    // TODO: Implement
+    var name  = getVal('new-cat-name');
+    var color = document.getElementById('new-cat-color')
+            ? document.getElementById('new-cat-color').value
+            : '#1D9E75';
+
+    if (!name) {
+      showToast('Please enter a category name.', 'error');
+      document.getElementById('new-cat-name').focus();
+      return;
+    }
+
+    // Client-side duplicate check for immediate feedback.
+    var cats = AppState.categories || [];
+    var isDuplicate = cats.some(function(c) {
+      return c.name.toLowerCase() === name.toLowerCase();
+    });
+    if (isDuplicate) {
+      showToast('"' + name + '" already exists.', 'error');
+      return;
+    }
+
+    try {
+      var updated = await callServer('addCategory', name, color);
+
+      // Server returns the full updated categories array.
+      AppState.categories = updated;
+
+      clearInputs('new-cat-name');
+      renderAll(); // refreshes category list + all <select> dropdowns
+      showToast('Category added!', 'success');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
   }
 
 
-  /**
-   * deleteCat(categoryName)
-   *
-   * TODO: Confirm deletion via window.confirm()
-   * TODO: Call server 'deleteCategory' with the category name
-   * TODO: On success:
-   *         1. Filter out from AppState.categories
-   *         2. renderAll()
-   *         3. showToast('Category removed.', 'info')
-   */
+  // ─── DELETE CATEGORY ──────────────────────────────────────────────────────────
+
   async function deleteCat(categoryName) {
-    // TODO: Implement
+    if (!window.confirm('Remove the "' + categoryName + '" category?')) return;
+
+    try {
+      var updated = await callServer('deleteCategory', categoryName);
+
+      AppState.categories = updated;
+
+      renderAll();
+      showToast('Category removed.', 'info');
+
+    } catch (e) {
+      // Error toast shown by callServer (includes "default category" protection error).
+    }
   }
 
 
-  /**
-   * clearCurrentMonth()
-   *
-   * TODO: Show confirm dialog: "Clear all transactions for [monthLabel]? This cannot be undone."
-   * TODO: If confirmed:
-   *         1. Call server 'clearMonthTransactions' (needs a matching server function — add to Transactions.gs)
-   *         2. Set AppState.transactions[curKey()] = []
-   *         3. renderAll()
-   *         4. showToast('Month cleared.', 'info')
-   *
-   * NOTE: Remind yourself to add clearMonthTransactions(monthKey) to Transactions.gs
-   */
+  // ─── CLEAR CURRENT MONTH ──────────────────────────────────────────────────────
+
   async function clearCurrentMonth() {
-    // TODO: Implement
+    var label = monthLabel(AppState.curYear, AppState.curMonth);
+
+    if (!window.confirm(
+            'Clear all transactions for ' + label + '?\n\nThis cannot be undone.'
+    )) return;
+
+    try {
+      await callServer('clearMonthTransactions', curKey());
+
+      AppState.transactions[curKey()] = [];
+
+      renderAll();
+      showToast(label + ' cleared.', 'info');
+
+    } catch (e) {
+      // Error toast shown by callServer.
+    }
+  }
+
+
+  // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+  function _escSt(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // For use in inline onclick="..." attribute values — escapes single quotes.
+  function _escAttr(str) {
+    return String(str || '').replace(/'/g, "\\'").replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 </script>

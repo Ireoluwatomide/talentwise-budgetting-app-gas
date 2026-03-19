@@ -2,66 +2,165 @@
  * Recurring.gs — Recurring Transactions
  *
  * PURPOSE:
- *   Manage a list of transactions that are automatically applied when the user
- *   navigates to a new month (e.g. salary income, rent expense).
+ *   Manage a list of transaction templates that are automatically applied
+ *   when the user navigates to a new month (salary, rent, subscriptions, etc.).
  *   Prevents manual re-entry of the same transactions every month.
  *
  * SHEET: Recurring
  * COLUMNS: id | name | amount | type | category
  *
- * TRIGGER: applyRecurringToMonth() is also called by Triggers.gs on the 1st of each month.
+ * TRIGGER:
+ *   applyRecurringToMonth() is also called by Triggers.gs on the 1st of each month,
+ *   ensuring new months are pre-populated even without a user logging in.
  *
- * CALLED BY: client via google.script.run, and Triggers.gs
+ * CALLED BY:
+ *   - Client via google.script.run (manual apply + list management)
+ *   - utils.js applyRecurringForMonth() on month navigation
+ *   - Triggers.gs monthlyHandler() on the 1st of each month
+ *   - Main.gs getBootstrapData()
  */
 
+
+// ─── READ ─────────────────────────────────────────────────────────────────────
 
 /**
  * getAllRecurring()
  *
- * TODO: Return all recurring transaction templates as { id, name, amount, type, category }
- * TODO: Cast amount to number
+ * Returns all recurring templates as [{ id, name, amount, type, category }].
+ * amount is cast to a number — Sheets can return numeric strings.
  */
 function getAllRecurring() {
-  // TODO: Implement
+  return getAllRows(SHEET_NAMES.RECURRING).map(function(row) {
+    return {
+      id:       String(row.id       || '').trim(),
+      name:     String(row.name     || '').trim(),
+      amount:   parseFloat(row.amount) || 0,
+      type:     String(row.type     || '').trim().toLowerCase(),
+      category: String(row.category || 'Other').trim()
+    };
+  });
 }
 
+
+// ─── WRITE ────────────────────────────────────────────────────────────────────
 
 /**
  * addRecurring(name, amount, type, category)
  *
- * TODO: Validate — name required, amount > 0, type in ['income','expense','savings']
- * TODO: Append row and return the new recurring object
+ * Validates and appends a new recurring template row.
+ * Returns the new recurring object.
  */
 function addRecurring(name, amount, type, category) {
-  // TODO: Implement
-}
+  if (!name || String(name).trim() === '') {
+    throw new Error('Recurring.gs: name is required.');
+  }
 
+  var parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    throw new Error('Recurring.gs: amount must be a positive number.');
+  }
+
+  var normType = String(type || '').trim().toLowerCase();
+  if (['income', 'expense', 'savings'].indexOf(normType) === -1) {
+    throw new Error('Recurring.gs: type must be income, expense, or savings. Got: "' + type + '".');
+  }
+
+  var recurring = {
+    id:       generateId(),
+    name:     String(name).trim(),
+    amount:   parsedAmount,
+    type:     normType,
+    category: String(category || 'Other').trim()
+  };
+
+  appendRow(SHEET_NAMES.RECURRING, recurring);
+  return recurring;
+}
 
 /**
  * deleteRecurring(recurringId)
  *
- * TODO: Find and delete the row with matching recurringId
- * TODO: Return { success: true }
+ * Deletes the recurring template row matching recurringId.
+ * Does NOT delete any transactions that were previously applied from this template.
  */
 function deleteRecurring(recurringId) {
-  // TODO: Implement
+  if (!recurringId) throw new Error('Recurring.gs: recurringId is required.');
+
+  var rowIndex = findRowIndex(SHEET_NAMES.RECURRING, function(row) {
+    return String(row.id) === String(recurringId);
+  });
+
+  if (rowIndex === -1) {
+    throw new Error('Recurring.gs: Recurring template "' + recurringId + '" not found.');
+  }
+
+  deleteRow(SHEET_NAMES.RECURRING, rowIndex);
+  return { success: true };
 }
 
+
+// ─── APPLY TO MONTH ───────────────────────────────────────────────────────────
 
 /**
  * applyRecurringToMonth(monthKey)
  *
- * TODO: For each recurring transaction, check if a transaction with the same
- *       name and type already exists in Transactions for the given monthKey.
- * TODO: If it does NOT exist, call Transactions.addTransaction() to create it
- *       (with note = 'auto' to mark it as auto-applied).
- * TODO: If it DOES exist, skip it (idempotent — safe to call multiple times).
- * TODO: Return { applied: N, skipped: M } summary
+ * Applies all recurring templates to the given month by creating matching
+ * transactions. This function is IDEMPOTENT — safe to call multiple times
+ * for the same month without creating duplicates.
  *
- * NOTE: This is called from two places:
- *   1. Client-side month navigation (via google.script.run) — ensures data exists before render
- *   2. Triggers.gs monthly cron — fires on the 1st of each month automatically
+ * Idempotency is enforced by checking whether a transaction with the same
+ * name AND type already exists for the given monthKey before inserting.
+ * If it exists, that template is skipped.
+ *
+ * Returns { applied: N, skipped: M } so the caller can log or display results.
+ *
+ * Called from:
+ *   1. Client-side prevMonth() / nextMonth() in utils.js (via callServerSilent)
+ *   2. Triggers.gs monthlyHandler() on the 1st of each month
  */
 function applyRecurringToMonth(monthKey) {
-  // TODO: Implement
+  if (!monthKey || !String(monthKey).match(/^\d{4}-\d{2}$/)) {
+    throw new Error('Recurring.gs: monthKey must be YYYY-MM format.');
+  }
+
+  var templates    = getAllRecurring();
+  var existingTxs  = getTransactionsByMonth(monthKey); // from Transactions.gs
+
+  // Build a lookup set of "name::type" strings for O(1) duplicate checking.
+  var existingKeys = {};
+  existingTxs.forEach(function(tx) {
+    var key = String(tx.name).trim().toLowerCase() + '::' + String(tx.type).trim().toLowerCase();
+    existingKeys[key] = true;
+  });
+
+  var applied = 0;
+  var skipped = 0;
+
+  templates.forEach(function(template) {
+    var key = template.name.toLowerCase() + '::' + template.type.toLowerCase();
+
+    if (existingKeys[key]) {
+      skipped++;
+      return; // Already applied — skip to preserve idempotency.
+    }
+
+    // Apply this template as a new transaction with note = 'auto' to mark
+    // it as system-generated (visible to the user in the transaction list).
+    addTransaction(
+      monthKey,
+      template.name,
+      template.amount,
+      template.type,
+      template.category,
+      'auto'
+    );
+
+    // Add to the lookup so subsequent duplicates within the same template list
+    // are also caught (in case the user created two templates with the same name+type).
+    existingKeys[key] = true;
+    applied++;
+  });
+
+  Logger.log('Recurring.gs: applyRecurringToMonth(' + monthKey + ') — applied: ' + applied + ', skipped: ' + skipped);
+  return { applied: applied, skipped: skipped };
 }

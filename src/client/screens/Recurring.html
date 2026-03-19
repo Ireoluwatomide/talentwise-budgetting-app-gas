@@ -1,37 +1,237 @@
-<!-- ─
+<!-- ─────────────────────────────────────────────────────────────────────────
      Recurring.html — Recurring Transactions Screen
-     SERVER CALLS: addRecurring, deleteRecurring
+
+     TAB: Recurring
+
+     SECTIONS:
+       1. Explanation + manual apply button
+       2. Recurring templates list
+       3. Add Recurring Transaction form
+
+     STATE: AppState.recurring, AppState.transactions (current month)
+     SERVER CALLS: addRecurring, deleteRecurring, applyRecurringToMonth
      ───────────────────────────────────────────────────────────────────────── -->
+
 <div class="pane" id="pane-recurring">
-    <!-- TODO: Subtitle: "Auto-added when you navigate to a new month." -->
 
-    <!-- ── Recurring List ─────────────────────────────────────────────────── -->
-    <!-- TODO: id="rec-list" — .tx-row for each recurring entry:
-         LEFT:  name (13px) + "category · type" (11px, --text2)
-         RIGHT: amount in monospace + × delete onclick="deleteRecurring(r.id)"
-    -->
-    <div id="rec-list"></div>
+    <!-- ── Subtitle + Manual Apply ───────────────────────────────────────────── -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;
+              margin-bottom:1.25rem;gap:12px;">
+        <div style="font-size:12px;color:var(--text2);">
+            Recurring transactions are auto-applied when you navigate to a new month.
+            You can also apply them manually to the current month below.
+        </div>
+        <button
+                onclick="applyRecurringNow()"
+                class="btn-sm"
+                style="flex-shrink:0;"
+                title="Apply all recurring transactions to the current month">
+            Apply now
+        </button>
+    </div>
 
-    <!-- ── Add Form ────────────────────────────────────────────────────────── -->
-    <!-- TODO: Section "Add Recurring Transaction" -->
-    <!-- TODO: .row2: Description | Amount | Category select | Type select -->
-    <!-- TODO: Full-width "Add Recurring" .btn-primary -->
+    <!-- ── Recurring List ────────────────────────────────────────────────────── -->
+    <div id="rec-list">
+        <!-- populated by renderRecurring() -->
+    </div>
+
+    <!-- ── Add Recurring Form ────────────────────────────────────────────────── -->
     <div class="sec">Add Recurring Transaction</div>
-    <div class="row2">
-        <input id="r-name" placeholder="Description" class="inp"/>
-        <input id="r-amt" placeholder="Amount" type="number" class="inp"/>
-        <select id="r-cat" class="inp"></select>
+    <div class="row2" style="margin-bottom:8px;">
+        <input  id="r-name" class="inp" placeholder="Description"/>
+        <input  id="r-amt"  class="inp" placeholder="Amount" type="number" min="1"/>
+        <select id="r-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
         <select id="r-type" class="inp">
             <option value="expense">Expense</option>
             <option value="income">Income</option>
             <option value="savings">Savings</option>
         </select>
     </div>
-    <button onclick="addRecurringForm()" class="btn-primary" style="width: 100%;">Add Recurring</button>
+    <button onclick="addRecurringForm()" class="btn-primary" style="width:100%;">
+        Add Recurring
+    </button>
+
 </div>
 
+
 <script>
-    function renderRecurring() { /* TODO: build #rec-list from AppState.recurring */ }
-    async function addRecurringForm() { /* TODO: read, callServer, push to AppState, clearInputs, renderAll, showToast */ }
-    async function deleteRecurring(recId) { /* TODO: callServer, filter, renderAll, showToast */ }
+    // =============================================================================
+    // Recurring screen — render + action functions
+    // =============================================================================
+
+    /**
+     * renderRecurring()
+     * Called from renderAll() when the Recurring pane is active.
+     * Renders each recurring template as a tx-row with name, category,
+     * type badge, amount, and delete button.
+     */
+    function renderRecurring() {
+        var listEl = document.getElementById('rec-list');
+        if (!listEl) return;
+
+        var recurring = AppState.recurring || [];
+
+        if (recurring.length === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No recurring transactions set up yet.' +
+                '</div>'
+            );
+            return;
+        }
+
+        var html = '';
+
+        recurring.forEach(function(r) {
+            var amtColor  = r.type === 'income'  ? 'var(--acc)'
+                : r.type === 'savings' ? 'var(--blue)'
+                    :                        'var(--red)';
+
+            var typeLabel = r.type === 'income'  ? 'Income'
+                : r.type === 'savings' ? 'Savings'
+                    :                        'Expense';
+
+            var typeBadge = r.type === 'income'  ? 'badge-green'
+                : r.type === 'savings' ? 'badge-blue'
+                    :                        'badge-red';
+
+            html += (
+                '<div class="tx-row">' +
+
+                // LEFT: name + sub-line (category · type)
+                '<div class="tx-left">' +
+                '<div class="tx-meta">' +
+                '<div class="tx-name">' + _escR(r.name) + '</div>' +
+                '<div class="tx-cat">' +
+                _escR(r.category) + ' &middot; ' +
+                '<span class="badge ' + typeBadge + '">' + typeLabel + '</span>' +
+                '</div>' +
+                '</div>' +
+                '</div>' +
+
+                // RIGHT: amount + delete
+                '<div class="tx-right">' +
+                '<span class="tx-amount" style="color:' + amtColor + ';">' +
+                fmt(r.amount) +
+                '</span>' +
+                '<button ' +
+                'class="tx-delete" ' +
+                'onclick="deleteRecurring(\'' + r.id + '\')" ' +
+                'title="Remove recurring">×</button>' +
+                '</div>' +
+
+                '</div>'
+            );
+        });
+
+        listEl.innerHTML = html;
+    }
+
+
+    // ─── APPLY NOW ────────────────────────────────────────────────────────────────
+
+    /**
+     * applyRecurringNow()
+     *
+     * Manually applies all recurring templates to the current month.
+     * The server is idempotent — existing transactions are skipped,
+     * only missing ones are created.
+     *
+     * After the server call, re-fetches the current month's transactions
+     * so the Overview tab shows the newly applied entries immediately.
+     */
+    async function applyRecurringNow() {
+        if (!AppState.recurring || AppState.recurring.length === 0) {
+            showToast('No recurring transactions to apply.', 'info');
+            return;
+        }
+
+        try {
+            var result = await callServer('applyRecurringToMonth', curKey());
+            var applied = (result && result.applied) ? result.applied : 0;
+            var skipped = (result && result.skipped) ? result.skipped : 0;
+
+            // Re-fetch current month transactions to sync AppState with what
+            // the server just wrote — we don't know which ones were added.
+            var txs = await callServerSilent('getTransactionsByMonth', curKey());
+            AppState.transactions[curKey()] = txs || [];
+
+            renderAll();
+
+            if (applied > 0) {
+                showToast(applied + ' recurring transaction' + (applied > 1 ? 's' : '') + ' applied!', 'success');
+            } else {
+                showToast('All recurring transactions already applied this month.', 'info');
+            }
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── ADD RECURRING ────────────────────────────────────────────────────────────
+
+    async function addRecurringForm() {
+        var name     = getVal('r-name');
+        var amtRaw   = getVal('r-amt');
+        var category = getVal('r-cat');
+        var type     = getVal('r-type');
+
+        if (!name) {
+            showToast('Please enter a description.', 'error');
+            document.getElementById('r-name').focus();
+            return;
+        }
+
+        var amount = parseFloat(amtRaw);
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error');
+            document.getElementById('r-amt').focus();
+            return;
+        }
+
+        try {
+            var newRecurring = await callServer('addRecurring', name, amount, type, category);
+
+            if (!AppState.recurring) AppState.recurring = [];
+            AppState.recurring.push(newRecurring);
+
+            clearInputs('r-name', 'r-amt');
+            renderAll();
+            showToast('Recurring transaction added!', 'success');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── DELETE RECURRING ────────────────────────────────────────────────────────
+
+    async function deleteRecurring(recurringId) {
+        try {
+            await callServer('deleteRecurring', recurringId);
+
+            AppState.recurring = (AppState.recurring || []).filter(function(r) {
+                return r.id !== recurringId;
+            });
+
+            renderAll();
+            showToast('Recurring transaction removed.', 'info');
+
+        } catch (e) {
+            // Error toast shown by callServer.
+        }
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _escR(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 </script>

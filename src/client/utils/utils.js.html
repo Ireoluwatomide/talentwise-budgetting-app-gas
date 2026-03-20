@@ -16,7 +16,8 @@
     //   6.  Toast notifications
     //   7.  Tab router (switchTab)
     //   8.  Month navigation (prevMonth, nextMonth, applyRecurringForMonth)
-    //   9.  Category utilities (getCategoryColor, populateCategorySelects)
+    //   9.  Category utilities (getCategoryColor, getCategoriesByType,
+    //         populateCategorySelects, syncCategoryToType)
     //   10. Month stats helpers (getMonthStats, curTxs)
     //   11. DOM helpers ($, setHTML, getVal, clearInputs)
     //   12. Chart helpers (destroyChart, registerChart, getChartDefaults)
@@ -49,6 +50,9 @@
         EUR: '€',
         GBP: '£'
     };
+
+    // Valid category types — used for filtering category <select> elements.
+    var CATEGORY_TYPES = ['income', 'expense', 'savings'];
 
 
     // ─── 2. APP STATE ─────────────────────────────────────────────────────────────
@@ -567,34 +571,115 @@
     }
 
     /**
+     * getCategoriesByType(type)
+     *
+     * Returns only the categories from AppState matching the given type.
+     * type: 'income' | 'expense' | 'savings'
+     *
+     * Falls back to the full list if type is unrecognised, so the UI
+     * never ends up with an empty category select.
+     */
+    function getCategoriesByType(type) {
+        var cats = AppState.categories || [];
+        var norm = String(type || '').toLowerCase();
+
+        if (CATEGORY_TYPES.indexOf(norm) === -1) {
+            // Unknown type — return everything as a safe fallback.
+            return cats;
+        }
+
+        var filtered = cats.filter(function(c) { return c.type === norm; });
+        // Extra safety: if filtering somehow yields nothing, show all.
+        return filtered.length > 0 ? filtered : cats;
+    }
+
+    /**
      * populateCategorySelects()
-     * Rebuilds all category <select> elements from AppState.categories.
-     * Preserves currently selected value across re-renders.
+     *
+     * Rebuilds all shared category <select> elements from AppState.categories.
+     * Each select is scoped to its paired type select (if one exists in the
+     * same form group — identified by a data-type-select attribute).
+     *
+     * Preserves the currently selected value across re-renders.
      * Called on boot and after adding/deleting a category.
+     *
+     * Select IDs and their paired type-select IDs:
+     *   tx-cat   ← paired with tx-type   (Overview inline form, legacy)
+     *   tx-cat-d ← paired with tx-type-d (Overview desktop modal)
+     *   tx-cat-m ← paired with tx-type-m (Overview mobile sheet)
+     *   g-cat    ← always expense (Goals — budget goals are always expense limits)
+     *   r-cat    ← paired with r-type    (Recurring form)
      */
     function populateCategorySelects() {
-        var selectIds = ['tx-cat', 'g-cat', 'r-cat', 'tx-cat-d', 'tx-cat-m'];
-        var cats = AppState.categories || [];
+        // Mappings: { catSelectId: typeSelectId | null }
+        // null means always show a specific fixed type (see below).
+        var pairs = [
+            { catId: 'tx-cat',   typeId: 'tx-type'   },
+            { catId: 'tx-cat-d', typeId: 'tx-type-d'  },
+            { catId: 'tx-cat-m', typeId: 'tx-type-m'  },
+            { catId: 'g-cat',    typeId: null          },  // fixed: expense
+            { catId: 'r-cat',    typeId: 'r-type'      }
+        ];
 
-        selectIds.forEach(function(id) {
-            var el = document.getElementById(id);
-            if (!el) return;
+        pairs.forEach(function(pair) {
+            var catEl  = document.getElementById(pair.catId);
+            if (!catEl) return;
 
-            var current = el.value; // preserve selection
-            el.innerHTML = '';
-
-            cats.forEach(function(cat) {
-                var opt = document.createElement('option');
-                opt.value       = cat.name;
-                opt.textContent = cat.name;
-                el.appendChild(opt);
-            });
-
-            // Restore previous selection if it still exists.
-            if (current && el.querySelector('option[value="' + current + '"]')) {
-                el.value = current;
+            // Determine which type to filter by.
+            var filterType;
+            if (pair.typeId === null) {
+                // Goals — always expense.
+                filterType = 'expense';
+            } else {
+                var typeEl = document.getElementById(pair.typeId);
+                filterType = typeEl ? typeEl.value : 'expense';
             }
+
+            _fillCategorySelect(catEl, filterType);
         });
+    }
+
+    /**
+     * syncCategoryToType(catSelectId, typeSelectId)
+     *
+     * Re-fills a single category <select> based on the current value of its
+     * paired type <select>. Call this from the type select's onchange handler.
+     *
+     * Example (in HTML):
+     *   <select id="tx-type-d" onchange="syncCategoryToType('tx-cat-d','tx-type-d')">
+     */
+    function syncCategoryToType(catSelectId, typeSelectId) {
+        var catEl  = document.getElementById(catSelectId);
+        var typeEl = document.getElementById(typeSelectId);
+        if (!catEl || !typeEl) return;
+
+        _fillCategorySelect(catEl, typeEl.value);
+    }
+
+    /**
+     * _fillCategorySelect(selectEl, type)
+     *
+     * Internal helper — repopulates a <select> element with categories
+     * filtered to the given type. Tries to preserve the previously selected
+     * value; falls back to the first option if it's no longer present.
+     */
+    function _fillCategorySelect(selectEl, type) {
+        var current = selectEl.value; // preserve selection
+        var cats    = getCategoriesByType(type);
+
+        selectEl.innerHTML = '';
+        cats.forEach(function(cat) {
+            var opt = document.createElement('option');
+            opt.value       = cat.name;
+            opt.textContent = cat.name;
+            selectEl.appendChild(opt);
+        });
+
+        // Restore previous selection if still valid for this type.
+        if (current && selectEl.querySelector('option[value="' + current + '"]')) {
+            selectEl.value = current;
+        }
+        // Otherwise the browser defaults to the first option, which is correct.
     }
 
 

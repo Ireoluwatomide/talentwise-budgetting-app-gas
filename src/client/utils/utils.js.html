@@ -10,17 +10,19 @@
     //   1.  Constants
     //   2.  AppState
     //   3.  Server bridge (callServer / callServerSilent)
-    //   4.  Formatters (fmt, pct, monthLabel, monthKey, curKey, parseMonthKey)
-    //   5.  Toast notifications
-    //   6.  Tab router (switchTab)
-    //   7.  Month navigation (prevMonth, nextMonth, applyRecurringForMonth)
-    //   8.  Category utilities (getCategoryColor, populateCategorySelects)
-    //   9.  Month stats helpers (getMonthStats, curTxs)
-    //   10. DOM helpers ($, setHTML, getVal, clearInputs)
-    //   11. Chart helpers (destroyChart, registerChart, getChartDefaults)
-    //   12. Dark mode & currency (toggleDark, setCurrency)
-    //   13. CSV (exportCSV, importCSV)
-    //   14. renderAll — master re-render dispatcher
+    //   4.  Loading state helpers (setButtonLoading, withButtonLoading,
+    //         initAllBtnStructures)
+    //   5.  Formatters (fmt, pct, monthLabel, monthKey, curKey, parseMonthKey)
+    //   6.  Toast notifications
+    //   7.  Tab router (switchTab)
+    //   8.  Month navigation (prevMonth, nextMonth, applyRecurringForMonth)
+    //   9.  Category utilities (getCategoryColor, populateCategorySelects)
+    //   10. Month stats helpers (getMonthStats, curTxs)
+    //   11. DOM helpers ($, setHTML, getVal, clearInputs)
+    //   12. Chart helpers (destroyChart, registerChart, getChartDefaults)
+    //   13. Dark mode & currency (toggleDark, setCurrency)
+    //   14. CSV (exportCSV, importCSV)
+    //   15. renderAll — master re-render dispatcher
     // =============================================================================
 
 
@@ -149,7 +151,105 @@
     }
 
 
-    // ─── 4. FORMATTERS ────────────────────────────────────────────────────────────
+    // ─── 4. LOADING STATE HELPERS ─────────────────────────────────────────────────
+
+    /**
+     * setButtonLoading(btnEl, isLoading)
+     *
+     * Puts a .btn-primary button into a loading state:
+     *   - Adds .loading class → CSS shows the inline spinner, dims the label
+     *   - Disables the button to prevent double-submits
+     *   - Disables all .inp fields within the same .pane ancestor
+     *
+     * For .btn-sm buttons it simply disables them (no spinner needed).
+     *
+     * The button should have this structure (initAllBtnStructures() ensures it):
+     *   <button class="btn-primary">
+     *     <span class="btn-label">Add Transaction</span>
+     *     <span class="btn-spinner"></span>
+     *   </button>
+     */
+    function setButtonLoading(btnEl, isLoading) {
+        if (!btnEl) return;
+
+        if (isLoading) {
+            btnEl.disabled = true;
+            btnEl.classList.add('loading');
+
+            // Disable sibling inputs in the nearest .pane ancestor so the user
+            // cannot edit fields while the server call is in flight.
+            var pane = btnEl.closest ? btnEl.closest('.pane') : null;
+            if (!pane) pane = btnEl.parentElement;
+            if (pane) {
+                pane.querySelectorAll('.inp').forEach(function(inp) {
+                    inp.dataset._wasDisabled = inp.disabled ? '1' : '0';
+                    inp.disabled = true;
+                });
+            }
+        } else {
+            btnEl.disabled = false;
+            btnEl.classList.remove('loading');
+
+            var pane = btnEl.closest ? btnEl.closest('.pane') : null;
+            if (!pane) pane = btnEl.parentElement;
+            if (pane) {
+                pane.querySelectorAll('.inp').forEach(function(inp) {
+                    if (inp.dataset._wasDisabled !== '1') {
+                        inp.disabled = false;
+                    }
+                    delete inp.dataset._wasDisabled;
+                });
+            }
+        }
+    }
+
+    /**
+     * withButtonLoading(btnEl, asyncFn)
+     *
+     * Convenience wrapper that calls setButtonLoading(true) before asyncFn
+     * and setButtonLoading(false) in a finally block, regardless of success
+     * or failure. Usage:
+     *
+     *   async function addTx() {
+     *     await withButtonLoading(document.getElementById('btn-add-tx'), async () => {
+     *       var result = await callServer('addTransaction', ...);
+     *       // update AppState, renderAll(), showToast(...)
+     *     });
+     *   }
+     */
+    async function withButtonLoading(btnEl, asyncFn) {
+        setButtonLoading(btnEl, true);
+        try {
+            await asyncFn();
+        } finally {
+            setButtonLoading(btnEl, false);
+        }
+    }
+
+    /**
+     * initAllBtnStructures()
+     *
+     * Ensures every .btn-primary button in the document has the
+     * .btn-label + .btn-spinner child structure required by the CSS loading
+     * animation. Idempotent — safe to call multiple times.
+     *
+     * Called once from Index.html boot sequence after all panes are in the DOM.
+     */
+    function initAllBtnStructures() {
+        document.querySelectorAll('.btn-primary').forEach(function(btn) {
+            // Skip buttons that have already been structured
+            if (btn.querySelector('.btn-label')) return;
+
+            var text = btn.textContent.trim();
+            btn.innerHTML = (
+                '<span class="btn-label">' + text + '</span>' +
+                '<span class="btn-spinner"></span>'
+            );
+        });
+    }
+
+
+    // ─── 5. FORMATTERS ────────────────────────────────────────────────────────────
 
     /**
      * fmt(amount)
@@ -217,7 +317,7 @@
     }
 
 
-    // ─── 5. TOAST NOTIFICATIONS ───────────────────────────────────────────────────
+    // ─── 6. TOAST NOTIFICATIONS ───────────────────────────────────────────────────
 
     // Track the current toast timeout so rapid calls don't stack.
     var _toastTimer = null;
@@ -310,7 +410,7 @@
     }
 
 
-    // ─── 6. TAB ROUTER ────────────────────────────────────────────────────────────
+    // ─── 7. TAB ROUTER ────────────────────────────────────────────────────────────
 
     /**
      * switchTab(tabId)
@@ -362,7 +462,7 @@
     }
 
 
-    // ─── 7. MONTH NAVIGATION ──────────────────────────────────────────────────────
+    // ─── 8. MONTH NAVIGATION ──────────────────────────────────────────────────────
 
     /**
      * prevMonth()
@@ -370,6 +470,10 @@
      * applies recurring entries, then re-renders.
      */
     async function prevMonth() {
+        // Disable nav buttons during the server round-trip to prevent
+        // overlapping navigations if the user taps quickly.
+        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(true);
+
         AppState.curMonth -= 1;
         if (AppState.curMonth < 1) {
             AppState.curMonth = 12;
@@ -379,6 +483,8 @@
         await _ensureMonthLoaded(curKey());
         await applyRecurringForMonth();
         renderAll();
+
+        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(false);
     }
 
     /**
@@ -386,6 +492,8 @@
      * Steps forward one month, same pattern as prevMonth.
      */
     async function nextMonth() {
+        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(true);
+
         AppState.curMonth += 1;
         if (AppState.curMonth > 12) {
             AppState.curMonth = 1;
@@ -395,6 +503,8 @@
         await _ensureMonthLoaded(curKey());
         await applyRecurringForMonth();
         renderAll();
+
+        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(false);
     }
 
     /**
@@ -435,7 +545,7 @@
     }
 
 
-    // ─── 8. CATEGORY UTILITIES ────────────────────────────────────────────────────
+    // ─── 9. CATEGORY UTILITIES ────────────────────────────────────────────────────
 
     /**
      * getCategoryColor(categoryName)
@@ -481,7 +591,7 @@
     }
 
 
-    // ─── 9. MONTH STATS HELPERS ───────────────────────────────────────────────────
+    // ─── 10. MONTH STATS HELPERS ──────────────────────────────────────────────────
 
     /**
      * getMonthStats(key)
@@ -511,7 +621,7 @@
     }
 
 
-    // ─── 10. DOM HELPERS ──────────────────────────────────────────────────────────
+    // ─── 11. DOM HELPERS ──────────────────────────────────────────────────────────
 
     /** $(id) — shorthand for document.getElementById */
     function $(id) {
@@ -554,7 +664,7 @@
     }
 
 
-    // ─── 11. CHART HELPERS ────────────────────────────────────────────────────────
+    // ─── 12. CHART HELPERS ────────────────────────────────────────────────────────
 
     // Registry maps canvasId → Chart.js instance so we can destroy before recreate.
     var chartRegistry = {};
@@ -617,7 +727,7 @@
     }
 
 
-    // ─── 12. DARK MODE & CURRENCY ─────────────────────────────────────────────────
+    // ─── 13. DARK MODE & CURRENCY ─────────────────────────────────────────────────
 
     /**
      * toggleDark()
@@ -651,7 +761,7 @@
     }
 
 
-    // ─── 13. Export CSV ──────────────────────────────────────────────────────────────────
+    // ─── 14. Export CSV ──────────────────────────────────────────────────────────────────
 
     /**
      * exportCSV()
@@ -696,7 +806,7 @@
     }
 
 
-    // ─── 14. Import CSV ──────────────────────────────────────────────────────────────────
+    // ─── 15. Import CSV ──────────────────────────────────────────────────────────────────
 
     /**
      * importCSV(event)
@@ -757,7 +867,7 @@
     }
 
 
-    // ─── 15. RENDER ALL ───────────────────────────────────────────────────────────
+    // ─── 16. RENDER ALL ───────────────────────────────────────────────────────────
 
     /**
      * renderAll()

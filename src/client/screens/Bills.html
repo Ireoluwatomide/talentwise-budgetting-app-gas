@@ -28,7 +28,10 @@
         <input id="b-name" class="inp" placeholder="Bill name"/>
         <input id="b-amt"  class="inp" placeholder="Amount"   type="number" min="0" step="any"/>
         <input id="b-day"  class="inp" placeholder="Day"      type="number" min="1" max="31"/>
-        <button onclick="addBillForm()" class="btn-primary">Add</button>
+        <button id="btn-add-bill" onclick="addBillForm()" class="btn-primary">
+            <span class="btn-label">Add</span>
+            <span class="btn-spinner"></span>
+        </button>
     </div>
 
 </div>
@@ -95,14 +98,16 @@
                 '<span style="font-size:11px;font-weight:500;color:' + dueLabelColor + ';">' +
                 dueLabelText +
                 '</span>' +
+                // Pay/Unpay button — passes itself so we can disable it during the call
                 '<button ' +
                 'class="btn-sm" ' +
-                'onclick="toggleBillPaid(\'' + bill.id + '\')">' +
+                'onclick="toggleBillPaid(\'' + bill.id + '\', this)">' +
                 (bill.paid ? 'Unpay' : 'Pay') +
                 '</button>' +
+                // Delete button — passes itself for optimistic dimming
                 '<button ' +
                 'class="tx-delete" ' +
-                'onclick="deleteBill(\'' + bill.id + '\')" ' +
+                'onclick="deleteBill(\'' + bill.id + '\', this)" ' +
                 'title="Delete bill">×</button>' +
                 '</div>' +
 
@@ -116,7 +121,12 @@
 
     // ─── ADD BILL ────────────────────────────────────────────────────────────────
 
+    /**
+     * addBillForm()
+     * Uses withButtonLoading() to show an inline spinner while saving.
+     */
     async function addBillForm() {
+        var btn    = document.getElementById('btn-add-bill');
         var name   = getVal('b-name');
         var amtRaw = getVal('b-amt');
         var dayRaw = getVal('b-day');
@@ -141,25 +151,36 @@
             return;
         }
 
-        try {
-            var newBill = await callServer('addBill', name, amount, dueDay);
+        await withButtonLoading(btn, async function() {
+            try {
+                var newBill = await callServer('addBill', name, amount, dueDay);
 
-            if (!AppState.bills) AppState.bills = [];
-            AppState.bills.push(newBill);
+                if (!AppState.bills) AppState.bills = [];
+                AppState.bills.push(newBill);
 
-            clearInputs('b-name', 'b-amt', 'b-day');
-            renderAll();
-            showToast('Bill added!', 'success');
+                clearInputs('b-name', 'b-amt', 'b-day');
+                renderAll();
+                showToast('Bill added!', 'success');
 
-        } catch (e) {
-            // Error toast shown by callServer.
-        }
+            } catch (e) {
+                // Error toast shown by callServer.
+            }
+        });
     }
 
 
     // ─── TOGGLE PAID ─────────────────────────────────────────────────────────────
 
-    async function toggleBillPaid(billId) {
+    /**
+     * toggleBillPaid(billId, payBtnEl)
+     * Disables the Pay/Unpay button while the server call is in flight.
+     */
+    async function toggleBillPaid(billId, payBtnEl) {
+        if (payBtnEl) {
+            payBtnEl.disabled = true;
+            payBtnEl.style.opacity = '0.5';
+        }
+
         try {
             var updated = await callServer('toggleBillPaid', billId);
 
@@ -170,6 +191,10 @@
             renderAll();
 
         } catch (e) {
+            if (payBtnEl) {
+                payBtnEl.disabled = false;
+                payBtnEl.style.opacity = '';
+            }
             // Error toast shown by callServer.
         }
     }
@@ -177,7 +202,16 @@
 
     // ─── DELETE BILL ─────────────────────────────────────────────────────────────
 
-    async function deleteBill(billId) {
+    /**
+     * deleteBill(billId, deleteBtnEl)
+     * Dims the delete button immediately as optimistic feedback.
+     */
+    async function deleteBill(billId, deleteBtnEl) {
+        if (deleteBtnEl) {
+            deleteBtnEl.disabled = true;
+            deleteBtnEl.style.opacity = '0.35';
+        }
+
         try {
             await callServer('deleteBill', billId);
 
@@ -189,6 +223,10 @@
             showToast('Bill removed.', 'info');
 
         } catch (e) {
+            if (deleteBtnEl) {
+                deleteBtnEl.disabled = false;
+                deleteBtnEl.style.opacity = '';
+            }
             // Error toast shown by callServer.
         }
     }
@@ -229,7 +267,7 @@
      * Returns the status label string for the badge column.
      */
     function _dueBadgeText(bill, daysUntil) {
-        if (bill.paid)      return 'Paid';
+        if (bill.paid)       return 'Paid';
         if (daysUntil === 0) return 'Due today';
         return 'Due in ' + daysUntil + 'd';
     }
@@ -239,8 +277,8 @@
      * Returns the CSS colour for the status badge.
      */
     function _dueBadgeColor(bill, daysUntil) {
-        if (bill.paid)             return 'var(--acc)';
-        if (daysUntil <= 5)        return 'var(--red)';
+        if (bill.paid)      return 'var(--acc)';
+        if (daysUntil <= 5) return 'var(--red)';
         return 'var(--text2)';
     }
 

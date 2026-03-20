@@ -35,7 +35,10 @@
   <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
     <input id="sv-name"   class="inp" placeholder="Goal name"/>
     <input id="sv-target" class="inp" placeholder="Target amount" type="number" min="1"/>
-    <button onclick="addSavGoalForm()" class="btn-primary">Add</button>
+    <button id="btn-add-sav" onclick="addSavGoalForm()" class="btn-primary">
+      <span class="btn-label">Add</span>
+      <span class="btn-spinner"></span>
+    </button>
   </div>
 
 </div>
@@ -100,9 +103,10 @@
               '<span style="font-family:var(--mono);font-size:12px;color:var(--text2);">' +
               fmt(saved) + ' / ' + fmt(target) +
               '</span>' +
+              // Delete button passes itself for optimistic dimming
               '<button ' +
               'class="tx-delete" ' +
-              'onclick="deleteSavGoal(\'' + goal.id + '\')" ' +
+              'onclick="deleteSavGoal(\'' + goal.id + '\', this)" ' +
               'title="Remove goal">×</button>' +
               '</div>' +
               '</div>' +
@@ -129,7 +133,12 @@
 
   // ─── ADD SAVINGS GOAL ────────────────────────────────────────────────────────
 
+  /**
+   * addSavGoalForm()
+   * Uses withButtonLoading() to show an inline spinner while saving.
+   */
   async function addSavGoalForm() {
+    var btn       = document.getElementById('btn-add-sav');
     var name      = getVal('sv-name');
     var targetRaw = getVal('sv-target');
     var target    = parseFloat(targetRaw);
@@ -146,25 +155,36 @@
       return;
     }
 
-    try {
-      var newGoal = await callServer('addSavingsGoal', name, target);
+    await withButtonLoading(btn, async function() {
+      try {
+        var newGoal = await callServer('addSavingsGoal', name, target);
 
-      if (!AppState.savingsGoals) AppState.savingsGoals = [];
-      AppState.savingsGoals.push(newGoal);
+        if (!AppState.savingsGoals) AppState.savingsGoals = [];
+        AppState.savingsGoals.push(newGoal);
 
-      clearInputs('sv-name', 'sv-target');
-      renderAll();
-      showToast('Savings goal added!', 'success');
+        clearInputs('sv-name', 'sv-target');
+        renderAll();
+        showToast('Savings goal added!', 'success');
 
-    } catch (e) {
-      // Error toast shown by callServer's failure handler.
-    }
+      } catch (e) {
+        // Error toast shown by callServer's failure handler.
+      }
+    });
   }
 
 
   // ─── DELETE SAVINGS GOAL ─────────────────────────────────────────────────────
 
-  async function deleteSavGoal(goalId) {
+  /**
+   * deleteSavGoal(goalId, deleteBtnEl)
+   * Dims the delete button immediately as optimistic feedback.
+   */
+  async function deleteSavGoal(goalId, deleteBtnEl) {
+    if (deleteBtnEl) {
+      deleteBtnEl.disabled = true;
+      deleteBtnEl.style.opacity = '0.35';
+    }
+
     try {
       await callServer('deleteSavingsGoal', goalId);
 
@@ -176,6 +196,10 @@
       showToast('Savings goal removed.', 'info');
 
     } catch (e) {
+      if (deleteBtnEl) {
+        deleteBtnEl.disabled = false;
+        deleteBtnEl.style.opacity = '';
+      }
       // Error toast shown by callServer.
     }
   }

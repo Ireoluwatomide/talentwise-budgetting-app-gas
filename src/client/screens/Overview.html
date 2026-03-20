@@ -41,54 +41,268 @@
     <div id="tx-list">
         <!-- populated by renderOverview() -->
     </div>
+    <!-- Show all / Show less toggle — rendered by renderOverview() -->
+    <div id="tx-list-toggle"></div>
 
-    <!-- ── 3. Add Transaction Form ───────────────────────────────────────────── -->
-    <div class="sec">Add Transaction</div>
+    <!-- ── 3. Add Transaction Form (desktop only — hidden on mobile via CSS) ── -->
+    <div id="add-tx-inline">
+        <div class="sec">Add Transaction</div>
 
-    <div class="row2" style="margin-bottom:8px;">
-        <input  id="tx-name" placeholder="Description"    class="inp"/>
-        <input  id="tx-amt"  placeholder="Amount"         class="inp" type="number" min="0" step="any"/>
-        <select id="tx-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
-        <select id="tx-type" class="inp">
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-            <option value="savings">Savings deposit</option>
-        </select>
-    </div>
+        <div class="row2" style="margin-bottom:8px;">
+            <input  id="tx-name" placeholder="Description"    class="inp"/>
+            <input  id="tx-amt"  placeholder="Amount"         class="inp" type="number" min="0" step="any"/>
+            <select id="tx-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
+            <select id="tx-type" class="inp">
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+                <option value="savings">Savings deposit</option>
+            </select>
+        </div>
 
-    <input
-            id="tx-note"
-            placeholder="Note / tag (optional)"
-            class="inp"
-            style="margin-bottom:8px;"/>
+        <input
+                id="tx-note"
+                placeholder="Note / tag (optional)"
+                class="inp"
+                style="margin-bottom:8px;"/>
 
-    <!-- btn-label + btn-spinner spans are required by the CSS loading animation.
-         initAllBtnStructures() in Index.html boot injects these automatically,
-         but including them here explicitly keeps the HTML self-documenting. -->
-    <button id="btn-add-tx" onclick="addTx()" class="btn-primary" style="width:100%;">
-        <span class="btn-label">Add Transaction</span>
-        <span class="btn-spinner"></span>
-    </button>
+        <button id="btn-add-tx" onclick="addTx()" class="btn-primary" style="width:100%;">
+            <span class="btn-label">Add Transaction</span>
+            <span class="btn-spinner"></span>
+        </button>
 
-    <!-- ── 4. Import CSV ─────────────────────────────────────────────────────── -->
-    <div style="margin-top:10px;">
-        <label class="btn-sm" style="cursor:pointer;display:inline-block;">
-            Import CSV
-            <input
-                    type="file"
-                    accept=".csv"
-                    onchange="importCSV(event)"
-                    style="display:none;"/>
-        </label>
+        <!-- Import CSV -->
+        <div style="margin-top:10px;">
+            <label class="btn-sm" style="cursor:pointer;display:inline-block;">
+                Import CSV
+                <input
+                        type="file"
+                        accept=".csv"
+                        onchange="importCSV(event)"
+                        style="display:none;"/>
+            </label>
+        </div>
     </div>
 
 </div><!-- /#pane-overview -->
 
 
+<!-- ══ MOBILE FAB + BOTTOM SHEET ══════════════════════════════════════════ -->
+<!--
+  The FAB is rendered outside #pane-overview so it stays fixed over the
+  viewport regardless of which pane is scrolled. It is only shown when
+  the overview tab is active (controlled via JS + CSS).
+-->
+
+<!-- FAB button -->
+<button id="fab-add-tx"
+        onclick="openAddTxSheet()"
+        aria-label="Add transaction"
+        title="Add transaction">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+    </svg>
+</button>
+
+<!-- FAB bottom sheet overlay -->
+<div id="add-tx-sheet">
+    <div id="add-tx-sheet-backdrop" onclick="closeAddTxSheet()"></div>
+    <div id="add-tx-sheet-panel">
+        <div id="add-tx-sheet-handle"></div>
+
+        <div style="font-size:15px;font-weight:600;margin-bottom:1.25rem;color:var(--text);">
+            Add Transaction
+        </div>
+
+        <!-- Form fields — same IDs as desktop, but these are the mobile copies.
+             addTxFromSheet() reads from the *-mob IDs to avoid conflicts. -->
+        <div class="row2" style="margin-bottom:8px;">
+            <input  id="tx-name-mob" placeholder="Description"    class="inp"/>
+            <input  id="tx-amt-mob"  placeholder="Amount"         class="inp" type="number" min="0" step="any"/>
+            <select id="tx-cat-mob"  class="inp"><!-- filled by populateCategorySelects() --></select>
+            <select id="tx-type-mob" class="inp">
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+                <option value="savings">Savings deposit</option>
+            </select>
+        </div>
+
+        <input
+                id="tx-note-mob"
+                placeholder="Note / tag (optional)"
+                class="inp"
+                style="margin-bottom:12px;"/>
+
+        <button id="btn-add-tx-mob" onclick="addTxFromSheet()" class="btn-primary" style="width:100%;">
+            <span class="btn-label">Add Transaction</span>
+            <span class="btn-spinner"></span>
+        </button>
+
+        <!-- Import CSV (mobile) -->
+        <div style="margin-top:10px;text-align:center;">
+            <label class="btn-sm" style="cursor:pointer;display:inline-block;">
+                Import CSV
+                <input
+                        type="file"
+                        accept=".csv"
+                        onchange="importCSV(event);closeAddTxSheet();"
+                        style="display:none;"/>
+            </label>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+    /* ── Inline form: hidden on mobile ───────────────────────────────────── */
+    @media (max-width: 600px) {
+        #add-tx-inline { display: none; }
+    }
+
+    /* ── FAB ─────────────────────────────────────────────────────────────── */
+    #fab-add-tx {
+        display: none; /* hidden by default; shown on mobile when overview is active */
+        position: fixed;
+        bottom: calc(72px + max(12px, env(safe-area-inset-bottom)));
+        right: 20px;
+        z-index: 190; /* below bottom-nav (200) but above content */
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: var(--text);
+        color: var(--bg);
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    #fab-add-tx svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    #fab-add-tx:active {
+        transform: scale(0.93);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    }
+
+    /* Show FAB only on mobile when overview pane is active */
+    @media (max-width: 600px) {
+        #pane-overview.active ~ #fab-add-tx,
+        #fab-add-tx.fab-visible {
+            display: flex;
+        }
+    }
+
+    /* ── Add Tx bottom sheet ─────────────────────────────────────────────── */
+    #add-tx-sheet {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 350;
+    }
+
+    #add-tx-sheet.open {
+        display: block;
+    }
+
+    #add-tx-sheet-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    #add-tx-sheet-panel {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+        max-height: 88vh;
+        overflow-y: auto;
+        /* Slide up animation */
+        animation: sheetSlideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    @keyframes sheetSlideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+    }
+
+    #add-tx-sheet-handle {
+        width: 36px;
+        height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+
+    /* ── "Show all" toggle link ──────────────────────────────────────────── */
+    #tx-list-toggle {
+        margin-top: 4px;
+        margin-bottom: 4px;
+    }
+
+    .tx-show-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: none;
+        border: none;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text2);
+        cursor: pointer;
+        padding: 8px 0;
+        transition: color 0.12s;
+    }
+
+    .tx-show-toggle:hover { color: var(--text); }
+
+    .tx-show-toggle svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex-shrink: 0;
+        transition: transform 0.2s;
+    }
+
+    .tx-show-toggle.expanded svg {
+        transform: rotate(180deg);
+    }
+
+    /* Dark mode: sheet panel */
+    .app.dark #add-tx-sheet-panel { background: var(--bg); }
+</style>
+
+
+<!-- ══ OVERVIEW JAVASCRIPT ════════════════════════════════════════════════ -->
 <script>
     // =============================================================================
     // Overview screen — render + action functions
     // =============================================================================
+
+    // How many transactions to show before the "Show all" toggle.
+    var TX_PAGE_SIZE = 10;
+
+    // Persisted across renderAll() calls — reset to false on month navigation.
+    // Initialised on AppState if not already present.
+    if (typeof AppState !== 'undefined' && AppState.showAllTxs === undefined) {
+        AppState.showAllTxs = false;
+    }
+
 
     /**
      * renderOverview()
@@ -98,7 +312,7 @@
      * entirely from AppState — no server call needed.
      */
     function renderOverview() {
-        // ── Metric cards ────────────────────────────────────────────────────────────
+        // ── Metric cards ──────────────────────────────────────────────────────────
         var stats = getMonthStats(curKey());
 
         var incEl = document.getElementById('ov-inc');
@@ -114,8 +328,9 @@
             remEl.style.color  = stats.bal >= 0 ? 'var(--acc)' : 'var(--red)';
         }
 
-        // ── Transaction list ─────────────────────────────────────────────────────────
-        var txList = document.getElementById('tx-list');
+        // ── Transaction list ───────────────────────────────────────────────────────
+        var txList    = document.getElementById('tx-list');
+        var toggleEl  = document.getElementById('tx-list-toggle');
         if (!txList) return;
 
         var txs = curTxs();
@@ -126,28 +341,32 @@
                 'No transactions this month.' +
                 '</div>'
             );
+            if (toggleEl) toggleEl.innerHTML = '';
+            _updateFabVisibility();
             return;
         }
 
-        // Render newest first — slice to avoid mutating AppState.
+        // Render newest first.
         var reversed = txs.slice().reverse();
-        var html = '';
+        var showAll  = AppState.showAllTxs;
+        var total    = reversed.length;
+        var visible  = showAll ? reversed : reversed.slice(0, TX_PAGE_SIZE);
+        var hidden   = total - visible.length;
 
-        reversed.forEach(function(tx) {
+        var html = '';
+        visible.forEach(function(tx) {
             var dotColor   = getCategoryColor(tx.category);
             var amtPrefix  = tx.type === 'income' ? '+' : '−';
             var amtColor   = tx.type === 'income'  ? 'var(--acc)'
                 : tx.type === 'savings' ? 'var(--blue)'
                     :                         'var(--red)';
 
-            // Note/tag — only shown when non-empty
             var tagHtml = tx.note
                 ? '<span class="tx-tag">' + _escTx(tx.note) + '</span>'
                 : '';
 
             html += (
                 '<div class="tx-row">' +
-                // LEFT side
                 '<div class="tx-left">' +
                 '<span class="tx-dot" style="background:' + dotColor + ';"></span>' +
                 '<div class="tx-meta">' +
@@ -155,7 +374,6 @@
                 '<div class="tx-cat">'  + _escTx(tx.category) + '</div>' +
                 '</div>' +
                 '</div>' +
-                // RIGHT side — delete button passes itself so we can dim it optimistically
                 '<div class="tx-right">' +
                 '<span class="tx-amount" style="color:' + amtColor + ';">' +
                 amtPrefix + fmt(tx.amount) +
@@ -170,18 +388,46 @@
         });
 
         txList.innerHTML = html;
+
+        // ── Show all / Show less toggle ────────────────────────────────────────────
+        if (toggleEl) {
+            if (total <= TX_PAGE_SIZE) {
+                toggleEl.innerHTML = '';
+            } else if (showAll) {
+                toggleEl.innerHTML = (
+                    '<button class="tx-show-toggle expanded" onclick="toggleTxList()">' +
+                    '<svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>' +
+                    'Show less' +
+                    '</button>'
+                );
+            } else {
+                toggleEl.innerHTML = (
+                    '<button class="tx-show-toggle" onclick="toggleTxList()">' +
+                    '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>' +
+                    'Show all ' + total + ' transactions' +
+                    '</button>'
+                );
+            }
+        }
+
+        _updateFabVisibility();
+    }
+
+    /**
+     * toggleTxList()
+     * Flips AppState.showAllTxs and re-renders the overview.
+     */
+    function toggleTxList() {
+        AppState.showAllTxs = !AppState.showAllTxs;
+        renderOverview();
     }
 
 
-    // ─── ADD TRANSACTION ─────────────────────────────────────────────────────────
+    // ─── ADD TRANSACTION (desktop / inline form) ──────────────────────────────
 
     /**
      * addTx()
-     *
-     * Reads the add-transaction form, validates, calls the server,
-     * and on success updates AppState + re-renders.
-     * Uses withButtonLoading() to show an inline spinner on the button
-     * and disable inputs while the server call is in flight.
+     * Reads from the desktop inline form (#tx-name, #tx-amt, etc.)
      */
     async function addTx() {
         var btn      = document.getElementById('btn-add-tx');
@@ -191,79 +437,105 @@
         var category = getVal('tx-cat');
         var note     = getVal('tx-note');
 
-        // ── Client-side validation ─────────────────────────────────────────────────
-        if (!name) {
-            showToast('Please enter a description.', 'error');
-            document.getElementById('tx-name').focus();
-            return;
-        }
+        if (!_validateTxInputs(name, amtRaw, type)) return;
 
-        var amount = parseFloat(amtRaw);
-        if (!amtRaw || isNaN(amount) || amount <= 0) {
-            showToast('Please enter a valid amount greater than zero.', 'error');
-            document.getElementById('tx-amt').focus();
-            return;
-        }
-
-        if (!type) {
-            showToast('Please select a transaction type.', 'error');
-            return;
-        }
-
-        // ── Server call — wrapped in button loading state ──────────────────────────
         await withButtonLoading(btn, async function() {
-            try {
-                var newTx = await callServer('addTransaction',
-                    curKey(), name, amount, type, category, note
-                );
-
-                // Push the returned tx object (with its server-generated id) into AppState.
-                if (!AppState.transactions[curKey()]) {
-                    AppState.transactions[curKey()] = [];
-                }
-                AppState.transactions[curKey()].push(newTx);
-
-                // If this was a savings deposit, update the matching savings goal balance
-                // in AppState so the Savings tab reflects the change without a server
-                // round-trip. The server already updated the row; we just sync client state.
-                if (type === 'savings' && AppState.savingsGoals) {
-                    AppState.savingsGoals = AppState.savingsGoals.map(function(goal) {
-                        if (goal.name.toLowerCase() === name.toLowerCase()) {
-                            var newSaved = (parseFloat(goal.saved_amount) || 0) + amount;
-                            var target   = parseFloat(goal.target_amount) || 0;
-                            newSaved     = target > 0 ? Math.min(newSaved, target) : newSaved;
-                            return Object.assign({}, goal, {
-                                saved_amount:     newSaved,
-                                percent_complete: target > 0 ? Math.min(100, Math.round((newSaved / target) * 100)) : 0
-                            });
-                        }
-                        return goal;
-                    });
-                }
-
-                clearInputs('tx-name', 'tx-amt', 'tx-note');
-                renderAll();
-                showToast('Transaction added!', 'success');
-
-            } catch (e) {
-                // callServer already showed an error toast via its failure handler.
-            }
+            await _submitTx(name, parseFloat(amtRaw), type, category, note);
+            clearInputs('tx-name', 'tx-amt', 'tx-note');
         });
     }
 
 
-    // ─── DELETE TRANSACTION ───────────────────────────────────────────────────────
+    // ─── ADD TRANSACTION (mobile sheet form) ──────────────────────────────────
 
     /**
-     * deleteTx(txId, deleteBtnEl)
-     *
-     * Deletes a transaction by id. Dims the delete button immediately
-     * (optimistic feedback), then confirms with the server.
-     * The button reference is passed in from the onclick so we can restore
-     * it if the server call fails.
+     * addTxFromSheet()
+     * Reads from the mobile sheet form (#tx-name-mob, etc.)
+     * Closes the sheet on success.
      */
+    async function addTxFromSheet() {
+        var btn      = document.getElementById('btn-add-tx-mob');
+        var name     = getVal('tx-name-mob');
+        var amtRaw   = getVal('tx-amt-mob');
+        var type     = getVal('tx-type-mob');
+        var category = getVal('tx-cat-mob');
+        var note     = getVal('tx-note-mob');
+
+        if (!_validateTxInputs(name, amtRaw, type)) return;
+
+        await withButtonLoading(btn, async function() {
+            await _submitTx(name, parseFloat(amtRaw), type, category, note);
+            clearInputs('tx-name-mob', 'tx-amt-mob', 'tx-note-mob');
+            closeAddTxSheet();
+        });
+    }
+
+    /**
+     * _validateTxInputs(name, amtRaw, type)
+     * Shared validation for both form contexts. Returns true if valid.
+     */
+    function _validateTxInputs(name, amtRaw, type) {
+        if (!name) {
+            showToast('Please enter a description.', 'error');
+            return false;
+        }
+        var amount = parseFloat(amtRaw);
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error');
+            return false;
+        }
+        if (!type) {
+            showToast('Please select a transaction type.', 'error');
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * _submitTx(name, amount, type, category, note)
+     * Shared server call + AppState update for both form contexts.
+     */
+    async function _submitTx(name, amount, type, category, note) {
+        try {
+            var newTx = await callServer('addTransaction',
+                curKey(), name, amount, type, category, note
+            );
+
+            if (!AppState.transactions[curKey()]) {
+                AppState.transactions[curKey()] = [];
+            }
+            AppState.transactions[curKey()].push(newTx);
+
+            // Sync savings goal balance if applicable.
+            if (type === 'savings' && AppState.savingsGoals) {
+                AppState.savingsGoals = AppState.savingsGoals.map(function(goal) {
+                    if (goal.name.toLowerCase() === name.toLowerCase()) {
+                        var newSaved = (parseFloat(goal.saved_amount) || 0) + amount;
+                        var target   = parseFloat(goal.target_amount) || 0;
+                        newSaved     = target > 0 ? Math.min(newSaved, target) : newSaved;
+                        return Object.assign({}, goal, {
+                            saved_amount:     newSaved,
+                            percent_complete: target > 0
+                                ? Math.min(100, Math.round((newSaved / target) * 100))
+                                : 0
+                        });
+                    }
+                    return goal;
+                });
+            }
+
+            renderAll();
+            showToast('Transaction added!', 'success');
+
+        } catch (e) {
+            // callServer already showed an error toast.
+        }
+    }
+
+
+    // ─── DELETE TRANSACTION ───────────────────────────────────────────────────
+
     async function deleteTx(txId, deleteBtnEl) {
-        // Optimistic: dim the × button immediately so the user gets instant feedback.
         if (deleteBtnEl) {
             deleteBtnEl.disabled = true;
             deleteBtnEl.style.opacity = '0.35';
@@ -272,7 +544,6 @@
         try {
             await callServer('deleteTransaction', txId);
 
-            // Remove from AppState cache.
             var key = curKey();
             if (AppState.transactions[key]) {
                 AppState.transactions[key] = AppState.transactions[key].filter(function(tx) {
@@ -284,23 +555,97 @@
             showToast('Transaction removed.', 'info');
 
         } catch (e) {
-            // Restore the button if the server call failed.
             if (deleteBtnEl) {
                 deleteBtnEl.disabled = false;
                 deleteBtnEl.style.opacity = '';
             }
-            // Error toast shown by callServer's failure handler.
         }
     }
 
 
-    // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────────
+    // ─── FAB + SHEET OPEN/CLOSE ───────────────────────────────────────────────
 
     /**
-     * _escTx(str)
-     * Minimal HTML escape for transaction fields rendered into innerHTML.
-     * Prevents XSS from user-entered names/notes containing HTML characters.
+     * openAddTxSheet()
+     * Opens the mobile add-transaction bottom sheet.
+     * Populates the category select with current categories.
      */
+    function openAddTxSheet() {
+        // Sync mobile category select from AppState
+        var mobCat = document.getElementById('tx-cat-mob');
+        if (mobCat) {
+            var current = mobCat.value;
+            mobCat.innerHTML = '';
+            (AppState.categories || []).forEach(function(cat) {
+                var opt = document.createElement('option');
+                opt.value       = cat.name;
+                opt.textContent = cat.name;
+                mobCat.appendChild(opt);
+            });
+            if (current && mobCat.querySelector('option[value="' + current + '"]')) {
+                mobCat.value = current;
+            }
+        }
+
+        var sheet = document.getElementById('add-tx-sheet');
+        if (sheet) {
+            sheet.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            // Focus the first input after animation completes
+            setTimeout(function() {
+                var nameInput = document.getElementById('tx-name-mob');
+                if (nameInput) nameInput.focus();
+            }, 300);
+        }
+    }
+
+    /**
+     * closeAddTxSheet()
+     * Closes the mobile add-transaction bottom sheet.
+     */
+    function closeAddTxSheet() {
+        var sheet = document.getElementById('add-tx-sheet');
+        if (sheet) {
+            sheet.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    }
+
+    /**
+     * _updateFabVisibility()
+     * Shows the FAB only when the overview pane is active.
+     * Called at the end of renderOverview() and by switchTab().
+     */
+    function _updateFabVisibility() {
+        var fab = document.getElementById('fab-add-tx');
+        if (!fab) return;
+        var isOverview = AppState.activeTab === 'overview';
+        fab.classList.toggle('fab-visible', isOverview);
+    }
+
+    // Reset "show all" flag when the month changes so long lists don't
+    // auto-expand on navigation. Hook into prevMonth/nextMonth indirectly
+    // by resetting in renderAll via a renderOverview guard.
+    // We reset it whenever curKey() changes — tracked by _lastRenderedKey.
+    var _lastRenderedKey = null;
+
+    // Wrap renderOverview to auto-reset showAllTxs on month change.
+    var _renderOverviewOrig = typeof renderOverview === 'function' ? renderOverview : null;
+    (function() {
+        var _orig = renderOverview;
+        renderOverview = function() {
+            var key = curKey();
+            if (_lastRenderedKey !== null && _lastRenderedKey !== key) {
+                AppState.showAllTxs = false;
+            }
+            _lastRenderedKey = key;
+            _orig();
+        };
+    })();
+
+
+    // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
+
     function _escTx(str) {
         return String(str || '')
             .replace(/&/g, '&amp;')

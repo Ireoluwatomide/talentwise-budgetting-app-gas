@@ -13,7 +13,7 @@
 
     <!-- LEFT: label + month nav -->
     <div class="header-left">
-        <div class="label-caps" style="margin-bottom:4px;">Budget Tracker</div>
+        <div class="label-caps" style="margin-bottom:4px;">Talentwise Budget Tracker</div>
         <div style="display:flex;align-items:center;gap:6px;">
             <button id="btn-prev-month" onclick="prevMonth()" class="month-nav-btn" title="Previous month" aria-label="Previous month">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -25,20 +25,8 @@
         </div>
     </div>
 
-    <!-- RIGHT: desktop controls + balance + avatar -->
+    <!-- RIGHT: balance + avatar -->
     <div class="header-right">
-
-        <!-- Desktop-only controls (hidden on mobile via CSS) -->
-        <div class="hdr-desktop-ctrls">
-            <select id="currency-sel" onchange="setCurrency(this.value)" class="inp hdr-currency-sel">
-                <option value="NGN">₦ NGN</option>
-                <option value="USD">$ USD</option>
-                <option value="EUR">€ EUR</option>
-                <option value="GBP">£ GBP</option>
-            </select>
-            <button id="dark-btn" onclick="toggleDark()" class="btn-sm">Dark</button>
-            <button onclick="exportCSV()" class="btn-sm" title="Export CSV">CSV</button>
-        </div>
 
         <!-- Net Balance (always visible) -->
         <div style="text-align:right;">
@@ -151,19 +139,6 @@
         align-items: center;
         gap: 12px;
         flex-wrap: nowrap;
-    }
-
-    /* Desktop controls */
-    .hdr-desktop-ctrls {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .hdr-currency-sel {
-        width: auto;
-        padding: 5px 28px 5px 8px;
-        font-size: 12px;
     }
 
     /* Month nav circular buttons */
@@ -283,8 +258,6 @@
 
     /* ── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 600px) {
-        .hdr-desktop-ctrls { display: none; }
-
         .header-month-label {
             font-size: 14px !important;
             min-width: 90px !important;
@@ -320,15 +293,11 @@
             balEl.style.color = stats.bal >= 0 ? 'var(--acc)' : 'var(--red)';
         }
 
-        // Sync all currency selectors
-        ['currency-sel', 'currency-sel-dd', 'currency-sel-mobile'].forEach(function(id) {
+        // Sync all currency selectors (dropdown + mobile sheet only now)
+        ['currency-sel-dd', 'currency-sel-mobile'].forEach(function(id) {
             var s = document.getElementById(id);
             if (s) s.value = AppState.currency;
         });
-
-        // Dark button label
-        var darkBtn = document.getElementById('dark-btn');
-        if (darkBtn) darkBtn.textContent = AppState.darkMode ? 'Light' : 'Dark';
 
         // Avatar button
         _buildAvatar();

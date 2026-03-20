@@ -27,7 +27,10 @@
     <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
         <select id="g-cat"   class="inp"><!-- filled by populateCategorySelects() --></select>
         <input  id="g-limit" class="inp" type="number" min="1" placeholder="Monthly limit"/>
-        <button onclick="addGoalForm()" class="btn-primary">Add</button>
+        <button id="btn-add-goal" onclick="addGoalForm()" class="btn-primary">
+            <span class="btn-label">Add</span>
+            <span class="btn-spinner"></span>
+        </button>
     </div>
 
 </div>
@@ -95,9 +98,10 @@
                 '<span style="font-family:var(--mono);font-size:12px;color:' + amtColor + ';">' +
                 fmt(spent) + ' / ' + fmt(limit) +
                 '</span>' +
+                // Delete button passes itself so we can dim it optimistically
                 '<button ' +
                 'class="tx-delete" ' +
-                'onclick="deleteGoal(\'' + goal.id + '\')" ' +
+                'onclick="deleteGoal(\'' + goal.id + '\', this)" ' +
                 'title="Remove goal">×</button>' +
                 '</div>' +
                 '</div>' +
@@ -125,8 +129,10 @@
     /**
      * addGoalForm()
      * Reads the add-goal form, validates, calls the server, updates AppState.
+     * Uses withButtonLoading() to show an inline spinner while saving.
      */
     async function addGoalForm() {
+        var btn      = document.getElementById('btn-add-goal');
         var category = getVal('g-cat');
         var limitRaw = getVal('g-limit');
         var limit    = parseFloat(limitRaw);
@@ -141,37 +147,45 @@
             return;
         }
 
-        try {
-            var newGoal = await callServer('addGoal', category, limit);
+        await withButtonLoading(btn, async function() {
+            try {
+                var newGoal = await callServer('addGoal', category, limit);
 
-            // Upsert into AppState — replace if same category exists, append otherwise.
-            var exists = false;
-            AppState.goals = (AppState.goals || []).map(function(g) {
-                if (g.category.toLowerCase() === category.toLowerCase()) {
-                    exists = true;
-                    return newGoal; // replace with updated object from server
-                }
-                return g;
-            });
-            if (!exists) AppState.goals.push(newGoal);
+                // Upsert into AppState — replace if same category exists, append otherwise.
+                var exists = false;
+                AppState.goals = (AppState.goals || []).map(function(g) {
+                    if (g.category.toLowerCase() === category.toLowerCase()) {
+                        exists = true;
+                        return newGoal; // replace with updated object from server
+                    }
+                    return g;
+                });
+                if (!exists) AppState.goals.push(newGoal);
 
-            clearInputs('g-limit');
-            renderAll();
-            showToast('Goal saved!', 'success');
+                clearInputs('g-limit');
+                renderAll();
+                showToast('Goal saved!', 'success');
 
-        } catch (e) {
-            // Error toast shown by callServer's failure handler.
-        }
+            } catch (e) {
+                // Error toast shown by callServer's failure handler.
+            }
+        });
     }
 
 
     // ─── DELETE GOAL ─────────────────────────────────────────────────────────────
 
     /**
-     * deleteGoal(goalId)
+     * deleteGoal(goalId, deleteBtnEl)
      * Removes a goal from AppState and the server.
+     * Dims the delete button immediately as optimistic feedback.
      */
-    async function deleteGoal(goalId) {
+    async function deleteGoal(goalId, deleteBtnEl) {
+        if (deleteBtnEl) {
+            deleteBtnEl.disabled = true;
+            deleteBtnEl.style.opacity = '0.35';
+        }
+
         try {
             await callServer('deleteGoal', goalId);
 
@@ -183,6 +197,10 @@
             showToast('Goal removed.', 'info');
 
         } catch (e) {
+            if (deleteBtnEl) {
+                deleteBtnEl.disabled = false;
+                deleteBtnEl.style.opacity = '';
+            }
             // Error toast shown by callServer.
         }
     }

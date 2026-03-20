@@ -27,7 +27,10 @@
             value="#1D9E75"
             style="width:44px;height:38px;border:0.5px solid var(--border2);border-radius:var(--radius);
              padding:2px;cursor:pointer;background:transparent;flex-shrink:0;"/>
-    <button onclick="addCategoryForm()" class="btn-primary">Add</button>
+    <button id="btn-add-cat" onclick="addCategoryForm()" class="btn-primary">
+      <span class="btn-label">Add</span>
+      <span class="btn-spinner"></span>
+    </button>
   </div>
 
   <!-- ── 2. Divider ──────────────────────────────────────────────────────── -->
@@ -36,6 +39,7 @@
   <!-- ── 3. Danger Zone ──────────────────────────────────────────────────── -->
   <div class="sec">Danger Zone</div>
   <button
+          id="btn-clear-month"
           onclick="clearCurrentMonth()"
           class="btn-sm btn-danger">
     Clear Current Month
@@ -73,9 +77,10 @@
 
     listEl.innerHTML = cats.map(function(cat, i) {
       var isDefault  = i < DEFAULT_COUNT;
+      // Delete button passes itself for optimistic dimming
       var deleteBtn  = isDefault
               ? '' // defaults are protected
-              : '<button class="tx-delete" onclick="deleteCat(\'' + _escAttr(cat.name) + '\')" ' +
+              : '<button class="tx-delete" onclick="deleteCat(\'' + _escAttr(cat.name) + '\', this)" ' +
               'title="Remove category">×</button>';
 
       return (
@@ -92,7 +97,12 @@
 
   // ─── ADD CATEGORY ─────────────────────────────────────────────────────────────
 
+  /**
+   * addCategoryForm()
+   * Uses withButtonLoading() to show an inline spinner while saving.
+   */
   async function addCategoryForm() {
+    var btn   = document.getElementById('btn-add-cat');
     var name  = getVal('new-cat-name');
     var color = document.getElementById('new-cat-color')
             ? document.getElementById('new-cat-color').value
@@ -114,26 +124,37 @@
       return;
     }
 
-    try {
-      var updated = await callServer('addCategory', name, color);
+    await withButtonLoading(btn, async function() {
+      try {
+        var updated = await callServer('addCategory', name, color);
 
-      // Server returns the full updated categories array.
-      AppState.categories = updated;
+        // Server returns the full updated categories array.
+        AppState.categories = updated;
 
-      clearInputs('new-cat-name');
-      renderAll(); // refreshes category list + all <select> dropdowns
-      showToast('Category added!', 'success');
+        clearInputs('new-cat-name');
+        renderAll(); // refreshes category list + all <select> dropdowns
+        showToast('Category added!', 'success');
 
-    } catch (e) {
-      // Error toast shown by callServer.
-    }
+      } catch (e) {
+        // Error toast shown by callServer.
+      }
+    });
   }
 
 
   // ─── DELETE CATEGORY ──────────────────────────────────────────────────────────
 
-  async function deleteCat(categoryName) {
+  /**
+   * deleteCat(categoryName, deleteBtnEl)
+   * Dims the delete button immediately as optimistic feedback.
+   */
+  async function deleteCat(categoryName, deleteBtnEl) {
     if (!window.confirm('Remove the "' + categoryName + '" category?')) return;
+
+    if (deleteBtnEl) {
+      deleteBtnEl.disabled = true;
+      deleteBtnEl.style.opacity = '0.35';
+    }
 
     try {
       var updated = await callServer('deleteCategory', categoryName);
@@ -144,6 +165,10 @@
       showToast('Category removed.', 'info');
 
     } catch (e) {
+      if (deleteBtnEl) {
+        deleteBtnEl.disabled = false;
+        deleteBtnEl.style.opacity = '';
+      }
       // Error toast shown by callServer (includes "default category" protection error).
     }
   }
@@ -151,12 +176,22 @@
 
   // ─── CLEAR CURRENT MONTH ──────────────────────────────────────────────────────
 
+  /**
+   * clearCurrentMonth()
+   * Disables the button and shows a text indicator while the server call runs.
+   */
   async function clearCurrentMonth() {
     var label = monthLabel(AppState.curYear, AppState.curMonth);
 
     if (!window.confirm(
             'Clear all transactions for ' + label + '?\n\nThis cannot be undone.'
     )) return;
+
+    var btn = document.getElementById('btn-clear-month');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Clearing…';
+    }
 
     try {
       await callServer('clearMonthTransactions', curKey());
@@ -168,6 +203,11 @@
 
     } catch (e) {
       // Error toast shown by callServer.
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Clear Current Month';
+      }
     }
   }
 

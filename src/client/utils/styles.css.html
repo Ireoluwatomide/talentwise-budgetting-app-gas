@@ -1,8 +1,7 @@
 <style>
     /*
      * styles.css.html — Budget Tracker Master Stylesheet
-     * Updated: wider desktop layout, improved mobile responsiveness,
-     * profile drawer styling.
+     * Updated: sidebar layout, extra top padding, mobile header cleanup.
      */
 
 
@@ -30,9 +29,11 @@
         --radius-lg: 12px;
         --transition: 0.15s ease;
 
-        /* Desktop: wider, more breathing room */
+        --sidebar-expanded-w: 220px;
+        --sidebar-collapsed-w: 52px;
+
         --max-width:  1100px;
-        --page-pad:   clamp(1rem, 3vw, 2.5rem);
+        --page-pad:   clamp(1.5rem, 3vw, 2.5rem);
     }
 
 
@@ -44,38 +45,83 @@
     }
 
     html {
-        /* Prevent iOS text-size-adjust which makes fonts tiny */
         -webkit-text-size-adjust: 100%;
         text-size-adjust: 100%;
+        height: 100%;
     }
 
     body {
         background: var(--bg);
         color: var(--text);
         font-family: var(--font);
-        font-size: 16px; /* slightly larger base → better mobile readability */
+        font-size: 16px;
         font-weight: 400;
         line-height: 1.55;
-        min-height: 100vh;
+        min-height: 100%;
         -webkit-font-smoothing: antialiased;
     }
 
 
-    /* ─── 3. LAYOUT ─────────────────────────────────────────────────────────────── */
-    .app {
+    /* ─── 3. LAYOUT ROOT ────────────────────────────────────────────────────────── */
+
+    /*
+     * The entire layout lives inside a single centred container.
+     *
+     * #layout-root  — the max-width flex row. Height = 100vh so the sidebar
+     *                 can use position:sticky against it (not the viewport).
+     *                 overflow-y:auto here means scroll happens inside the
+     *                 bounded frame, keeping the sidebar within max-width.
+     *
+     * .sidebar      — sticky left column; width transitions between 220px
+     *                 and 56px. The main content reflows automatically.
+     *
+     * .app          — flex:1 scrollable right column.
+     */
+
+    #layout-root {
+        display: flex;
+        height: 100vh;
+        overflow-y: auto;
+        width: 100%;
+        /*
+         * Total frame is exactly 1100px — the sidebar is a slice WITHIN it.
+         * Collapsing the sidebar just gives more room to .app inside the same
+         * 1100px frame. The outer boundary never changes.
+         */
         max-width: var(--max-width);
         margin: 0 auto;
-        padding: 1.5rem var(--page-pad);
+        background: var(--bg);
+        position: relative;
     }
 
-    .app-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1.25rem;
-        border-bottom: 0.5px solid var(--border);
-        gap: 16px;
+    @media (min-width: 1100px) {
+        body { background: var(--bg2); }
+        #layout-root { box-shadow: 0 0 0 0.5px var(--border); }
+    }
+
+    /* App content column — fills whatever width is left after the sidebar */
+    .app {
+        flex: 1;
+        min-width: 0;
+        padding: 2rem var(--page-pad) 1.5rem;
+        min-height: 100%;
+        overflow: visible;
+    }
+
+    @media (min-width: 768px) {
+        .app { max-width: none; }
+    }
+
+    /* Mobile: normal block flow, sidebar hidden */
+    @media (max-width: 767px) {
+        #layout-root {
+            height: auto;
+            overflow-y: visible;
+            max-width: 100%;
+        }
+        .app {
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
+        }
     }
 
 
@@ -169,24 +215,18 @@
 
     /* ─── 8. TAB NAVIGATION ─────────────────────────────────────────────────────── */
     /*
-     * Desktop: tabs wrap into two rows so all 15 tabs are visible without
-     * horizontal scrolling. Primary action tabs sit on row 1; analytics and
-     * config tabs wrap onto row 2. The .tab-row-break element forces the break.
-     * Mobile: tab strip is hidden entirely — bottom nav handles navigation.
+     * The horizontal tab strip is hidden — sidebar replaces it on desktop,
+     * BottomNav replaces it on mobile. The .tabs div still exists in the DOM
+     * so switchTab() can find and toggle #tab-{id} active states.
      */
     .tabs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        margin-bottom: 1.25rem;
-        padding-bottom: 10px;
-        border-bottom: 0.5px solid var(--border);
+        display: none !important; /* hidden on all breakpoints */
     }
 
     .tab {
         background: var(--bg2);
         border: 0.5px solid transparent;
-        border-radius: 20px;       /* pill */
+        border-radius: 20px;
         padding: 6px 14px;
         font-size: 13px;
         font-weight: 500;
@@ -210,13 +250,8 @@
         font-weight: 600;
     }
 
-    .pane {
-        display: none;
-    }
-
-    .pane.active {
-        display: block;
-    }
+    .pane { display: none; }
+    .pane.active { display: block; }
 
 
     /* ─── 9. TRANSACTION ROWS ───────────────────────────────────────────────────── */
@@ -228,9 +263,7 @@
         border-bottom: 0.5px solid var(--border);
     }
 
-    .tx-row:last-child {
-        border-bottom: none;
-    }
+    .tx-row:last-child { border-bottom: none; }
 
     .tx-left {
         display: flex;
@@ -247,9 +280,7 @@
         flex-shrink: 0;
     }
 
-    .tx-meta {
-        min-width: 0;
-    }
+    .tx-meta { min-width: 0; }
 
     .tx-name {
         font-size: 15px;
@@ -296,9 +327,7 @@
         transition: color var(--transition);
     }
 
-    .tx-delete:hover {
-        color: var(--red);
-    }
+    .tx-delete:hover { color: var(--red); }
 
 
     /* ─── 10. PROGRESS BARS ─────────────────────────────────────────────────────── */
@@ -327,28 +356,12 @@
         line-height: 1.5;
     }
 
-    .alert-danger {
-        background: #FCEBEB;
-        border: 0.5px solid #F09595;
-        color: #501313;
-    }
-
-    .alert-warning {
-        background: #FAEEDA;
-        border: 0.5px solid #FAC775;
-        color: #412402;
-    }
-
-    .alert-info {
-        background: #E6F1FB;
-        border: 0.5px solid #B5D4F4;
-        color: #042C53;
-    }
+    .alert-danger  { background: #FCEBEB; border: 0.5px solid #F09595; color: #501313; }
+    .alert-warning { background: #FAEEDA; border: 0.5px solid #FAC775; color: #412402; }
+    .alert-info    { background: #E6F1FB; border: 0.5px solid #B5D4F4; color: #042C53; }
 
     #alerts-budget:not(:empty),
-    #alerts-bills:not(:empty) {
-        margin-bottom: 1rem;
-    }
+    #alerts-bills:not(:empty) { margin-bottom: 1rem; }
 
 
     /* ─── 12. CARDS ─────────────────────────────────────────────────────────────── */
@@ -434,9 +447,7 @@
         position: relative;
     }
 
-    .btn-primary:hover:not(:disabled):not(.loading) {
-        opacity: 0.82;
-    }
+    .btn-primary:hover:not(:disabled):not(.loading) { opacity: 0.82; }
 
     .btn-primary:disabled,
     .btn-primary.loading {
@@ -445,7 +456,6 @@
         pointer-events: none;
     }
 
-    /* Spinning indicator appended to loading button */
     .btn-primary.loading::after {
         content: '';
         position: absolute;
@@ -475,29 +485,14 @@
         transition: border-color var(--transition), color var(--transition);
     }
 
-    .btn-sm:hover {
-        border-color: var(--text);
-        color: var(--text);
-    }
+    .btn-sm:hover { border-color: var(--text); color: var(--text); }
 
-    .btn-danger {
-        color: var(--red);
-        border-color: var(--red);
-    }
-
-    .btn-danger:hover {
-        background: #FCEBEB;
-        color: var(--red);
-        border-color: var(--red);
-    }
+    .btn-danger { color: var(--red); border-color: var(--red); }
+    .btn-danger:hover { background: #FCEBEB; color: var(--red); border-color: var(--red); }
 
 
     /* ─── 16. TABLES ────────────────────────────────────────────────────────────── */
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
     th {
         font-size: 11px;
@@ -526,9 +521,7 @@
         font-weight: 400;
     }
 
-    tr.row-active td {
-        background: var(--bg2);
-    }
+    tr.row-active td { background: var(--bg2); }
 
 
     /* ─── 17. DIVIDERS ──────────────────────────────────────────────────────────── */
@@ -564,40 +557,49 @@
     .app.dark .inp { color: var(--text); }
     .app.dark .inp:focus { border-color: var(--acc); }
 
-    .app.dark .tab        { background: rgba(255,255,255,0.05); color: var(--text2); }
-    .app.dark .tab:hover  { background: rgba(255,255,255,0.09); color: var(--text); }
-    .app.dark .tab.active { background: var(--text); color: var(--bg); }
-
     /* dark dropdown */
-    .app.dark #profile-dropdown-panel   { background: #1e1e21; border-color: var(--border2); }
-    .app.dark .profile-dd-item          { color: var(--text); }
-    .app.dark .profile-dd-item:hover    { background: rgba(255,255,255,0.06); }
-    .app.dark .profile-dd-user          { border-color: var(--border); }
-    .app.dark .profile-dd-section       { border-color: var(--border); }
+    .app.dark #avatar-dropdown   { background: #1e1e21; border-color: var(--border2); }
+    .app.dark .dd-item           { color: var(--text); }
+    .app.dark .dd-item:hover     { background: rgba(255,255,255,0.06); }
+    .app.dark #profile-sheet-panel { background: var(--bg); }
 
     /* dark loading overlay */
     .app.dark #loading-overlay { background: rgba(15,15,17,0.72); color: var(--text2); }
-    .app.dark #loading-overlay .loading-spinner-lg { border-color: var(--border2); border-top-color: var(--text); }
 
-    /* Dark mode: profile sheet */
-    .app.dark #profile-sheet-panel { background: var(--bg); }
-    .app.dark .tab-sheet-item { background: var(--bg2); border-color: var(--border); }
+    /*
+     * Dark mode for sidebar — the sidebar lives outside .app so it doesn't
+     * inherit .app.dark. We scope dark overrides to body.dark instead,
+     * and the boot + toggleDark() both add .dark to body as well as #app.
+     */
+    body.dark .sidebar,
+    body.dark #avatar-dropdown {
+        --bg:      #0f0f11;
+        --bg2:     #1a1a1d;
+        --border:  rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.16);
+        --text:    #e8e6e1;
+        --text2:   #888;
+        background: var(--bg2);
+        color: var(--text);
+    }
+
+    body.dark #avatar-dropdown {
+        background: #1e1e21;
+        border-color: rgba(255, 255, 255, 0.16);
+    }
 
 
     /* ─── 19. PRINT STYLES ──────────────────────────────────────────────────────── */
     @media print {
-        .app-header, .tabs,
+        .sidebar, .app-header, .tabs,
         #alerts-budget, #alerts-bills,
         .pane:not(#pane-report),
         #bottom-nav { display: none !important; }
 
         #pane-report { display: block !important; }
 
-        .app {
-            max-width: 100%;
-            padding: 0;
-            margin: 0;
-        }
+        #layout-root { display: block; }
+        .app { max-width: 100%; padding: 0; margin: 0; box-shadow: none; }
 
         body { background: #fff; color: #000; font-size: 12px; }
 
@@ -611,61 +613,42 @@
 
     /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
 
-    /* ── Large desktop (> 1100px) ───────────────────────────────────────────── */
-    @media (min-width: 1100px) {
-        /* On very wide screens give a subtle centered feel */
-        body { background: var(--bg2); }
-        .app {
-            background: var(--bg);
-            margin: 0 auto;
-            min-height: 100vh;
-            box-shadow: 0 0 0 0.5px var(--border);
+    /* ── Desktop (≥ 768px): sidebar visible, header month nav hidden ──────── */
+    @media (min-width: 768px) {
+        /* app-header only shows balance + desktop controls on desktop */
+        .app-header {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 0.5px solid var(--border);
         }
-        .app.dark { background: var(--bg); }
     }
 
-    /* ── Tablet (≤ 900px) ────────────────────────────────────────────────────── */
+    /* ── Tablet (≤ 900px) ────────────────────────────────────────────────── */
     @media (max-width: 900px) {
         :root { --page-pad: 1.25rem; }
-
         .row3 { grid-template-columns: 1fr 1fr; }
-
-        /* Net worth keeps 3-col */
         #pane-networth .row3 { grid-template-columns: 1fr 1fr 1fr; }
-        .tab { font-size: 12px; padding: 5px 12px; }
     }
 
-    /* ── Mobile (≤ 600px) — main breakpoint ─────────────────────────────────── */
-    @media (max-width: 600px) {
+    /* ── Mobile (≤ 767px) — sidebar hidden, bottom nav visible ─────────── */
+    @media (max-width: 767px) {
         :root { --page-pad: 1rem; }
 
-        body {
-            font-size: 15px;
-        }
+        body { font-size: 15px; }
 
         .app {
-            padding: 1rem var(--page-pad);
-            /* Extra bottom padding so content clears the fixed bottom nav bar */
-            padding-bottom: calc(1rem + 72px);
+            /* Extra bottom padding so content clears fixed bottom nav */
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
         }
 
-        /* ── Header ───────────────────────────────────────────────────────── */
+        /* App header adjustments */
         .app-header {
             align-items: center;
             flex-wrap: nowrap;
             gap: 12px;
             padding-bottom: 1rem;
-        }
-
-        /* Keep header-left and header-right side by side */
-        .header-left {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .header-right {
-            flex-shrink: 0;
-            gap: 10px;
+            /* Slightly less top margin on mobile since header is more compact */
+            margin-bottom: 1rem;
         }
 
         /* Tighter month nav on small screens */
@@ -679,47 +662,30 @@
             height: 32px !important;
         }
 
-        /* Net balance smaller */
-        #hd-bal {
-            font-size: 18px !important;
-        }
+        #hd-bal { font-size: 18px !important; }
 
-        /* ── Grids ────────────────────────────────────────────────────────── */
+        /* Grids */
         .row4 { grid-template-columns: 1fr 1fr; }
         .row3 { grid-template-columns: 1fr 1fr; }
         .row2 { grid-template-columns: 1fr; }
 
-        /* ── Tab strip hidden — replaced by bottom nav ──────────────────── */
-        .tabs { display: none; }
-
-        /* ── Metric cards ─────────────────────────────────────────────────── */
+        /* Metric cards */
         .metric { padding: 12px 12px; }
         .metric .val { font-size: 15px; }
 
-        /* ── Transaction rows ────────────────────────────────────────────── */
+        /* Transaction rows */
         .tx-name { font-size: 14px; }
         .tx-amount { white-space: nowrap; font-size: 14px; }
         .tx-delete { font-size: 18px; min-width: 28px; min-height: 28px; }
 
-        /* ── Buttons ─────────────────────────────────────────────────────── */
-        .btn-sm {
-            min-height: 34px;
-            padding: 6px 12px;
-        }
+        /* Buttons */
+        .btn-sm { min-height: 34px; padding: 6px 12px; }
+        .btn-primary { padding: 12px 18px; font-size: 15px; }
 
-        .btn-primary {
-            padding: 12px 18px;
-            font-size: 15px;
-        }
+        /* Inputs */
+        .inp { font-size: 15px; padding: 10px 12px; }
 
-        /* ── Inputs ──────────────────────────────────────────────────────── */
-        .inp {
-            font-size: 15px;
-            padding: 10px 12px;
-        }
-
-        /* ── Forms: inline grids become single column ────────────────────── */
-        /* Override any inline grid-template-columns in screen files */
+        /* Form grids → single column */
         #pane-debt .row2,
         #pane-goals [style*="grid-template-columns: 1fr 1fr auto"],
         #pane-savings [style*="grid-template-columns: 1fr 1fr auto"],
@@ -727,63 +693,43 @@
             grid-template-columns: 1fr !important;
         }
 
-        /* Bills 4-col add form → bill name full width + 3 inline */
+        /* Bills 4-col form */
         #pane-bills [style*="grid-template-columns: 1fr 1fr 70px auto"] {
             grid-template-columns: 1fr 1fr auto !important;
         }
         #b-name { grid-column: 1 / -1; }
 
-        /* Net worth 4-col add form → 2-col */
+        /* Net worth 4-col form */
         #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
             grid-template-columns: 1fr 1fr !important;
         }
         #nw-name { grid-column: 1 / -1; }
 
-        /* ── Report / multi-month table — horizontal scroll ─────────────── */
-        #report-body table,
-        #month-table table {
-            min-width: 480px;
-        }
-        #report-body,
-        #month-table {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
+        /* Tables — horizontal scroll */
+        #report-body table, #month-table table { min-width: 480px; }
+        #report-body, #month-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-        /* ── Charts — shorter on mobile ──────────────────────────────────── */
-        #pane-charts [style*="height:200px"] { height: 170px !important; }
-        #pane-charts [style*="height:240px"] { height: 200px !important; }
-        #pane-multimonth [style*="height:220px"] { height: 170px !important; }
-        #pane-forecast [style*="height:220px"] { height: 170px !important; }
+        /* Charts shorter on mobile */
+        #pane-charts [style*="height:200px"]    { height: 170px !important; }
+        #pane-charts [style*="height:240px"]    { height: 200px !important; }
+        #pane-multimonth [style*="height:220px"]{ height: 170px !important; }
+        #pane-forecast [style*="height:220px"]  { height: 170px !important; }
 
         h1 { font-size: 20px; }
-
-        /* ── Section labels ──────────────────────────────────────────────── */
         .sec { font-size: 10px; }
     }
 
-    /* ── Very small phones (≤ 390px) ─────────────────────────────────────────── */
+    /* ── Very small phones (≤ 390px) ─────────────────────────────────────── */
     @media (max-width: 390px) {
         :root { --page-pad: 0.875rem; }
-
-        .header-month-label {
-            font-size: 14px !important;
-            min-width: 80px !important;
-        }
-
-        .month-nav-btn {
-            width: 28px !important;
-            height: 28px !important;
-            font-size: 14px !important;
-        }
-
+        .header-month-label { font-size: 14px !important; min-width: 80px !important; }
+        .month-nav-btn { width: 28px !important; height: 28px !important; font-size: 14px !important; }
         #hd-bal { font-size: 16px !important; }
-
         .row4 { grid-template-columns: 1fr 1fr; gap: 8px; }
     }
 
 
-    /* ─── BOTTOM NAVIGATION BAR (mobile only) ───────────────────────────────── */
+    /* ─── BOTTOM NAVIGATION BAR (mobile only ≤ 767px) ──────────────────────── */
     #bottom-nav {
         display: none;
         position: fixed;
@@ -845,21 +791,10 @@
 
     .bnav-item.active .bnav-label { font-weight: 600; }
 
-    /* "More" tab sheet overlay */
-    #tab-sheet {
-        display: none;
-        position: fixed;
-        inset: 0;
-        z-index: 300;
-    }
-
+    /* More tab sheet */
+    #tab-sheet { display: none; position: fixed; inset: 0; z-index: 300; }
     #tab-sheet.open { display: block; }
-
-    #tab-sheet-backdrop {
-        position: absolute;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-    }
+    #tab-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
 
     #tab-sheet-panel {
         position: absolute;
@@ -908,99 +843,12 @@
         stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
     }
 
-    @media (max-width: 600px) {
+    @media (max-width: 767px) {
         #bottom-nav { display: flex; flex-direction: column; }
     }
 
-    /* ─── DESKTOP PROFILE DROPDOWN ⑤ ─────────────────────────────────────────── */
 
-    .profile-dd-wrap     { position: relative; display: inline-block; }
-
-    .profile-dd-trigger  {
-        display: flex; align-items: center; gap: 8px;
-        background: none; border: none; cursor: pointer; padding: 0; flex-shrink: 0;
-    }
-
-    .header-avatar-circle {
-        width: 32px; height: 32px; border-radius: 50%;
-        background: var(--text); color: var(--bg);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 12px; font-weight: 700; font-family: var(--font);
-        flex-shrink: 0; transition: opacity var(--transition);
-    }
-    .profile-dd-trigger:hover .header-avatar-circle { opacity: 0.75; }
-
-    #profile-dropdown-panel {
-        display: none;
-        position: absolute; top: calc(100% + 10px); right: 0;
-        min-width: 230px;
-        background: var(--bg);
-        border: 0.5px solid var(--border2);
-        border-radius: var(--radius-lg);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-        z-index: 500; overflow: hidden;
-        animation: ddFadeIn 0.12s ease both;
-    }
-    #profile-dropdown-panel.open { display: block; }
-
-    @keyframes ddFadeIn {
-        from { opacity: 0; transform: translateY(-6px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .profile-dd-user {
-        padding: 14px 16px 12px;
-        border-bottom: 0.5px solid var(--border);
-    }
-    .profile-dd-user-name  { font-size: 14px; font-weight: 600; color: var(--text); }
-    .profile-dd-user-email { font-size: 12px; color: var(--text2); margin-top: 2px; word-break: break-all; }
-
-    .profile-dd-section       { padding: 6px 0; border-bottom: 0.5px solid var(--border); }
-    .profile-dd-section:last-child { border-bottom: none; }
-
-    .profile-dd-item {
-        display: flex; align-items: center; gap: 10px;
-        width: 100%; padding: 10px 16px;
-        background: none; border: none;
-        font-family: var(--font); font-size: 14px; font-weight: 400;
-        color: var(--text); cursor: pointer; text-align: left;
-        transition: background var(--transition);
-    }
-    .profile-dd-item:hover      { background: var(--bg2); }
-    .profile-dd-item .dd-icon   { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
-    .profile-dd-item .dd-label  { flex: 1; }
-    .profile-dd-item .dd-badge  { font-size: 11px; font-weight: 600; color: var(--text2); background: var(--border); padding: 2px 7px; border-radius: 10px; }
-    .profile-dd-signout         { color: var(--red) !important; }
-
-    /* Mobile: hide dropdown, show drawer */
-    @media (max-width: 480px) {
-        .header-desktop-controls { display: none; }
-        .profile-dd-wrap         { display: none; }
-        .header-balance          { margin-left: 0; }
-    }
-
-    /* Desktop: hide mobile drawer */
-    @media (min-width: 481px) {
-        #profile-sheet           { display: none !important; }
-        .header-desktop-controls { display: flex; }
-    }
-
-    /* ── Mobile profile drawer (kept from before) ───────────────────────────── */
-    #profile-sheet          { display: none; position: fixed; inset: 0; z-index: 400; }
-    #profile-sheet.open     { display: block; }
-    #profile-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
-    #profile-sheet-panel    { position: absolute; bottom: 0; left: 0; right: 0; background: var(--bg); border-radius: 20px 20px 0 0; padding: 12px 20px max(28px, env(safe-area-inset-bottom)); max-height: 80vh; overflow-y: auto; }
-    .profile-sheet-handle   { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 20px; }
-    .profile-sheet-actions  { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-    .profile-sheet-action-btn       { display: flex; align-items: center; gap: 12px; width: 100%; background: var(--bg2); border: none; border-radius: var(--radius); padding: 14px 16px; font-family: var(--font); font-size: 14px; font-weight: 500; color: var(--text); cursor: pointer; text-align: left; }
-    .profile-sheet-action-btn:active{ opacity: 0.7; }
-    .profile-sheet-action-chevron   { margin-left: auto; font-size: 12px; color: var(--text2); }
-    .profile-sheet-signout          { color: var(--red); margin-top: 8px; }
-
-
-    /* ─── ⑥ LOADING STATES ─────────────────────────────────────────────────────── */
-
-    /* Inline spinner (used inside btn-sm, standalone spans, etc.) */
+    /* ─── LOADING STATES ────────────────────────────────────────────────────── */
     .spinner {
         display: inline-block;
         width: 14px; height: 14px;
@@ -1013,7 +861,6 @@
     }
     @keyframes spinnerR { to { transform: rotate(360deg); } }
 
-    /* Shimmer skeleton row */
     .shimmer {
         background: linear-gradient(90deg, var(--bg2) 25%, var(--border) 50%, var(--bg2) 75%);
         background-size: 200% 100%;
@@ -1024,7 +871,6 @@
     }
     @keyframes shimmerSlide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-    /* Full-page overlay */
     #loading-overlay {
         position: fixed; inset: 0;
         background: rgba(255,255,255,0.72);
@@ -1043,12 +889,12 @@
         animation: spinnerR 0.8s linear infinite;
     }
 
-    /* ─── SWIPE HINT ANIMATION ──────────────────────────────────────────────── */
+    /* ─── SWIPE HINT ────────────────────────────────────────────────────────── */
     @keyframes swipeHint {
-        0%   { transform: translateX(0);    opacity: 0; }
-        20%  { transform: translateX(0);    opacity: .7; }
+        0%   { transform: translateX(0);     opacity: 0; }
+        20%  { transform: translateX(0);     opacity: .7; }
         60%  { transform: translateX(-18px); opacity: .7; }
         80%  { transform: translateX(-18px); opacity: 0; }
-        100% { transform: translateX(0);    opacity: 0; }
+        100% { transform: translateX(0);     opacity: 0; }
     }
 </style>

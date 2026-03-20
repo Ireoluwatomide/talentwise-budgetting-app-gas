@@ -149,7 +149,8 @@ function recordDebtPayment(debtId, paymentAmount) {
 function deleteDebt(debtId) {
   if (!debtId) throw new Error('Debt.gs: debtId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.DEBTS, function(row) {
+  // FIX: was findRowIndex(SHEET_NAMES.DEBTS, ...) — must use scoped version
+  var rowIndex = getUserFindRowIndex('DEBTS', function(row) {
     return String(row.id) === String(debtId);
   });
 

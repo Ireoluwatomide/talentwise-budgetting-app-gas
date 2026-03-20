@@ -41,12 +41,17 @@
     <div class="row2" style="margin-bottom:8px;">
         <input  id="r-name" class="inp" placeholder="Description"/>
         <input  id="r-amt"  class="inp" placeholder="Amount" type="number" min="1"/>
-        <select id="r-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
-        <select id="r-type" class="inp">
+        <!--
+          Type select is placed before category so the user picks the type first,
+          which then filters the category options via syncCategoryToType().
+        -->
+        <select id="r-type" class="inp"
+                onchange="syncCategoryToType('r-cat','r-type')">
             <option value="expense">Expense</option>
             <option value="income">Income</option>
             <option value="savings">Savings</option>
         </select>
+        <select id="r-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
     </div>
     <button id="btn-add-recurring" onclick="addRecurringForm()" class="btn-primary" style="width:100%;">
         <span class="btn-label">Add Recurring</span>
@@ -193,8 +198,8 @@
         var btn      = document.getElementById('btn-add-recurring');
         var name     = getVal('r-name');
         var amtRaw   = getVal('r-amt');
-        var category = getVal('r-cat');
         var type     = getVal('r-type');
+        var category = getVal('r-cat');
 
         if (!name) {
             showToast('Please enter a description.', 'error');

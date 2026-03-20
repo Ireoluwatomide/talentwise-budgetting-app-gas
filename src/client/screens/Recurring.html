@@ -22,6 +22,7 @@
             You can also apply them manually to the current month below.
         </div>
         <button
+                id="btn-apply-recurring"
                 onclick="applyRecurringNow()"
                 class="btn-sm"
                 style="flex-shrink:0;"
@@ -47,8 +48,9 @@
             <option value="savings">Savings</option>
         </select>
     </div>
-    <button onclick="addRecurringForm()" class="btn-primary" style="width:100%;">
-        Add Recurring
+    <button id="btn-add-recurring" onclick="addRecurringForm()" class="btn-primary" style="width:100%;">
+        <span class="btn-label">Add Recurring</span>
+        <span class="btn-spinner"></span>
     </button>
 
 </div>
@@ -109,14 +111,14 @@
                 '</div>' +
                 '</div>' +
 
-                // RIGHT: amount + delete
+                // RIGHT: amount + delete (passes itself for optimistic dimming)
                 '<div class="tx-right">' +
                 '<span class="tx-amount" style="color:' + amtColor + ';">' +
                 fmt(r.amount) +
                 '</span>' +
                 '<button ' +
                 'class="tx-delete" ' +
-                'onclick="deleteRecurring(\'' + r.id + '\')" ' +
+                'onclick="deleteRecurring(\'' + r.id + '\', this)" ' +
                 'title="Remove recurring">×</button>' +
                 '</div>' +
 
@@ -146,8 +148,14 @@
             return;
         }
 
+        var btn = document.getElementById('btn-apply-recurring');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Applying…';
+        }
+
         try {
-            var result = await callServer('applyRecurringToMonth', curKey());
+            var result  = await callServer('applyRecurringToMonth', curKey());
             var applied = (result && result.applied) ? result.applied : 0;
             var skipped = (result && result.skipped) ? result.skipped : 0;
 
@@ -166,13 +174,23 @@
 
         } catch (e) {
             // Error toast shown by callServer.
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Apply now';
+            }
         }
     }
 
 
     // ─── ADD RECURRING ────────────────────────────────────────────────────────────
 
+    /**
+     * addRecurringForm()
+     * Uses withButtonLoading() to show an inline spinner while saving.
+     */
     async function addRecurringForm() {
+        var btn      = document.getElementById('btn-add-recurring');
         var name     = getVal('r-name');
         var amtRaw   = getVal('r-amt');
         var category = getVal('r-cat');
@@ -191,25 +209,36 @@
             return;
         }
 
-        try {
-            var newRecurring = await callServer('addRecurring', name, amount, type, category);
+        await withButtonLoading(btn, async function() {
+            try {
+                var newRecurring = await callServer('addRecurring', name, amount, type, category);
 
-            if (!AppState.recurring) AppState.recurring = [];
-            AppState.recurring.push(newRecurring);
+                if (!AppState.recurring) AppState.recurring = [];
+                AppState.recurring.push(newRecurring);
 
-            clearInputs('r-name', 'r-amt');
-            renderAll();
-            showToast('Recurring transaction added!', 'success');
+                clearInputs('r-name', 'r-amt');
+                renderAll();
+                showToast('Recurring transaction added!', 'success');
 
-        } catch (e) {
-            // Error toast shown by callServer.
-        }
+            } catch (e) {
+                // Error toast shown by callServer.
+            }
+        });
     }
 
 
     // ─── DELETE RECURRING ────────────────────────────────────────────────────────
 
-    async function deleteRecurring(recurringId) {
+    /**
+     * deleteRecurring(recurringId, deleteBtnEl)
+     * Dims the delete button immediately as optimistic feedback.
+     */
+    async function deleteRecurring(recurringId, deleteBtnEl) {
+        if (deleteBtnEl) {
+            deleteBtnEl.disabled = true;
+            deleteBtnEl.style.opacity = '0.35';
+        }
+
         try {
             await callServer('deleteRecurring', recurringId);
 
@@ -221,6 +250,10 @@
             showToast('Recurring transaction removed.', 'info');
 
         } catch (e) {
+            if (deleteBtnEl) {
+                deleteBtnEl.disabled = false;
+                deleteBtnEl.style.opacity = '';
+            }
             // Error toast shown by callServer.
         }
     }

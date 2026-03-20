@@ -850,6 +850,10 @@
             if (darkBtn) darkBtn.textContent = 'Dark';
         }
 
+        var sidebar = document.getElementById('app-sidebar');
+        if (sidebar) sidebar.classList.toggle('dark', AppState.darkMode);
+        document.body.classList.toggle('dark', AppState.darkMode);
+
         callServerSilent('setDarkMode', AppState.darkMode).catch(function() {});
     }
 

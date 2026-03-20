@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Budget Tracker</title>
+  <title>Talentwise Budget Tracker</title>
 
   <!--
     ┌─────────────────────────────────────────────────────────────────────────┐
@@ -116,12 +116,18 @@
       populateCategorySelects();
     }
 
-    // 4. Set the initial active state on the mobile bottom nav bar.
+    // 4. Ensure all .btn-primary buttons have the label+spinner structure
+    //    for loading animations. Must run after all screen panes are in DOM.
+    if (typeof initAllBtnStructures === 'function') {
+      initAllBtnStructures();
+    }
+
+    // 5. Set the initial active state on the mobile bottom nav bar.
     //    Overview is the default first tab — bnav-overview starts active.
     var bnavOverview = document.getElementById('bnav-overview');
     if (bnavOverview) bnavOverview.classList.add('active');
 
-    // 5. First full render — populates metric cards, transaction list,
+    // 6. First full render — populates metric cards, transaction list,
     //    goals, bills, etc. from the bootstrap data already in AppState.
     if (typeof renderAll === 'function') {
       renderAll();

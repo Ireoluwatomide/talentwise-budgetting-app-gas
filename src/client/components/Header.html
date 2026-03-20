@@ -1,88 +1,116 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Header.html — Top Bar Component
 
-     Desktop: full header with all controls inline.
-     Mobile (≤ 480px): stripped header (logo + month nav + balance + avatar).
-       Currency, dark mode, CSV export, and sign-out live inside a profile
-       drawer that slides up from the bottom — triggered by tapping the avatar.
+     Renders:
+       1. .app-header  — the visible top bar row
+       2. #avatar-dropdown  — desktop dropdown (position:fixed, not absolute)
+       3. #dropdown-backdrop — click-outside trap for dropdown
+       4. #profile-sheet — mobile bottom sheet
      ───────────────────────────────────────────────────────────────────────── -->
 
+<!-- ══ 1. TOP BAR ══════════════════════════════════════════════════════════ -->
 <div class="app-header">
 
-    <!-- LEFT: App label + month navigation ──────────────────────────────────── -->
+    <!-- LEFT: label + month nav -->
     <div class="header-left">
-        <div class="label-caps header-app-label">Budget Tracker</div>
-
-        <div style="display:flex;align-items:center;gap:8px;">
-            <button
-                    onclick="prevMonth()"
-                    class="btn-sm month-nav-btn"
-                    title="Previous month">‹</button>
-
-            <div id="hd-month" class="header-month-label">
-                <!-- updated by updateHeader() -->
-            </div>
-
-            <button
-                    onclick="nextMonth()"
-                    class="btn-sm month-nav-btn"
-                    title="Next month">›</button>
+        <div class="label-caps" style="margin-bottom:4px;">Budget Tracker</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <button id="btn-prev-month" onclick="prevMonth()" class="month-nav-btn" title="Previous month" aria-label="Previous month">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div id="hd-month" class="header-month-label"></div>
+            <button id="btn-next-month" onclick="nextMonth()" class="month-nav-btn" title="Next month" aria-label="Next month">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
         </div>
     </div>
 
-    <!-- RIGHT: Controls + Net Balance ───────────────────────────────────────── -->
+    <!-- RIGHT: desktop controls + balance + avatar -->
     <div class="header-right">
 
-        <!-- ── DESKTOP controls (hidden on mobile) ─────────────────────────── -->
-        <div class="header-desktop-controls">
-            <select
-                    id="currency-sel"
-                    onchange="setCurrency(this.value)"
-                    class="inp header-currency-sel">
+        <!-- Desktop-only controls (hidden on mobile via CSS) -->
+        <div class="hdr-desktop-ctrls">
+            <select id="currency-sel" onchange="setCurrency(this.value)" class="inp hdr-currency-sel">
                 <option value="NGN">₦ NGN</option>
                 <option value="USD">$ USD</option>
                 <option value="EUR">€ EUR</option>
                 <option value="GBP">£ GBP</option>
             </select>
-
-            <button id="dark-btn"  onclick="toggleDark()"  class="btn-sm">Dark</button>
-            <button onclick="exportCSV()" class="btn-sm" title="Export current month as CSV">CSV</button>
+            <button id="dark-btn" onclick="toggleDark()" class="btn-sm">Dark</button>
+            <button onclick="exportCSV()" class="btn-sm" title="Export CSV">CSV</button>
         </div>
 
-        <!-- Net Balance display — always visible -->
-        <div class="header-balance">
+        <!-- Net Balance (always visible) -->
+        <div style="text-align:right;">
             <div class="label-caps" style="margin-bottom:2px;">Net Balance</div>
-            <div id="hd-bal" style="font-family:var(--mono);font-size:22px;font-weight:500;color:var(--acc);">
-                <!-- updated by updateHeader() -->
-            </div>
+            <div id="hd-bal" style="font-family:var(--mono);font-size:22px;font-weight:600;color:var(--acc);"></div>
         </div>
 
-        <!-- Avatar / profile button — always visible, opens profile drawer on mobile,
-             shows signout inline on desktop -->
-        <div class="header-profile-wrap" id="header-profile-wrap">
-            <!-- populated by updateHeader() once __USER__ is known -->
-        </div>
+        <!-- Avatar button — desktop opens dropdown, mobile opens sheet -->
+        <div id="hdr-avatar-wrap" style="flex-shrink:0;"></div>
 
     </div>
 </div>
 
-<!-- ── PROFILE DRAWER (mobile) ────────────────────────────────────────────── -->
-<div id="profile-sheet">
-    <div id="profile-sheet-backdrop" onclick="closeProfileSheet()"></div>
-    <div id="profile-sheet-panel">
-        <div class="profile-sheet-handle"></div>
+
+<!-- ══ 2. DESKTOP DROPDOWN ════════════════════════════════════════════════ -->
+<!--
+  position:fixed so it escapes any overflow:hidden ancestors.
+  Top/left co-ordinates are set in JS via getBoundingClientRect().
+-->
+<div id="dropdown-backdrop" onclick="closeAvatarDropdown()" style="display:none;position:fixed;inset:0;z-index:998;"></div>
+
+<div id="avatar-dropdown" style="display:none;position:fixed;z-index:999;width:240px;background:var(--bg);border:0.5px solid var(--border2);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.14);overflow:hidden;">
+
+    <!-- User info -->
+    <div id="dd-user-info" style="padding:14px 16px;border-bottom:0.5px solid var(--border);background:var(--bg2);">
+        <!-- populated by JS -->
+    </div>
+
+    <!-- Currency -->
+    <div style="padding:10px 12px;border-bottom:0.5px solid var(--border);">
+        <div class="label-caps" style="margin-bottom:6px;padding:0 4px;">Currency</div>
+        <select id="currency-sel-dd" onchange="setCurrency(this.value)" class="inp" style="font-size:13px;">
+            <option value="NGN">₦ NGN</option>
+            <option value="USD">$ USD</option>
+            <option value="EUR">€ EUR</option>
+            <option value="GBP">£ GBP</option>
+        </select>
+    </div>
+
+    <!-- Actions -->
+    <div style="padding:6px 8px;">
+        <button class="dd-item" onclick="toggleDark();_syncDropdownState();">
+            <span id="dd-dark-icon" style="font-size:15px;">🌙</span>
+            <span id="dd-dark-label">Dark mode</span>
+            <span id="dd-dark-state" style="margin-left:auto;font-size:11px;color:var(--text2);">Off</span>
+        </button>
+        <button class="dd-item" onclick="exportCSV();closeAvatarDropdown();">
+            <span style="font-size:15px;">📥</span>
+            <span>Export CSV</span>
+        </button>
+        <div style="height:0.5px;background:var(--border);margin:4px 0;"></div>
+        <button class="dd-item" onclick="signOut();" style="color:var(--red);">
+            <span style="font-size:15px;">🚪</span>
+            <span>Sign out</span>
+        </button>
+    </div>
+</div>
+
+
+<!-- ══ 3. MOBILE PROFILE SHEET ════════════════════════════════════════════ -->
+<div id="profile-sheet" style="display:none;position:fixed;inset:0;z-index:400;">
+    <div id="profile-sheet-backdrop" onclick="closeProfileSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);"></div>
+    <div id="profile-sheet-panel" style="position:absolute;bottom:0;left:0;right:0;background:var(--bg);border-radius:20px 20px 0 0;padding:12px 20px 32px;max-height:80vh;overflow-y:auto;">
+        <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px;"></div>
 
         <!-- User info row -->
-        <div id="profile-sheet-user" style="margin-bottom:1.25rem;"></div>
+        <div id="ps-user-info" style="margin-bottom:1.25rem;"></div>
 
-        <!-- Currency selector -->
+        <!-- Currency -->
         <div style="margin-bottom:12px;">
             <div class="label-caps" style="margin-bottom:6px;">Currency</div>
-            <select
-                    id="currency-sel-mobile"
-                    onchange="setCurrency(this.value)"
-                    class="inp"
-                    style="width:100%;">
+            <select id="currency-sel-mobile" onchange="setCurrency(this.value)" class="inp" style="width:100%;">
                 <option value="NGN">₦ NGN</option>
                 <option value="USD">$ USD</option>
                 <option value="EUR">€ EUR</option>
@@ -90,360 +118,372 @@
             </select>
         </div>
 
-        <!-- Action rows -->
-        <div class="profile-sheet-actions">
-
-            <button class="profile-sheet-action-btn" onclick="toggleDark();updateProfileSheet();">
-                <span id="profile-dark-icon">🌙</span>
-                <span id="profile-dark-label">Dark mode</span>
-                <span class="profile-sheet-action-chevron" id="profile-dark-state">Off</span>
+        <!-- Actions -->
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <button class="ps-action-btn" onclick="toggleDark();_syncSheetState();">
+                <span id="ps-dark-icon">🌙</span>
+                <span id="ps-dark-label">Dark mode</span>
+                <span id="ps-dark-state" style="margin-left:auto;font-size:12px;color:var(--text2);">Off</span>
             </button>
-
-            <button class="profile-sheet-action-btn" onclick="exportCSV();closeProfileSheet();">
-                <span>📥</span>
-                <span>Export CSV</span>
-                <span class="profile-sheet-action-chevron">→</span>
+            <button class="ps-action-btn" onclick="exportCSV();closeProfileSheet();">
+                <span>📥</span><span>Export CSV</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--text2);">→</span>
             </button>
-
-            <button class="profile-sheet-action-btn profile-sheet-signout" onclick="signOut()">
-                <span>🚪</span>
-                <span>Sign out</span>
-                <span class="profile-sheet-action-chevron">→</span>
+            <button class="ps-action-btn" onclick="signOut();" style="color:var(--red);margin-top:8px;">
+                <span>🚪</span><span>Sign out</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--text2);">→</span>
             </button>
-
         </div>
     </div>
 </div>
 
+
+<!-- ══ 4. SCOPED STYLES ═══════════════════════════════════════════════════ -->
 <style>
-    /* ── Header layout ─────────────────────────────────────────────────────── */
+    /* Header layout */
     .header-left {
         display: flex;
         flex-direction: column;
-        gap: 5px;
-    }
-
-    .header-app-label {
-        margin-bottom: 0;
     }
 
     .header-right {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         flex-wrap: nowrap;
     }
 
-    .header-desktop-controls {
+    /* Desktop controls */
+    .hdr-desktop-ctrls {
         display: flex;
         align-items: center;
         gap: 8px;
     }
 
-    .header-currency-sel {
+    .hdr-currency-sel {
         width: auto;
         padding: 5px 28px 5px 8px;
-        font-size: 11px;
+        font-size: 12px;
     }
 
-    .header-balance {
-        text-align: right;
-        margin-left: 4px;
-    }
-
-    .header-month-label {
-        font-size: 20px;
-        font-weight: 400;
-        min-width: 155px;
-        text-align: center;
-    }
-
+    /* Month nav circular buttons */
     .month-nav-btn {
-        width: 28px;
-        height: 28px;
-        padding: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        transition: background 0.15s, color 0.15s;
+        flex-shrink: 0;
     }
 
-    /* ── Avatar pill ─────────────────────────────────────────────────────── */
-    .header-avatar-btn {
+    .month-nav-btn:hover:not(:disabled) {
+        background: var(--border);
+        color: var(--text);
+    }
+
+    .month-nav-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .header-month-label {
+        font-size: 18px;
+        font-weight: 500;
+        min-width: 145px;
+        text-align: center;
+        color: var(--text);
+    }
+
+    /* Avatar circle */
+    .hdr-avatar-btn {
         display: flex;
         align-items: center;
-        gap: 8px;
+        justify-content: center;
         background: none;
         border: none;
         cursor: pointer;
         padding: 0;
-        flex-shrink: 0;
     }
 
-    .header-avatar-circle {
-        width: 30px;
-        height: 30px;
+    .hdr-avatar-circle {
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
         background: var(--text);
         color: var(--bg);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 11px;
-        font-weight: 600;
+        font-size: 12px;
+        font-weight: 700;
         font-family: var(--font);
-        flex-shrink: 0;
+        user-select: none;
+        transition: opacity 0.15s;
     }
 
-    .header-signout-desktop {
-        font-size: 11px;
-    }
+    .hdr-avatar-btn:hover .hdr-avatar-circle { opacity: 0.78; }
 
-    /* ── Profile drawer ───────────────────────────────────────────────────── */
-    #profile-sheet {
-        display: none;
-        position: fixed;
-        inset: 0;
-        z-index: 400;
-    }
-
-    #profile-sheet.open {
-        display: block;
-    }
-
-    #profile-sheet-backdrop {
-        position: absolute;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-    }
-
-    #profile-sheet-panel {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: var(--bg);
-        border-radius: 20px 20px 0 0;
-        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
-        max-height: 80vh;
-        overflow-y: auto;
-    }
-
-    .profile-sheet-handle {
-        width: 36px;
-        height: 4px;
-        background: var(--border2);
-        border-radius: 2px;
-        margin: 0 auto 20px;
-    }
-
-    .profile-sheet-actions {
+    /* Dropdown items */
+    .dd-item {
         display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin-top: 8px;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        background: none;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 10px;
+        font-family: var(--font);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        cursor: pointer;
+        text-align: left;
+        transition: background 0.12s;
     }
 
-    .profile-sheet-action-btn {
+    .dd-item:hover { background: var(--bg2); }
+
+    /* Mobile profile sheet action buttons */
+    .ps-action-btn {
         display: flex;
         align-items: center;
         gap: 12px;
         width: 100%;
         background: var(--bg2);
         border: none;
-        border-radius: var(--radius);
+        border-radius: 8px;
         padding: 14px 16px;
         font-family: var(--font);
-        font-size: 14px;
+        font-size: 15px;
+        font-weight: 500;
         color: var(--text);
         cursor: pointer;
         text-align: left;
     }
 
-    .profile-sheet-action-btn:active {
-        opacity: 0.7;
+    .ps-action-btn:active { opacity: 0.7; }
+
+    /* Dropdown open animation */
+    @keyframes ddIn {
+        from { opacity: 0; transform: translateY(-6px); }
+        to   { opacity: 1; transform: translateY(0); }
     }
 
-    .profile-sheet-action-chevron {
-        margin-left: auto;
-        font-size: 12px;
-        color: var(--text2);
+    #avatar-dropdown.dd-open {
+        animation: ddIn 0.15s ease;
     }
 
-    .profile-sheet-signout {
-        color: var(--red);
-        margin-top: 8px;
-    }
-
-    /* ── Mobile overrides ─────────────────────────────────────────────────── */
-    @media (max-width: 480px) {
-        .header-desktop-controls {
-            display: none; /* moved into profile drawer */
-        }
-
-        .header-balance {
-            margin-left: 0;
-        }
-
-        #hd-bal {
-            font-size: 18px !important;
-        }
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+        .hdr-desktop-ctrls { display: none; }
 
         .header-month-label {
-            font-size: 16px !important;
-            min-width: 120px !important;
+            font-size: 14px !important;
+            min-width: 90px !important;
         }
+
+        .month-nav-btn { width: 28px !important; height: 28px !important; }
+
+        #hd-bal { font-size: 18px !important; }
     }
 
-    /* ── Desktop: hide profile drawer, show signout inline ──────────────── */
-    @media (min-width: 481px) {
-        #profile-sheet {
-            display: none !important; /* never shown on desktop */
-        }
+    @media (max-width: 390px) {
+        .header-month-label { font-size: 13px !important; min-width: 80px !important; }
+        .month-nav-btn { width: 26px !important; height: 26px !important; }
+        #hd-bal { font-size: 16px !important; }
     }
 </style>
 
+
+<!-- ══ 5. HEADER JAVASCRIPT ═══════════════════════════════════════════════ -->
 <script>
-    /**
-     * updateHeader()
-     * Called from renderAll() after every state change.
-     */
+    // ─── Master update called from renderAll() ────────────────────────────────
+
     function updateHeader() {
-        // 1. Month label
-        var monthEl = document.getElementById('hd-month');
-        if (monthEl) {
-            monthEl.textContent = monthLabel(AppState.curYear, AppState.curMonth);
-        }
+        // Month label
+        var el = document.getElementById('hd-month');
+        if (el) el.textContent = monthLabel(AppState.curYear, AppState.curMonth);
 
-        // 2. Net balance
-        var stats  = getMonthStats(curKey());
-        var bal    = stats.bal;
-        var balEl  = document.getElementById('hd-bal');
+        // Net balance
+        var stats = getMonthStats(curKey());
+        var balEl = document.getElementById('hd-bal');
         if (balEl) {
-            balEl.textContent = fmt(bal);
-            balEl.style.color = bal >= 0 ? 'var(--acc)' : 'var(--red)';
+            balEl.textContent = fmt(stats.bal);
+            balEl.style.color = stats.bal >= 0 ? 'var(--acc)' : 'var(--red)';
         }
 
-        // 3. Sync currency selectors to AppState
-        var currSel = document.getElementById('currency-sel');
-        if (currSel) currSel.value = AppState.currency;
-        var currSelM = document.getElementById('currency-sel-mobile');
-        if (currSelM) currSelM.value = AppState.currency;
+        // Sync all currency selectors
+        ['currency-sel', 'currency-sel-dd', 'currency-sel-mobile'].forEach(function(id) {
+            var s = document.getElementById(id);
+            if (s) s.value = AppState.currency;
+        });
 
-        // 4. Dark mode button label
+        // Dark button label
         var darkBtn = document.getElementById('dark-btn');
         if (darkBtn) darkBtn.textContent = AppState.darkMode ? 'Light' : 'Dark';
 
-        // 5. Build avatar / profile control
-        _buildProfileControl();
+        // Avatar button
+        _buildAvatar();
+
+        // Sync dropdown + sheet labels
+        _syncDropdownState();
+        _syncSheetState();
     }
 
-    /**
-     * _buildProfileControl()
-     * Renders the avatar button in the header.
-     * On desktop shows avatar + sign-out button inline.
-     * On mobile shows avatar only (sign-out is in the profile drawer).
-     */
-    function _buildProfileControl() {
-        var wrap = document.getElementById('header-profile-wrap');
+
+    // ─── Build avatar button ──────────────────────────────────────────────────
+
+    function _buildAvatar() {
+        var wrap = document.getElementById('hdr-avatar-wrap');
         if (!wrap) return;
 
-        var user      = window.__USER__;
-        var name      = user && user.display_name ? user.display_name
+        var user     = (typeof window !== 'undefined' && window.__USER__) ? window.__USER__ : null;
+        var name     = user && user.display_name ? user.display_name
             : user && user.email        ? user.email.split('@')[0]
                 : '';
-        var initials  = name ? name.slice(0, 2).toUpperCase() : '?';
-        var isMobile  = window.innerWidth <= 480;
-
-        // Avatar circle
-        var avatarHtml = (
-            '<div class="header-avatar-circle">' + initials + '</div>'
-        );
-
-        if (isMobile) {
-            // Mobile: avatar opens profile drawer
-            wrap.innerHTML = (
-                '<button class="header-avatar-btn" onclick="openProfileSheet()" ' +
-                'aria-label="Open profile menu">' +
-                avatarHtml +
-                '</button>'
-            );
-        } else {
-            // Desktop: avatar + signout button inline
-            var signOutHtml = user
-                ? '<button class="btn-sm header-signout-desktop" onclick="signOut()">' +
-                'Sign out</button>'
-                : '';
-            wrap.innerHTML = (
-                '<div style="display:flex;align-items:center;gap:8px;">' +
-                avatarHtml +
-                signOutHtml +
-                '</div>'
-            );
-        }
-
-        // Populate the profile sheet user row
-        _updateProfileSheetUser(name, user && user.email ? user.email : '');
-    }
-
-    /**
-     * _updateProfileSheetUser(name, email)
-     */
-    function _updateProfileSheetUser(name, email) {
-        var el = document.getElementById('profile-sheet-user');
-        if (!el) return;
-
         var initials = name ? name.slice(0, 2).toUpperCase() : '?';
-        el.innerHTML = (
-            '<div style="display:flex;align-items:center;gap:12px;">' +
-            '<div class="header-avatar-circle" style="width:44px;height:44px;font-size:15px;">' +
-            initials +
-            '</div>' +
-            '<div>' +
-            '<div style="font-size:14px;font-weight:500;">' + (name || 'User') + '</div>' +
-            (email ? '<div style="font-size:12px;color:var(--text2);">' + email + '</div>' : '') +
-            '</div>' +
-            '</div>'
-        );
-    }
 
-    /**
-     * openProfileSheet()
-     * Opens the mobile profile drawer.
-     */
-    function openProfileSheet() {
-        updateProfileSheet();
-        var sheet = document.getElementById('profile-sheet');
-        if (sheet) {
-            sheet.classList.add('open');
-            document.body.style.overflow = 'hidden';
+        var isMobile = window.innerWidth <= 600;
+        var handler  = isMobile ? 'openProfileSheet()' : 'toggleAvatarDropdown(event)';
+
+        wrap.innerHTML = (
+            '<button class="hdr-avatar-btn" onclick="' + handler + '" ' +
+            'id="avatar-trigger-btn" aria-label="Account menu">' +
+            '<div class="hdr-avatar-circle">' + initials + '</div>' +
+            '</button>'
+        );
+
+        // Populate dropdown user info
+        var ddUser = document.getElementById('dd-user-info');
+        if (ddUser && name) {
+            ddUser.innerHTML = (
+                '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px;">' + _hesc(name) + '</div>' +
+                (user && user.email ? '<div style="font-size:12px;color:var(--text2);">' + _hesc(user.email) + '</div>' : '')
+            );
+        }
+
+        // Populate sheet user info
+        var psUser = document.getElementById('ps-user-info');
+        if (psUser && name) {
+            psUser.innerHTML = (
+                '<div style="display:flex;align-items:center;gap:12px;">' +
+                '<div class="hdr-avatar-circle" style="width:44px;height:44px;font-size:16px;">' + initials + '</div>' +
+                '<div>' +
+                '<div style="font-size:16px;font-weight:600;">' + _hesc(name) + '</div>' +
+                (user && user.email ? '<div style="font-size:13px;color:var(--text2);">' + _hesc(user.email) + '</div>' : '') +
+                '</div></div>'
+            );
         }
     }
 
-    /**
-     * closeProfileSheet()
-     */
+
+    // ─── Dropdown open / close ────────────────────────────────────────────────
+
+    function toggleAvatarDropdown(event) {
+        if (event) event.stopPropagation();
+
+        var dd = document.getElementById('avatar-dropdown');
+        var bk = document.getElementById('dropdown-backdrop');
+        if (!dd) return;
+
+        var isOpen = dd.style.display === 'block';
+
+        if (isOpen) {
+            closeAvatarDropdown();
+        } else {
+            // Position using fixed coords from the trigger button
+            var btn = document.getElementById('avatar-trigger-btn');
+            if (btn) {
+                var r = btn.getBoundingClientRect();
+                dd.style.top   = (r.bottom + 8) + 'px';
+                dd.style.right = (window.innerWidth - r.right) + 'px';
+                dd.style.left  = 'auto';
+            }
+            _syncDropdownState();
+            dd.style.display = 'block';
+            dd.classList.add('dd-open');
+            if (bk) bk.style.display = 'block';
+        }
+    }
+
+    function closeAvatarDropdown() {
+        var dd = document.getElementById('avatar-dropdown');
+        var bk = document.getElementById('dropdown-backdrop');
+        if (dd) { dd.style.display = 'none'; dd.classList.remove('dd-open'); }
+        if (bk) bk.style.display = 'none';
+    }
+
+    // Close on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeAvatarDropdown();
+    });
+
+
+    // ─── Sync state labels ────────────────────────────────────────────────────
+
+    function _syncDropdownState() {
+        var on = AppState.darkMode;
+        var icon  = document.getElementById('dd-dark-icon');
+        var label = document.getElementById('dd-dark-label');
+        var state = document.getElementById('dd-dark-state');
+        var sel   = document.getElementById('currency-sel-dd');
+        if (icon)  icon.textContent  = on ? '☀️' : '🌙';
+        if (label) label.textContent = on ? 'Light mode' : 'Dark mode';
+        if (state) state.textContent = on ? 'On' : 'Off';
+        if (sel)   sel.value         = AppState.currency;
+    }
+
+    function _syncSheetState() {
+        var on = AppState.darkMode;
+        var icon  = document.getElementById('ps-dark-icon');
+        var label = document.getElementById('ps-dark-label');
+        var state = document.getElementById('ps-dark-state');
+        var sel   = document.getElementById('currency-sel-mobile');
+        if (icon)  icon.textContent  = on ? '☀️' : '🌙';
+        if (label) label.textContent = on ? 'Light mode' : 'Dark mode';
+        if (state) state.textContent = on ? 'On' : 'Off';
+        if (sel)   sel.value         = AppState.currency;
+    }
+
+
+    // ─── Mobile sheet open / close ────────────────────────────────────────────
+
+    function openProfileSheet() {
+        _syncSheetState();
+        var sheet = document.getElementById('profile-sheet');
+        if (sheet) { sheet.style.display = 'block'; document.body.style.overflow = 'hidden'; }
+    }
+
     function closeProfileSheet() {
         var sheet = document.getElementById('profile-sheet');
-        if (sheet) {
-            sheet.classList.remove('open');
-            document.body.style.overflow = '';
-        }
+        if (sheet) { sheet.style.display = 'none'; document.body.style.overflow = ''; }
     }
 
-    /**
-     * updateProfileSheet()
-     * Syncs the profile sheet controls to current AppState.
-     */
-    function updateProfileSheet() {
-        var darkLabel = document.getElementById('profile-dark-label');
-        var darkState = document.getElementById('profile-dark-state');
-        var darkIcon  = document.getElementById('profile-dark-icon');
-        var currMob   = document.getElementById('currency-sel-mobile');
 
-        if (darkLabel) darkLabel.textContent = AppState.darkMode ? 'Light mode' : 'Dark mode';
-        if (darkState) darkState.textContent = AppState.darkMode ? 'On' : 'Off';
-        if (darkIcon)  darkIcon.textContent  = AppState.darkMode ? '☀️' : '🌙';
-        if (currMob)   currMob.value         = AppState.currency;
+    // ─── Month nav loading state ──────────────────────────────────────────────
+
+    function setMonthNavLoading(isLoading) {
+        ['btn-prev-month', 'btn-next-month'].forEach(function(id) {
+            var btn = document.getElementById(id);
+            if (btn) btn.disabled = isLoading;
+        });
+    }
+
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    function _hesc(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 </script>

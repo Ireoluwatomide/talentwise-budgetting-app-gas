@@ -20,6 +20,16 @@
  *   This ensures new users always start with the complete category set
  *   rather than falling back to the in-code defaults.
  *
+ * ROOT CAUSE FIX — sheet name key resolution:
+ *   Domain files (Bills.gs, Goals.gs, etc.) pass SHEET_NAMES constant keys
+ *   (e.g. 'BILLS', 'GOALS', 'SAVINGS_GOALS') to the getUserXxx() helpers,
+ *   while getAllRows() read calls pass the actual sheet names ('Bills', 'Goals',
+ *   'SavingsGoals'). getUserSheetName() now resolves both forms to the correct
+ *   actual sheet name via _LOGICAL_NAME_MAP before constructing the full name.
+ *   Without this, writes went to non-existent sheets (e.g. 'a3f9b1:BILLS')
+ *   while reads succeeded on the real sheet ('a3f9b1:Bills'), causing data to
+ *   appear after adding but disappear on refresh.
+ *
  * SHEET NAMING:
  *   {userKey}:{SheetName}
  *   e.g. "a3f9b1:Transactions", "a3f9b1:Goals", "a3f9b1:Preferences"
@@ -31,7 +41,6 @@
  * APPSSCRIPT.JSON REQUIREMENT:
  *   "webapp": { "executeAs": "USER_ACCESSING", "access": "DOMAIN" }
  *   — or "ANYONE_WITH_GOOGLE_ACCOUNT" for public access
- *   This is the critical change from Phase 1's USER_DEPLOYING.
  *
  * CALLED BY:
  *   Main.gs (doGet, getBootstrapData), all domain .gs files via getCurrentUserKey()
@@ -44,6 +53,45 @@ var USERS_SHEET_NAME = 'Users';
 
 // Headers for the Users registry sheet
 var USERS_HEADERS = ['user_key', 'email', 'display_name', 'created_at', 'last_login'];
+
+/**
+ * _LOGICAL_NAME_MAP
+ *
+ * Maps every form a domain file might pass as a "logical name" to the
+ * canonical actual sheet name used when constructing "{userKey}:{SheetName}".
+ *
+ * Domain files historically used two different conventions:
+ *   - Read calls:  pass the real sheet name   e.g. 'Bills', 'Goals', 'SavingsGoals'
+ *   - Write calls: pass the SHEET_NAMES key   e.g. 'BILLS', 'GOALS', 'SAVINGS_GOALS'
+ *
+ * Both forms are listed here so getUserSheetName() normalises them to the
+ * same canonical name before building the full "{userKey}:{name}" string.
+ *
+ * If a value is not in this map it is passed through unchanged — this is safe
+ * for any future sheet added to SHEET_HEADERS that hasn't been listed yet.
+ */
+var _LOGICAL_NAME_MAP = {
+  // SHEET_NAMES constant keys (uppercase, used by write paths in domain files)
+  'TRANSACTIONS':  'Transactions',
+  'GOALS':         'Goals',
+  'BILLS':         'Bills',
+  'SAVINGS_GOALS': 'SavingsGoals',
+  'DEBTS':         'Debts',
+  'NET_WORTH':     'NetWorth',
+  'RECURRING':     'Recurring',
+  'PREFERENCES':   'Preferences',
+
+  // Actual sheet names (used by read paths and some write paths — map to themselves
+  // so the lookup is always safe regardless of which form was passed).
+  'Transactions':  'Transactions',
+  'Goals':         'Goals',
+  'Bills':         'Bills',
+  'SavingsGoals':  'SavingsGoals',
+  'Debts':         'Debts',
+  'NetWorth':      'NetWorth',
+  'Recurring':     'Recurring',
+  'Preferences':   'Preferences'
+};
 
 
 // ─── CURRENT USER ─────────────────────────────────────────────────────────────
@@ -220,7 +268,7 @@ function _seedDefaultPreferences(userKey) {
 
   // Append each preference row directly (bypassing the scoped helpers since
   // we are in the provisioning path and getCurrentUserKey() would return
-  // the wrong key — provisioning may be called for a different user).
+  // the wrong key if provisioning is triggered for a different user).
   var lastRow = Math.max(sheet.getLastRow(), 1);
   defaultRows.forEach(function(row) {
     sheet.getRange(lastRow + 1, 1, 1, 2).setValues([row]);
@@ -235,20 +283,37 @@ function _seedDefaultPreferences(userKey) {
 }
 
 
-// ─── SCOPED SHEET HELPERS ────────────────────────────────────────────────────
+// ─── SCOPED SHEET HELPERS ─────────────────────────────────────────────────────
 //
 // These wrap SheetHelper functions to automatically prepend the current
-// user's key to sheet names. All domain .gs files should call these
-// instead of the raw SheetHelper functions when multi-user is active.
+// user's key to sheet names. All domain .gs files call these instead of
+// the raw SheetHelper functions.
+//
+// KEY FIX: getUserSheetName() resolves the incoming logicalName through
+// _LOGICAL_NAME_MAP before building the full sheet name. This means both
+// 'Bills' (read-path convention) and 'BILLS' (write-path convention) resolve
+// to the same canonical name 'Bills', constructing 'a3f9b1:Bills' in both
+// cases. Without this, writes used 'a3f9b1:BILLS' (non-existent) while reads
+// used 'a3f9b1:Bills' (real), causing the data persistence bug.
 
 /**
  * getUserSheetName(logicalName)
  *
- * Returns the full sheet name for the current user and a logical sheet name.
- * e.g. getUserSheetName('Transactions') → 'a3f9b1:Transactions'
+ * Resolves logicalName through _LOGICAL_NAME_MAP (handling both uppercase
+ * SHEET_NAMES keys and actual sheet names), then returns the full scoped
+ * sheet name for the current user.
+ *
+ * Examples:
+ *   getUserSheetName('BILLS')         → 'a3f9b1:Bills'        (was 'a3f9b1:BILLS' ✗)
+ *   getUserSheetName('Bills')         → 'a3f9b1:Bills'        ✓
+ *   getUserSheetName('SAVINGS_GOALS') → 'a3f9b1:SavingsGoals' (was 'a3f9b1:SAVINGS_GOALS' ✗)
+ *   getUserSheetName('SavingsGoals')  → 'a3f9b1:SavingsGoals' ✓
+ *   getUserSheetName('NET_WORTH')     → 'a3f9b1:NetWorth'     (was 'a3f9b1:NET_WORTH' ✗)
  */
 function getUserSheetName(logicalName) {
-  return getCurrentUserKey() + ':' + logicalName;
+  // Resolve through the map; fall back to the raw value if not listed.
+  var resolvedName = _LOGICAL_NAME_MAP[logicalName] || logicalName;
+  return getCurrentUserKey() + ':' + resolvedName;
 }
 
 /**

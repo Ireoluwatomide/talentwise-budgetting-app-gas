@@ -1,40 +1,36 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Tabs.html — Horizontal Tab Navigation Strip
 
-     Desktop: tabs wrap into two rows — primary tabs on row 1,
-              secondary (analytics/settings) tabs on row 2.
-              No horizontal scrolling needed on desktop.
-     Mobile:  tab strip hidden; bottom nav handles navigation.
+     Desktop (≥ 768px): HIDDEN — the sidebar (Sidebar.html) handles navigation.
+     Mobile  (< 768px): HIDDEN — BottomNav handles navigation.
 
-     Primary tabs (row 1 — core actions):
-       Overview, Goals, Bills, Savings, Debt, Net Worth, Recurring, Templates
+     This file is kept for compatibility. The tab buttons still exist in the
+     DOM (so switchTab() can find #tab-{id} elements for active-state tracking)
+     but the strip itself is not visible.
 
-     Secondary tabs (row 2 — analytics & config):
-       Charts, Categories, Insights, Forecast, Multi-Month, Report, Settings
+     NOTE: If you need to make the horizontal tab strip visible again on any
+     breakpoint, remove the display:none from .tabs in styles.css.html.
      ───────────────────────────────────────────────────────────────────────── -->
 
-<div class="tabs" id="tab-strip" role="tablist">
+<div class="tabs" id="tab-strip" role="tablist" aria-hidden="true" style="display:none;">
 
-    <!-- ── Row 1: Primary tabs ──────────────────────────────────────────────── -->
-    <button class="tab active" id="tab-overview"   onclick="switchTab('overview')"   role="tab">Overview</button>
-    <button class="tab"        id="tab-goals"      onclick="switchTab('goals')"      role="tab">Goals</button>
-    <button class="tab"        id="tab-bills"      onclick="switchTab('bills')"      role="tab">Bills</button>
-    <button class="tab"        id="tab-savings"    onclick="switchTab('savings')"    role="tab">Savings</button>
-    <button class="tab"        id="tab-debt"       onclick="switchTab('debt')"       role="tab">Debt</button>
-    <button class="tab"        id="tab-networth"   onclick="switchTab('networth')"   role="tab">Net Worth</button>
-    <button class="tab"        id="tab-recurring"  onclick="switchTab('recurring')"  role="tab">Recurring</button>
-    <button class="tab"        id="tab-templates"  onclick="switchTab('templates')"  role="tab">Templates</button>
+    <!-- Primary tabs -->
+    <button class="tab active" id="tab-overview"   role="tab" onclick="switchTabSidebar('overview')">Overview</button>
+    <button class="tab"        id="tab-goals"       role="tab" onclick="switchTabSidebar('goals')">Goals</button>
+    <button class="tab"        id="tab-bills"       role="tab" onclick="switchTabSidebar('bills')">Bills</button>
+    <button class="tab"        id="tab-savings"     role="tab" onclick="switchTabSidebar('savings')">Savings</button>
+    <button class="tab"        id="tab-debt"        role="tab" onclick="switchTabSidebar('debt')">Debt</button>
+    <button class="tab"        id="tab-networth"    role="tab" onclick="switchTabSidebar('networth')">Net Worth</button>
+    <button class="tab"        id="tab-recurring"   role="tab" onclick="switchTabSidebar('recurring')">Recurring</button>
+    <button class="tab"        id="tab-templates"   role="tab" onclick="switchTabSidebar('templates')">Templates</button>
 
-    <!-- Row break — full-width invisible flex element that forces the wrap -->
-    <div class="tab-row-break" aria-hidden="true"></div>
-
-    <!-- ── Row 2: Analytics & config tabs ──────────────────────────────────── -->
-    <button class="tab tab-secondary" id="tab-charts"     onclick="switchTab('charts')"     role="tab">Charts</button>
-    <button class="tab tab-secondary" id="tab-categories" onclick="switchTab('categories')" role="tab">Categories</button>
-    <button class="tab tab-secondary" id="tab-insights"   onclick="switchTab('insights')"   role="tab">Insights</button>
-    <button class="tab tab-secondary" id="tab-forecast"   onclick="switchTab('forecast')"   role="tab">Forecast</button>
-    <button class="tab tab-secondary" id="tab-multimonth" onclick="switchTab('multimonth')" role="tab">Multi-Month</button>
-    <button class="tab tab-secondary" id="tab-report"     onclick="switchTab('report')"     role="tab">Report</button>
-    <button class="tab tab-secondary" id="tab-settings"   onclick="switchTab('settings')"   role="tab">Settings</button>
+    <!-- Analytics tabs -->
+    <button class="tab tab-secondary" id="tab-charts"      role="tab" onclick="switchTabSidebar('charts')">Charts</button>
+    <button class="tab tab-secondary" id="tab-categories"  role="tab" onclick="switchTabSidebar('categories')">Categories</button>
+    <button class="tab tab-secondary" id="tab-insights"    role="tab" onclick="switchTabSidebar('insights')">Insights</button>
+    <button class="tab tab-secondary" id="tab-forecast"    role="tab" onclick="switchTabSidebar('forecast')">Forecast</button>
+    <button class="tab tab-secondary" id="tab-multimonth"  role="tab" onclick="switchTabSidebar('multimonth')">Multi-Month</button>
+    <button class="tab tab-secondary" id="tab-report"      role="tab" onclick="switchTabSidebar('report')">Report</button>
+    <button class="tab tab-secondary" id="tab-settings"    role="tab" onclick="switchTabSidebar('settings')">Settings</button>
 
 </div>

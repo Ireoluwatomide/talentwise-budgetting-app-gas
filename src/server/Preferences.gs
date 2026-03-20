@@ -3,7 +3,7 @@
  *
  * PURPOSE:
  *   Store and retrieve user preferences: display currency, dark mode toggle,
- *   and custom category definitions (name + colour).
+ *   and custom category definitions (name + colour + type).
  *
  * SHEET: Preferences
  * COLUMNS: key | value
@@ -13,7 +13,8 @@
  * PREFERENCE KEYS:
  *   'currency'   → 'NGN' | 'USD' | 'EUR' | 'GBP'
  *   'dark_mode'  → 'true' | 'false'
- *   'categories' → JSON array of { name, color } objects
+ *   'categories' → JSON array of { name, color, type } objects
+ *                  type: 'income' | 'expense' | 'savings'
  *
  * CALLED BY: client via google.script.run, and Main.gs (bootstrap data)
  */
@@ -26,25 +27,62 @@ const VALID_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 /**
  * DEFAULT_CATEGORIES
  *
- * The 9 built-in categories shipped with the app.
- * Colors match the prototype's design tokens exactly.
- * These are always present — users cannot delete them, only add on top.
+ * The built-in categories shipped with the app, split by transaction type.
+ * Each category now carries a `type` field: 'income' | 'expense' | 'savings'.
  *
- * INDEX MATTERS: deleteCategory() uses index >= 9 to identify user-added
- * categories. Do not reorder or add items to this list without updating
- * that guard.
+ * PROTECTED COUNT by type (used by deleteCategory() guard):
+ *   income:   7  (indices 0–6 within the income slice)
+ *   expense:  14 (indices 0–13 within the expense slice)
+ *   savings:  6  (indices 0–5 within the savings slice)
+ *
+ * The flattened DEFAULT_CATEGORIES array is used only to determine which
+ * entries are protected. deleteCategory() now checks `isDefault` by name+type
+ * match against this list rather than by raw index.
  */
 const DEFAULT_CATEGORIES = [
-  { name: 'Housing',       color: '#185FA5' },  // 0 — blue
-  { name: 'Food',          color: '#1D9E75' },  // 1 — green/teal
-  { name: 'Transport',     color: '#D85A30' },  // 2 — coral
-  { name: 'Utilities',     color: '#BA7517' },  // 3 — amber
-  { name: 'Entertainment', color: '#7F77DD' },  // 4 — purple
-  { name: 'Health',        color: '#D4537E' },  // 5 — pink
-  { name: 'Salary',        color: '#639922' },  // 6 — green
-  { name: 'Savings',       color: '#378ADD' },  // 7 — blue (lighter)
-  { name: 'Other',         color: '#888780' },  // 8 — grey (fallback)
+  // ── Income ──────────────────────────────────────────────────────────────────
+  { name: 'Employment / Salary',  color: '#639922', type: 'income' },
+  { name: 'Side Hustle',          color: '#1D9E75', type: 'income' },
+  { name: 'Freelance',            color: '#2E8A57', type: 'income' },
+  { name: 'Dividends',            color: '#185FA5', type: 'income' },
+  { name: 'Rental Income',        color: '#378ADD', type: 'income' },
+  { name: 'Business Income',      color: '#7F77DD', type: 'income' },
+  { name: 'Other Income',         color: '#888780', type: 'income' },
+
+  // ── Expense ──────────────────────────────────────────────────────────────────
+  { name: 'Housing',              color: '#185FA5', type: 'expense' },
+  { name: 'Utilities',            color: '#BA7517', type: 'expense' },
+  { name: 'Groceries',            color: '#1D9E75', type: 'expense' },
+  { name: 'Transportation',       color: '#D85A30', type: 'expense' },
+  { name: 'Insurance',            color: '#7F77DD', type: 'expense' },
+  { name: 'Clothing',             color: '#D4537E', type: 'expense' },
+  { name: 'Entertainment',        color: '#BA7517', type: 'expense' },
+  { name: 'Fun & Vacation',       color: '#E06B3F', type: 'expense' },
+  { name: 'Media & Subscriptions',color: '#5C87D6', type: 'expense' },
+  { name: 'Body Care & Medicine', color: '#C75B8A', type: 'expense' },
+  { name: 'Education',            color: '#4A90D9', type: 'expense' },
+  { name: 'Dining Out',           color: '#E8934A', type: 'expense' },
+  { name: 'Debt Repayment',       color: '#D85A30', type: 'expense' },
+  { name: 'Other Expense',        color: '#888780', type: 'expense' },
+
+  // ── Savings ──────────────────────────────────────────────────────────────────
+  { name: 'Emergency Fund',       color: '#185FA5', type: 'savings' },
+  { name: 'Retirement Account',   color: '#1D9E75', type: 'savings' },
+  { name: 'Stock Portfolio',      color: '#639922', type: 'savings' },
+  { name: 'Sinking Fund',         color: '#BA7517', type: 'savings' },
+  { name: 'Down Payment',         color: '#7F77DD', type: 'savings' },
+  { name: 'Other Savings',        color: '#888780', type: 'savings' },
 ];
+
+// Build a fast lookup set of default category identifiers (name::type).
+// Used by deleteCategory() to block deletion of built-in entries.
+var _DEFAULT_KEYS = (function() {
+  var keys = {};
+  DEFAULT_CATEGORIES.forEach(function(cat) {
+    keys[cat.name.toLowerCase() + '::' + cat.type] = true;
+  });
+  return keys;
+})();
 
 // Preference key strings — centralised to prevent typos.
 const PREF_KEYS = {
@@ -83,7 +121,7 @@ function _getPrefsMap() {
  *   {
  *     currency:   'NGN',          // string
  *     dark_mode:  false,          // boolean
- *     categories: [{ name, color }, ...]  // array
+ *     categories: [{ name, color, type }, ...]  // array — typed categories
  *   }
  *
  * Missing keys fall back to safe defaults — this means the app works
@@ -106,9 +144,17 @@ function getAllPreferences() {
   if (map[PREF_KEYS.CATEGORIES]) {
     try {
       const parsed = JSON.parse(map[PREF_KEYS.CATEGORIES]);
-      // Validate: must be a non-empty array of objects with name+color.
+      // Validate: must be a non-empty array of objects with name+color+type.
       if (Array.isArray(parsed) && parsed.length > 0) {
-        categories = parsed;
+        // Back-compat: if stored categories lack `type`, assign 'expense'
+        // so old data doesn't break.
+        categories = parsed.map(function(cat) {
+          return {
+            name:  cat.name  || '',
+            color: cat.color || '#888780',
+            type:  cat.type  || 'expense'
+          };
+        });
       }
     } catch (e) {
       // Corrupted JSON in the sheet — fall back to defaults silently.
@@ -207,19 +253,34 @@ function getCategories() {
 }
 
 /**
- * addCategory(name, color)
+ * getCategoriesByType(type)
+ *
+ * Returns only the categories matching the given type string.
+ * type: 'income' | 'expense' | 'savings'
+ *
+ * Exposed for server-side validation in Transactions.gs and Goals.gs.
+ */
+function getCategoriesByType(type) {
+  return getCategories().filter(function(cat) {
+    return cat.type === type;
+  });
+}
+
+/**
+ * addCategory(name, color, type)
  *
  * Adds a new user-defined category to the stored list.
  *
  * Rules:
  *   - name must be a non-empty string
  *   - color must be a valid hex color string (e.g. '#1D9E75')
- *   - Duplicate names are rejected (case-insensitive)
+ *   - type must be 'income', 'expense', or 'savings'
+ *   - Duplicate names within the same type are rejected (case-insensitive)
  *
  * Returns the full updated categories array so the client can
  * update AppState.categories without a second server call.
  */
-function addCategory(name, color) {
+function addCategory(name, color, type) {
   if (!name || typeof name !== 'string' || name.trim() === '') {
     throw new Error('Preferences.gs: Category name is required.');
   }
@@ -227,56 +288,68 @@ function addCategory(name, color) {
     throw new Error('Preferences.gs: Category color must be a valid hex color (e.g. #1D9E75).');
   }
 
+  var normType = String(type || 'expense').trim().toLowerCase();
+  if (['income', 'expense', 'savings'].indexOf(normType) === -1) {
+    throw new Error('Preferences.gs: type must be income, expense, or savings. Got: "' + type + '".');
+  }
+
   var trimmedName = name.trim();
   var current = getCategories();
 
-  // Case-insensitive duplicate check across both default and user-added categories.
+  // Case-insensitive duplicate check within the same type.
   var isDuplicate = current.some(function(cat) {
-    return cat.name.toLowerCase() === trimmedName.toLowerCase();
+    return cat.name.toLowerCase() === trimmedName.toLowerCase() && cat.type === normType;
   });
   if (isDuplicate) {
-    throw new Error('Preferences.gs: A category named "' + trimmedName + '" already exists.');
+    throw new Error(
+      'Preferences.gs: A ' + normType + ' category named "' + trimmedName + '" already exists.'
+    );
   }
 
-  var updated = current.concat([{ name: trimmedName, color: color }]);
+  var updated = current.concat([{ name: trimmedName, color: color, type: normType }]);
   setPreference(PREF_KEYS.CATEGORIES, JSON.stringify(updated));
 
   return updated;
 }
 
 /**
- * deleteCategory(categoryName)
+ * deleteCategory(categoryName, categoryType)
  *
  * Removes a user-added category from the stored list.
  *
  * Protection rules:
- *   - The first 9 entries (DEFAULT_CATEGORIES) cannot be deleted.
- *     This is enforced by checking position in the stored array,
- *     not just by name — so even if the user has renamed nothing,
- *     the guard is based on index.
+ *   - Categories whose name+type combination matches an entry in DEFAULT_CATEGORIES
+ *     cannot be deleted. This is checked via the _DEFAULT_KEYS lookup set.
  *   - If the category is not found, throws a clear error.
  *
  * Returns the full updated categories array.
  */
-function deleteCategory(categoryName) {
+function deleteCategory(categoryName, categoryType) {
   if (!categoryName) throw new Error('Preferences.gs: categoryName is required.');
 
-  var current = getCategories();
-  var index   = -1;
+  var normType = String(categoryType || 'expense').trim().toLowerCase();
+  var current  = getCategories();
+  var index    = -1;
 
   for (var i = 0; i < current.length; i++) {
-    if (current[i].name.toLowerCase() === categoryName.toLowerCase()) {
+    if (
+      current[i].name.toLowerCase() === categoryName.toLowerCase() &&
+      current[i].type === normType
+    ) {
       index = i;
       break;
     }
   }
 
   if (index === -1) {
-    throw new Error('Preferences.gs: Category "' + categoryName + '" not found.');
+    throw new Error(
+      'Preferences.gs: ' + normType + ' category "' + categoryName + '" not found.'
+    );
   }
 
-  // Indices 0–8 are the 9 default categories — they are protected.
-  if (index < DEFAULT_CATEGORIES.length) {
+  // Block deletion of any built-in default category.
+  var lookupKey = categoryName.toLowerCase() + '::' + normType;
+  if (_DEFAULT_KEYS[lookupKey]) {
     throw new Error(
       'Preferences.gs: "' + categoryName + '" is a default category and cannot be deleted.'
     );
@@ -291,7 +364,7 @@ function deleteCategory(categoryName) {
 /**
  * resetCategories()
  *
- * Wipes any stored custom categories and restores the 9 defaults.
+ * Wipes any stored custom categories and restores all defaults.
  * Exposed as a "Reset to defaults" action in the Settings screen.
  *
  * Returns the default categories array.

@@ -89,9 +89,9 @@
 
     // Normalise dark_mode key from server (snake_case) to camelCase.
     if (_boot.preferences) {
-        AppState.currency  = _boot.preferences.currency   || 'NGN';
-        AppState.darkMode  = _boot.preferences.dark_mode  || false;
-        AppState.categories= _boot.preferences.categories || [];
+        AppState.currency   = _boot.preferences.currency   || 'NGN';
+        AppState.darkMode   = _boot.preferences.dark_mode  || false;
+        AppState.categories = _boot.preferences.categories || [];
     }
 
 
@@ -450,10 +450,10 @@
 
         // Non-chart tabs that still need a fresh render on switch.
         var renderOnSwitch = {
-            'report':    function() { if (typeof renderReport    === 'function') renderReport();    },
-            'insights':  function() { if (typeof renderInsights  === 'function') renderInsights();  },
-            'categories':function() { if (typeof renderCategories=== 'function') renderCategories();},
-            'templates': function() { if (typeof renderTemplates === 'function') renderTemplates(); }
+            'report':     function() { if (typeof renderReport     === 'function') renderReport();     },
+            'insights':   function() { if (typeof renderInsights   === 'function') renderInsights();   },
+            'categories': function() { if (typeof renderCategories === 'function') renderCategories(); },
+            'templates':  function() { if (typeof renderTemplates  === 'function') renderTemplates();  }
         };
 
         if (renderOnSwitch[tabId]) {
@@ -513,7 +513,7 @@
      * not already cached in AppState. Prevents redundant server calls.
      */
     async function _ensureMonthLoaded(key) {
-        if (AppState.transactions[key]) return; // already cached
+        if (AppState.transactions[key] !== undefined) return; // already loaded (even if empty)
 
         try {
             var txs = await callServerSilent('getTransactionsByMonth', key);
@@ -850,8 +850,7 @@
 
                             var msg = 'Imported ' + imported + ' transaction' + (imported !== 1 ? 's' : '') + '.';
                             if (skipped > 0) msg += ' ' + skipped + ' row' + (skipped !== 1 ? 's' : '') + ' skipped.';
-                            var toastType = imported > 0 ? 'success' : 'info';
-                            showToast(msg, toastType);
+                            showToast(msg, imported > 0 ? 'success' : 'info');
                         });
                 })
                 .catch(function() {
@@ -882,8 +881,8 @@
      */
     function renderAll() {
         // ── Shared chrome ──────────────────────────────────────────────────────────
-        if (typeof updateHeader        === 'function') updateHeader();
-        if (typeof updateAlertBanners  === 'function') updateAlertBanners();
+        if (typeof updateHeader            === 'function') updateHeader();
+        if (typeof updateAlertBanners      === 'function') updateAlertBanners();
         if (typeof populateCategorySelects === 'function') populateCategorySelects();
 
         // ── Active pane ────────────────────────────────────────────────────────────

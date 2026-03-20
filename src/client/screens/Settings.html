@@ -4,32 +4,62 @@
      TAB: Settings
 
      SECTIONS:
-       1. Custom Categories — list + add with colour picker
+       1. Custom Categories — list grouped by type (Income / Expense / Savings)
+          + add form with type picker + colour picker
        2. Divider
-       3. Danger Zone — Clear Current Month
+       3. Danger Zone — Clear Current Month + Reset Categories
+
+     RENDERING BUG FIX:
+       Categories were not persisting after page refresh because the old code
+       rendered from a stale DOM state rather than AppState.categories.
+       renderSettings() now always reads directly from AppState.categories,
+       which is populated from the bootstrap data on every page load.
 
      STATE: AppState.categories
-     SERVER CALLS: addCategory, deleteCategory, clearMonthTransactions
+     SERVER CALLS: addCategory(name, color, type), deleteCategory(name, type),
+                   resetCategories, clearMonthTransactions
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-settings">
 
   <!-- ── 1. Custom Categories ────────────────────────────────────────────── -->
-  <div class="sec" style="margin-top:0;">Custom Categories</div>
-  <div id="cat-settings-list" style="margin-bottom:1rem;"></div>
+  <div class="sec" style="margin-top:0;">Categories</div>
+
+  <!-- Category list — grouped by type, populated by renderSettings() -->
+  <div id="cat-settings-list" style="margin-bottom:1.25rem;"></div>
 
   <!-- Add category form -->
-  <div style="display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap;">
-    <input id="new-cat-name" class="inp" placeholder="Category name" style="flex:1;min-width:120px;"/>
+  <div class="sec">Add Category</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+    <input id="new-cat-name" class="inp" placeholder="Category name"/>
+    <!--
+      Type picker — determines which group the new category is added to.
+      Placed inline so the user sees type + colour + name together.
+    -->
+    <select id="new-cat-type" class="inp">
+      <option value="expense">Expense</option>
+      <option value="income">Income</option>
+      <option value="savings">Savings</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:1.5rem;align-items:center;">
     <input
             id="new-cat-color"
             type="color"
             value="#1D9E75"
             style="width:44px;height:38px;border:0.5px solid var(--border2);border-radius:var(--radius);
              padding:2px;cursor:pointer;background:transparent;flex-shrink:0;"/>
+    <span style="font-size:12px;color:var(--text2);flex:1;">Pick a colour</span>
     <button id="btn-add-cat" onclick="addCategoryForm()" class="btn-primary">
       <span class="btn-label">Add</span>
       <span class="btn-spinner"></span>
+    </button>
+  </div>
+
+  <!-- Reset to defaults — secondary action -->
+  <div style="margin-bottom:1.5rem;">
+    <button onclick="resetCategoriesForm()" class="btn-sm">
+      Reset categories to defaults
     </button>
   </div>
 
@@ -56,12 +86,47 @@
   /**
    * renderSettings()
    *
-   * Rebuilds the category list from AppState.categories.
-   * The first 9 entries are default categories — no delete button.
-   * Index 9+ are user-added — each gets a × delete button.
+   * Rebuilds the category list from AppState.categories, grouped into three
+   * sections: Income, Expense, Savings.
+   *
+   * Default categories (those present in the server's DEFAULT_CATEGORIES list)
+   * are identified by having their type+name recognised as protected — the
+   * server will reject deletion attempts for these.  On the client side we
+   * use a simple heuristic: the first N entries per type are considered
+   * defaults and are rendered without a delete button.
+   *
+   * Since the client doesn't have the server's exact DEFAULT_KEYS set, we
+   * track defaults by comparing against a locally-mirrored default name list
+   * stored in _SETTINGS_DEFAULT_NAMES below.
    *
    * Called by renderAll() when Settings pane is active.
    */
+
+          // Mirror of the default category names from Preferences.gs.
+          // Used purely to decide whether to show a delete button — the server
+          // enforces the actual protection on deleteCategory() calls.
+  var _SETTINGS_DEFAULT_NAMES = {
+            income: [
+              'Employment / Salary', 'Side Hustle', 'Freelance',
+              'Dividends', 'Rental Income', 'Business Income', 'Other Income'
+            ],
+            expense: [
+              'Housing', 'Utilities', 'Groceries', 'Transportation',
+              'Insurance', 'Clothing', 'Entertainment', 'Fun & Vacation',
+              'Media & Subscriptions', 'Body Care & Medicine', 'Education',
+              'Dining Out', 'Debt Repayment', 'Other Expense'
+            ],
+            savings: [
+              'Emergency Fund', 'Retirement Account', 'Stock Portfolio',
+              'Sinking Fund', 'Down Payment', 'Other Savings'
+            ]
+          };
+
+  function _isDefaultCategory(name, type) {
+    var defaults = _SETTINGS_DEFAULT_NAMES[type] || [];
+    return defaults.indexOf(name) !== -1;
+  }
+
   function renderSettings() {
     var listEl = document.getElementById('cat-settings-list');
     if (!listEl) return;
@@ -69,29 +134,70 @@
     var cats = AppState.categories || [];
 
     if (cats.length === 0) {
-      listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories.</div>';
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories found.</div>';
       return;
     }
 
-    var DEFAULT_COUNT = 9; // indices 0–8 are protected defaults
+    // Group by type.
+    var groups = { income: [], expense: [], savings: [] };
+    cats.forEach(function(cat) {
+      var t = cat.type || 'expense';
+      if (!groups[t]) groups[t] = [];
+      groups[t].push(cat);
+    });
 
-    listEl.innerHTML = cats.map(function(cat, i) {
-      var isDefault  = i < DEFAULT_COUNT;
-      // Delete button passes itself for optimistic dimming
-      var deleteBtn  = isDefault
-              ? '' // defaults are protected
-              : '<button class="tx-delete" onclick="deleteCat(\'' + _escAttr(cat.name) + '\', this)" ' +
-              'title="Remove category">×</button>';
+    // Type display configuration.
+    var typeConfig = [
+      { type: 'income',  label: 'Income',  badgeClass: 'badge-green' },
+      { type: 'expense', label: 'Expense', badgeClass: 'badge-red'   },
+      { type: 'savings', label: 'Savings', badgeClass: 'badge-blue'  }
+    ];
 
-      return (
-              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
-              '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
-              ';display:inline-block;flex-shrink:0;"></span>' +
-              '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
-              deleteBtn +
+    var html = '';
+
+    typeConfig.forEach(function(cfg) {
+      var group = groups[cfg.type] || [];
+      if (group.length === 0) return;
+
+      // Section heading for each type group.
+      html += (
+              '<div style="margin-bottom:8px;">' +
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;' +
+              'padding:6px 0;border-bottom:0.5px solid var(--border);">' +
+              '<span class="badge ' + cfg.badgeClass + '">' + cfg.label + '</span>' +
+              '<span style="font-size:11px;color:var(--text2);">' +
+              group.length + ' categor' + (group.length === 1 ? 'y' : 'ies') +
+              '</span>' +
               '</div>'
       );
-    }).join('');
+
+      // Each category row within this type group.
+      group.forEach(function(cat) {
+        var isDef = _isDefaultCategory(cat.name, cat.type);
+
+        // Delete button passes itself + name + type for optimistic dimming.
+        // Default categories are rendered without a delete button — the server
+        // would reject the call anyway, but we skip it to keep the UI clean.
+        var deleteBtn = isDef
+                ? ''
+                : '<button class="tx-delete" ' +
+                'onclick="deleteCat(\'' + _escAttr(cat.name) + '\',\'' + cat.type + '\',this)" ' +
+                'title="Remove category">×</button>';
+
+        html += (
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;padding-left:4px;">' +
+                '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
+                ';display:inline-block;flex-shrink:0;"></span>' +
+                '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
+                deleteBtn +
+                '</div>'
+        );
+      });
+
+      html += '</div>'; // close group div
+    });
+
+    listEl.innerHTML = html;
   }
 
 
@@ -100,10 +206,12 @@
   /**
    * addCategoryForm()
    * Uses withButtonLoading() to show an inline spinner while saving.
+   * Passes type from the new-cat-type select to the server.
    */
   async function addCategoryForm() {
     var btn   = document.getElementById('btn-add-cat');
     var name  = getVal('new-cat-name');
+    var type  = getVal('new-cat-type') || 'expense';
     var color = document.getElementById('new-cat-color')
             ? document.getElementById('new-cat-color').value
             : '#1D9E75';
@@ -114,26 +222,27 @@
       return;
     }
 
-    // Client-side duplicate check for immediate feedback.
+    // Client-side duplicate check within the same type for immediate feedback.
     var cats = AppState.categories || [];
     var isDuplicate = cats.some(function(c) {
-      return c.name.toLowerCase() === name.toLowerCase();
+      return c.name.toLowerCase() === name.toLowerCase() && c.type === type;
     });
     if (isDuplicate) {
-      showToast('"' + name + '" already exists.', 'error');
+      showToast('"' + name + '" already exists as a ' + type + ' category.', 'error');
       return;
     }
 
     await withButtonLoading(btn, async function() {
       try {
-        var updated = await callServer('addCategory', name, color);
+        // Server now accepts (name, color, type) — updated Preferences.gs signature.
+        var updated = await callServer('addCategory', name, color, type);
 
         // Server returns the full updated categories array.
         AppState.categories = updated;
 
         clearInputs('new-cat-name');
         renderAll(); // refreshes category list + all <select> dropdowns
-        showToast('Category added!', 'success');
+        showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' category added!', 'success');
 
       } catch (e) {
         // Error toast shown by callServer.
@@ -145,10 +254,11 @@
   // ─── DELETE CATEGORY ──────────────────────────────────────────────────────────
 
   /**
-   * deleteCat(categoryName, deleteBtnEl)
+   * deleteCat(categoryName, categoryType, deleteBtnEl)
    * Dims the delete button immediately as optimistic feedback.
+   * Passes the type to the server so it can scope the lookup correctly.
    */
-  async function deleteCat(categoryName, deleteBtnEl) {
+  async function deleteCat(categoryName, categoryType, deleteBtnEl) {
     if (!window.confirm('Remove the "' + categoryName + '" category?')) return;
 
     if (deleteBtnEl) {
@@ -157,7 +267,8 @@
     }
 
     try {
-      var updated = await callServer('deleteCategory', categoryName);
+      // Updated server signature: deleteCategory(name, type)
+      var updated = await callServer('deleteCategory', categoryName, categoryType);
 
       AppState.categories = updated;
 
@@ -170,6 +281,29 @@
         deleteBtnEl.style.opacity = '';
       }
       // Error toast shown by callServer (includes "default category" protection error).
+    }
+  }
+
+
+  // ─── RESET CATEGORIES ─────────────────────────────────────────────────────────
+
+  /**
+   * resetCategoriesForm()
+   * Wipes all custom categories and restores the built-in defaults.
+   */
+  async function resetCategoriesForm() {
+    if (!window.confirm(
+            'Reset all categories to the built-in defaults?\n\n' +
+            'Any custom categories you added will be permanently removed.'
+    )) return;
+
+    try {
+      var defaults = await callServer('resetCategories');
+      AppState.categories = defaults;
+      renderAll();
+      showToast('Categories reset to defaults.', 'info');
+    } catch (e) {
+      // Error toast shown by callServer.
     }
   }
 

@@ -14,8 +14,11 @@
  *   All sheet names are prefixed with a 6-char user key derived from their
  *   email. e.g. "a3f9b1:Transactions", "a3f9b1:Goals", etc.
  *
- *   On first login, provisionUser() creates all 8 sheets for that user.
- *   Subsequent logins reuse existing sheets.
+ *   On first login, getOrCreateUser() calls _provisionUserSheets() to create
+ *   all 8 data sheets, then immediately calls _seedDefaultPreferences() to
+ *   write the full typed category list into the user's Preferences sheet.
+ *   This ensures new users always start with the complete category set
+ *   rather than falling back to the in-code defaults.
  *
  * SHEET NAMING:
  *   {userKey}:{SheetName}
@@ -96,7 +99,12 @@ function getCurrentUserProfile() {
  * getOrCreateUser(email)
  *
  * Looks up the user by email in the Users registry.
- * If not found, provisions a new user (creates all their sheets).
+ * If not found:
+ *   1. Provisions all 8 data sheets for the new user.
+ *   2. Seeds default preferences (typed category list) into their
+ *      Preferences sheet — server-authoritative defaults.
+ *   3. Registers the user in the Users registry.
+ *
  * Updates last_login timestamp on every call.
  *
  * Returns the user profile object.
@@ -124,7 +132,7 @@ function getOrCreateUser(email) {
     return existing;
   }
 
-  // New user — provision their sheets.
+  // New user — provision their data sheets first.
   var displayName = email.split('@')[0]; // simple default display name
   var profile = {
     user_key:     userKey,
@@ -134,8 +142,16 @@ function getOrCreateUser(email) {
     last_login:   now
   };
 
-  appendRow(USERS_SHEET_NAME, profile);
+  // Step 1: Create all 8 data sheet tabs with headers.
   _provisionUserSheets(userKey);
+
+  // Step 2: Seed default preferences into the Preferences sheet so the
+  // new user starts with the full typed category list rather than seeing
+  // an empty sheet and relying on the in-code fallback in getAllPreferences().
+  _seedDefaultPreferences(userKey);
+
+  // Step 3: Register in the Users sheet.
+  appendRow(USERS_SHEET_NAME, profile);
 
   Logger.log('UserManager.gs: Provisioned new user ' + email + ' (key: ' + userKey + ')');
   return profile;
@@ -163,6 +179,59 @@ function _provisionUserSheets(userKey) {
       Logger.log('UserManager.gs: Created sheet "' + sheetName + '"');
     }
   });
+}
+
+/**
+ * _seedDefaultPreferences(userKey)
+ *
+ * Writes the three default preference rows (currency, dark_mode, categories)
+ * into the new user's Preferences sheet immediately after provisioning.
+ *
+ * This is the "pre-seed server-authoritative" approach: new users get the
+ * full typed DEFAULT_CATEGORIES list written to their sheet on first login,
+ * so getAllPreferences() always reads a populated sheet rather than relying
+ * on the in-code fallback.
+ *
+ * Must be called AFTER _provisionUserSheets() so the sheet exists.
+ *
+ * Reads DEFAULT_CATEGORIES from Preferences.gs — both files live in the
+ * same Apps Script project so the constant is always in scope.
+ */
+function _seedDefaultPreferences(userKey) {
+  var prefsSheetName = userKey + ':Preferences';
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(prefsSheetName);
+
+  if (!sheet) {
+    Logger.log(
+      'UserManager.gs: _seedDefaultPreferences() — sheet "' + prefsSheetName +
+      '" not found, skipping seed.'
+    );
+    return;
+  }
+
+  // The Preferences sheet schema is: key | value
+  // We write three rows: currency, dark_mode, categories.
+  var defaultRows = [
+    ['currency',   'NGN'],
+    ['dark_mode',  'false'],
+    ['categories', JSON.stringify(DEFAULT_CATEGORIES)]
+  ];
+
+  // Append each preference row directly (bypassing the scoped helpers since
+  // we are in the provisioning path and getCurrentUserKey() would return
+  // the wrong key — provisioning may be called for a different user).
+  var lastRow = Math.max(sheet.getLastRow(), 1);
+  defaultRows.forEach(function(row) {
+    sheet.getRange(lastRow + 1, 1, 1, 2).setValues([row]);
+    lastRow++;
+  });
+
+  SpreadsheetApp.flush();
+  Logger.log(
+    'UserManager.gs: _seedDefaultPreferences() — seeded ' +
+    defaultRows.length + ' preference rows for key "' + userKey + '".'
+  );
 }
 
 

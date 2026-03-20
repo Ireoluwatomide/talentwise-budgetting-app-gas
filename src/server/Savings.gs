@@ -4,8 +4,12 @@
  * PURPOSE:
  *   Manage named savings targets (e.g. "Emergency Fund", "New Laptop").
  *   Each goal tracks a target amount and cumulative saved amount.
- *   When a savings-type transaction is added whose name matches a goal,
- *   updateSavingsGoalOnDeposit() is called automatically by Transactions.gs.
+ *
+ *   When a savings-type transaction is added, updateSavingsGoalOnDeposit()
+ *   is called automatically by Transactions.gs — matched by CATEGORY rather
+ *   than by transaction name. This is cleaner and more reliable: the user
+ *   picks the savings category (e.g. "Emergency Fund") from the dropdown,
+ *   and any deposit with that category auto-credits the matching goal.
  *
  * SHEET: SavingsGoals
  * COLUMNS: id | name | target_amount | saved_amount
@@ -81,7 +85,6 @@ function addSavingsGoal(name, targetAmount) {
 function deleteSavingsGoal(goalId) {
   if (!goalId) throw new Error('Savings.gs: goalId is required.');
 
-  // FIX: was findRowIndex(SHEET_NAMES.SAVINGS_GOALS, ...) — must use scoped version
   var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
@@ -95,35 +98,46 @@ function deleteSavingsGoal(goalId) {
 }
 
 /**
- * updateSavingsGoalOnDeposit(goalName, depositAmount)
+ * updateSavingsGoalOnDeposit(category, depositAmount)
  *
  * Called automatically from Transactions.addTransaction() when type === 'savings'.
- * Finds the savings goal whose name matches goalName (case-insensitive) and
- * increments its saved_amount, capped at target_amount.
+ *
+ * MATCHING STRATEGY — category-match:
+ *   Finds the savings goal whose name matches the transaction's category
+ *   (case-insensitive). This is cleaner than name-matching because the
+ *   user selects the savings category from the typed dropdown (e.g.
+ *   "Emergency Fund", "Retirement Account") and the goal with that same
+ *   name auto-receives the credit — regardless of what description the
+ *   user typed for the transaction.
+ *
+ *   Example:
+ *     Transaction: { name: 'Monthly top-up', category: 'Emergency Fund',
+ *                    type: 'savings', amount: 25000 }
+ *     → Finds goal named "Emergency Fund" and increments its saved_amount.
  *
  * Returns the updated goal object, or null if no matching goal is found.
- * A null return is NOT an error — the user may add savings transactions that
- * don't correspond to a named goal, which is perfectly valid.
+ * A null return is NOT an error — the user may add savings transactions to
+ * categories that don't correspond to a named goal, which is perfectly valid.
  */
-function updateSavingsGoalOnDeposit(goalName, depositAmount) {
-  if (!goalName) return null;
+function updateSavingsGoalOnDeposit(category, depositAmount) {
+  if (!category) return null;
 
   var deposit = parseFloat(depositAmount);
   if (isNaN(deposit) || deposit <= 0) return null;
 
-  var trimmedName = String(goalName).trim().toLowerCase();
+  var trimmedCategory = String(category).trim().toLowerCase();
 
-  // Find the matching goal row.
+  // Find the savings goal whose name matches the transaction category.
   var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
-    return String(row.name || '').trim().toLowerCase() === trimmedName;
+    return String(row.name || '').trim().toLowerCase() === trimmedCategory;
   });
 
   if (rowIndex === -1) return null; // No matching goal — silent, not an error.
 
-  // Re-read the current goal to get the latest saved_amount.
+  // Re-read the current goal to get the latest saved_amount before updating.
   var goals   = getAllSavingsGoals();
   var current = goals.find(function(g) {
-    return g.name.toLowerCase() === trimmedName;
+    return g.name.toLowerCase() === trimmedCategory;
   });
 
   if (!current) return null;
@@ -142,6 +156,11 @@ function updateSavingsGoalOnDeposit(goalName, depositAmount) {
   };
 
   getUserUpdateRow('SAVINGS_GOALS', rowIndex, updated);
+
+  Logger.log(
+    'Savings.gs: updateSavingsGoalOnDeposit() — category "' + category +
+    '" matched goal "' + current.name + '", new saved: ' + newSaved
+  );
 
   return _castGoal(updated);
 }

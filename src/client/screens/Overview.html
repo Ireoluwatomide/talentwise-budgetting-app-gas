@@ -62,8 +62,12 @@
             class="inp"
             style="margin-bottom:8px;"/>
 
-    <button onclick="addTx()" class="btn-primary" style="width:100%;">
-        Add Transaction
+    <!-- btn-label + btn-spinner spans are required by the CSS loading animation.
+         initAllBtnStructures() in Index.html boot injects these automatically,
+         but including them here explicitly keeps the HTML self-documenting. -->
+    <button id="btn-add-tx" onclick="addTx()" class="btn-primary" style="width:100%;">
+        <span class="btn-label">Add Transaction</span>
+        <span class="btn-spinner"></span>
     </button>
 
     <!-- ── 4. Import CSV ─────────────────────────────────────────────────────── -->
@@ -151,14 +155,14 @@
                 '<div class="tx-cat">'  + _escTx(tx.category) + '</div>' +
                 '</div>' +
                 '</div>' +
-                // RIGHT side
+                // RIGHT side — delete button passes itself so we can dim it optimistically
                 '<div class="tx-right">' +
                 '<span class="tx-amount" style="color:' + amtColor + ';">' +
                 amtPrefix + fmt(tx.amount) +
                 '</span>' +
                 '<button ' +
                 'class="tx-delete" ' +
-                'onclick="deleteTx(\'' + tx.id + '\')" ' +
+                'onclick="deleteTx(\'' + tx.id + '\', this)" ' +
                 'title="Delete transaction">×</button>' +
                 '</div>' +
                 '</div>'
@@ -176,8 +180,11 @@
      *
      * Reads the add-transaction form, validates, calls the server,
      * and on success updates AppState + re-renders.
+     * Uses withButtonLoading() to show an inline spinner on the button
+     * and disable inputs while the server call is in flight.
      */
     async function addTx() {
+        var btn      = document.getElementById('btn-add-tx');
         var name     = getVal('tx-name');
         var amtRaw   = getVal('tx-amt');
         var type     = getVal('tx-type');
@@ -203,55 +210,65 @@
             return;
         }
 
-        // ── Server call ────────────────────────────────────────────────────────────
-        try {
-            var newTx = await callServer('addTransaction',
-                curKey(), name, amount, type, category, note
-            );
+        // ── Server call — wrapped in button loading state ──────────────────────────
+        await withButtonLoading(btn, async function() {
+            try {
+                var newTx = await callServer('addTransaction',
+                    curKey(), name, amount, type, category, note
+                );
 
-            // Push the returned tx object (with its server-generated id) into AppState.
-            if (!AppState.transactions[curKey()]) {
-                AppState.transactions[curKey()] = [];
+                // Push the returned tx object (with its server-generated id) into AppState.
+                if (!AppState.transactions[curKey()]) {
+                    AppState.transactions[curKey()] = [];
+                }
+                AppState.transactions[curKey()].push(newTx);
+
+                // If this was a savings deposit, update the matching savings goal balance
+                // in AppState so the Savings tab reflects the change without a server
+                // round-trip. The server already updated the row; we just sync client state.
+                if (type === 'savings' && AppState.savingsGoals) {
+                    AppState.savingsGoals = AppState.savingsGoals.map(function(goal) {
+                        if (goal.name.toLowerCase() === name.toLowerCase()) {
+                            var newSaved = (parseFloat(goal.saved_amount) || 0) + amount;
+                            var target   = parseFloat(goal.target_amount) || 0;
+                            newSaved     = target > 0 ? Math.min(newSaved, target) : newSaved;
+                            return Object.assign({}, goal, {
+                                saved_amount:     newSaved,
+                                percent_complete: target > 0 ? Math.min(100, Math.round((newSaved / target) * 100)) : 0
+                            });
+                        }
+                        return goal;
+                    });
+                }
+
+                clearInputs('tx-name', 'tx-amt', 'tx-note');
+                renderAll();
+                showToast('Transaction added!', 'success');
+
+            } catch (e) {
+                // callServer already showed an error toast via its failure handler.
             }
-            AppState.transactions[curKey()].push(newTx);
-
-            // If this was a savings deposit, update the matching savings goal balance
-            // in AppState so the Savings tab reflects the change without a server
-            // round-trip. The server already updated the row; we just sync client state.
-            if (type === 'savings' && AppState.savingsGoals) {
-                AppState.savingsGoals = AppState.savingsGoals.map(function(goal) {
-                    if (goal.name.toLowerCase() === name.toLowerCase()) {
-                        var newSaved = (parseFloat(goal.saved_amount) || 0) + amount;
-                        var target   = parseFloat(goal.target_amount) || 0;
-                        newSaved     = target > 0 ? Math.min(newSaved, target) : newSaved;
-                        return Object.assign({}, goal, {
-                            saved_amount:     newSaved,
-                            percent_complete: target > 0 ? Math.min(100, Math.round((newSaved / target) * 100)) : 0
-                        });
-                    }
-                    return goal;
-                });
-            }
-
-            clearInputs('tx-name', 'tx-amt', 'tx-note');
-            renderAll();
-            showToast('Transaction added!', 'success');
-
-        } catch (e) {
-            // callServer already showed an error toast via its failure handler.
-        }
+        });
     }
 
 
     // ─── DELETE TRANSACTION ───────────────────────────────────────────────────────
 
     /**
-     * deleteTx(txId)
+     * deleteTx(txId, deleteBtnEl)
      *
-     * Deletes a transaction by id. Removes it from AppState immediately
-     * (optimistic update) then confirms with the server.
+     * Deletes a transaction by id. Dims the delete button immediately
+     * (optimistic feedback), then confirms with the server.
+     * The button reference is passed in from the onclick so we can restore
+     * it if the server call fails.
      */
-    async function deleteTx(txId) {
+    async function deleteTx(txId, deleteBtnEl) {
+        // Optimistic: dim the × button immediately so the user gets instant feedback.
+        if (deleteBtnEl) {
+            deleteBtnEl.disabled = true;
+            deleteBtnEl.style.opacity = '0.35';
+        }
+
         try {
             await callServer('deleteTransaction', txId);
 
@@ -267,6 +284,11 @@
             showToast('Transaction removed.', 'info');
 
         } catch (e) {
+            // Restore the button if the server call failed.
+            if (deleteBtnEl) {
+                deleteBtnEl.disabled = false;
+                deleteBtnEl.style.opacity = '';
+            }
             // Error toast shown by callServer's failure handler.
         }
     }

@@ -8,6 +8,13 @@
        2. Savings goals list with progress bars
        3. Add Savings Goal form
 
+     AUTO-CREDIT BEHAVIOUR (updated):
+       When a savings-type transaction is added, the server matches by
+       CATEGORY (not by transaction name). Add a savings transaction and
+       select "Emergency Fund" as the category → the "Emergency Fund" goal
+       auto-receives the credit. The goal name must match the savings
+       category name exactly (case-insensitive).
+
      STATE: AppState.savingsGoals, AppState.transactions (for all-time total)
      SERVER CALLS: addSavingsGoal, deleteSavingsGoal
      ───────────────────────────────────────────────────────────────────────── -->
@@ -15,8 +22,9 @@
 <div class="pane" id="pane-savings">
 
   <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;">
-    Track your savings targets. Add a "Savings deposit" transaction whose description
-    matches a goal name — the goal balance updates automatically.
+    Track your savings targets. To auto-credit a goal, add a
+    <strong>Savings deposit</strong> transaction and select the matching
+    savings category (e.g. "Emergency Fund") — the goal balance updates automatically.
   </div>
 
   <!-- ── 1. Total Saved All-Time ──────────────────────────────────────────── -->
@@ -32,6 +40,10 @@
 
   <!-- ── 3. Add Savings Goal Form ─────────────────────────────────────────── -->
   <div class="sec">New Savings Goal</div>
+  <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
+    Name your goal to match a savings category (e.g. "Emergency Fund") so deposits
+    auto-credit it.
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
     <input id="sv-name"   class="inp" placeholder="Goal name"/>
     <input id="sv-target" class="inp" placeholder="Target amount" type="number" min="1"/>
@@ -93,12 +105,24 @@
               ? '<span style="color:var(--acc);">Goal reached! 🎉</span>'
               : '<span>' + fmt(toGo) + ' to go</span>';
 
+      // Hint: show which savings category auto-credits this goal.
+      // A goal named "Emergency Fund" is credited by transactions whose
+      // category is "Emergency Fund" (case-insensitive match).
+      var categoryHint = _getCategoryHintForGoal(goal.name);
+
       html += (
               '<div style="margin-bottom:1.25rem;">' +
 
               // Header row
               '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+              '<div>' +
               '<div style="font-size:13px;font-weight:500;">' + _escS(goal.name) + '</div>' +
+              (categoryHint
+                      ? '<div style="font-size:11px;color:var(--text2);margin-top:1px;">' +
+                      'Auto-credits from: ' + _escS(categoryHint) +
+                      '</div>'
+                      : '') +
+              '</div>' +
               '<div style="display:flex;align-items:center;gap:10px;">' +
               '<span style="font-family:var(--mono);font-size:12px;color:var(--text2);">' +
               fmt(saved) + ' / ' + fmt(target) +
@@ -230,6 +254,23 @@
     });
 
     return total;
+  }
+
+  /**
+   * _getCategoryHintForGoal(goalName)
+   *
+   * Returns the savings category name that auto-credits this goal, if one
+   * exists in AppState.categories. Returns null if no match is found.
+   *
+   * The match is case-insensitive: goal "Emergency Fund" matches category
+   * "Emergency Fund". This mirrors the server-side matching in Savings.gs.
+   */
+  function _getCategoryHintForGoal(goalName) {
+    var cats = getCategoriesByType('savings');
+    var match = cats.find(function(c) {
+      return c.name.toLowerCase() === String(goalName || '').toLowerCase();
+    });
+    return match ? match.name : null;
   }
 
   /**

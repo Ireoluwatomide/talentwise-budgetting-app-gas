@@ -90,14 +90,32 @@ function include(filename) {
 
 // ─── BOOTSTRAP DATA ───────────────────────────────────────────────────────────
 
+/**
+ * getBootstrapData()
+ *
+ * Loads all data needed for first render in a single server execution.
+ * FIXED: now loads ALL transactions (grouped by month) rather than only
+ * the current month, so Savings totals, multi-month charts, forecasts
+ * and the report tab all work correctly on first page load.
+ */
 function getBootstrapData() {
+  var now = new Date();
   var data = {
-    curYear: new Date().getFullYear(), curMonth: new Date().getMonth() + 1,
-    currency: 'NGN', darkMode: false, categories: [],
-    transactions: {}, goals: [], bills: [], savingsGoals: [],
-    debts: [], netWorthItems: [], recurring: []
+    curYear:      now.getFullYear(),
+    curMonth:     now.getMonth() + 1,
+    currency:     'NGN',
+    darkMode:     false,
+    categories:   [],
+    transactions: {},   // { 'YYYY-MM': [tx, ...] } — all months, not just current
+    goals:        [],
+    bills:        [],
+    savingsGoals: [],
+    debts:        [],
+    netWorthItems:[],
+    recurring:    []
   };
 
+  // Preferences
   if (typeof getAllPreferences === 'function') {
     try {
       var prefs = getAllPreferences();
@@ -107,19 +125,45 @@ function getBootstrapData() {
     } catch (e) { Logger.log('Bootstrap: Preferences — ' + e.message); }
   }
 
-  if (typeof getTransactionsByMonth === 'function') {
+  // ── TRANSACTIONS: load ALL months, grouped by month_key ─────────────────────
+  // This is the key fix. Previously only the current month was loaded,
+  // causing Savings "Total Saved All Time", multi-month charts, forecast
+  // averages, and the Report to all show empty/zero data until the user
+  // manually navigated to each past month.
+  if (typeof getAllTransactions === 'function') {
     try {
-      var mk = data.curYear + '-' + (data.curMonth < 10 ? '0' : '') + data.curMonth;
-      data.transactions[mk] = getTransactionsByMonth(mk);
-    } catch (e) { Logger.log('Bootstrap: Transactions — ' + e.message); }
+      var allTxs = getAllTransactions();
+
+      // Group by month_key into the same structure the client uses.
+      allTxs.forEach(function(tx) {
+        var key = tx.month_key;
+        if (!key) return;
+        if (!data.transactions[key]) data.transactions[key] = [];
+        data.transactions[key].push(tx);
+      });
+
+      Logger.log('Bootstrap: Loaded transactions for ' +
+        Object.keys(data.transactions).length + ' month(s).');
+    } catch (e) {
+      // Fall back to just current month if getAllTransactions fails
+      Logger.log('Bootstrap: getAllTransactions failed — ' + e.message + '. Falling back to current month.');
+      try {
+        var mk = data.curYear + '-' + (data.curMonth < 10 ? '0' : '') + data.curMonth;
+        var monthTxs = getTransactionsByMonth(mk);
+        data.transactions[mk] = monthTxs;
+      } catch (e2) {
+        Logger.log('Bootstrap: Transactions fallback also failed — ' + e2.message);
+      }
+    }
   }
 
-  if (typeof getAllGoals         === 'function') { try { data.goals         = getAllGoals();         } catch(e) { Logger.log('Bootstrap: Goals — '       + e.message); } }
-  if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '       + e.message); } }
-  if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '     + e.message); } }
-  if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '       + e.message); } }
-  if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '    + e.message); } }
-  if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '   + e.message); } }
+  // All other domains
+  if (typeof getAllGoals         === 'function') { try { data.goals         = getAllGoals();         } catch(e) { Logger.log('Bootstrap: Goals — '      + e.message); } }
+  if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '      + e.message); } }
+  if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
+  if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
+  if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }
+  if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '  + e.message); } }
 
   return data;
 }

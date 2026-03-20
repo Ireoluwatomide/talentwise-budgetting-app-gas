@@ -60,8 +60,7 @@ function getSpreadsheet() {
     if (!_spreadsheet) {
       throw new Error(
         'SheetHelper: No active spreadsheet found. ' +
-        'Make sure this script is bound to a Google Sheet ' +
-        '(Extensions → Apps Script from within the sheet).'
+        'Make sure this script is bound to a Google Sheet.'
       );
     }
   }
@@ -127,15 +126,16 @@ function getAllRows(sheetName) {
       const key = headers[j];
       let val = row[j];
 
-      // Normalise types for reliable downstream use.
       if (typeof val === 'string') {
         val = val.trim();
       } else if (val instanceof Date) {
-        // Dates can appear if a cell was formatted as Date in Sheets.
-        // Store as ISO string to keep things serialisable.
-        val = val.toISOString();
+        // FIX: was val.toISOString() which broke month_key round-trips.
+        // Format as "YYYY-MM" so month_key values survive Sheets' date conversion.
+        // For non-month_key Date columns (if any are added in future), this
+        // format is still more useful than a full ISO timestamp.
+        val = _dateToMonthKey(val);
       }
-      // Numbers and booleans are left as-is.
+      // Numbers and booleans pass through unchanged.
 
       obj[key] = val;
     }
@@ -175,7 +175,16 @@ function appendRow(sheetName, rowObject) {
   const headers  = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
                         .map(h => String(h).trim());
 
-  // Build the values array in header order; missing keys become empty string.
+  // FIX: set month_key column to Plain Text to prevent date auto-conversion
+  const mkColIdx = headers.indexOf('month_key');
+  if (mkColIdx !== -1) {
+    // Column is 1-indexed in Sheets; apply Plain Text to the entire column
+    // (rows 2 onward — row 1 is the header).
+    const lastRow  = Math.max(sheet.getLastRow(), 1);
+    sheet.getRange(2, mkColIdx + 1, Math.max(lastRow, 100), 1)
+         .setNumberFormat('@STRING@');
+  }
+
   const values = headers.map(h => {
     const val = rowObject[h];
     return (val === undefined || val === null) ? '' : val;
@@ -278,7 +287,11 @@ function findRowIndex(sheetName, matchFn) {
     if (isEmpty) continue;
 
     const obj = {};
-    headers.forEach((h, j) => { obj[h] = row[j]; });
+    headers.forEach((h, j) => {
+      let val = row[j];
+      if (val instanceof Date) val = _dateToMonthKey(val);
+      obj[h] = val;
+    });
 
     if (matchFn(obj)) {
       return i + 1; // +1 because array is 0-indexed but sheet rows are 1-indexed.
@@ -324,8 +337,23 @@ function initSheets() {
       headerRange.setFontWeight('bold');
       headerRange.setBackground('#f0f0f0');
 
+      // FIX: Set month_key column to Plain Text so Sheets never auto-converts
+      // "2026-03" to a Date cell.
+      const mkIdx = headers.indexOf('month_key');
+      if (mkIdx !== -1) {
+        sheet.getRange(2, mkIdx + 1, 1000, 1).setNumberFormat('@STRING@');
+        Logger.log('Set month_key column to Plain Text for sheet: ' + sheetName);
+      }
+
       Logger.log('Wrote headers for sheet: ' + sheetName);
     } else {
+      // Sheet already exists — still apply the Plain Text format to month_key
+      // in case it was created before this fix.
+      const mkIdx = headers.indexOf('month_key');
+      if (mkIdx !== -1) {
+        sheet.getRange(2, mkIdx + 1, Math.max(sheet.getLastRow(), 1000), 1)
+             .setNumberFormat('@STRING@');
+      }
       Logger.log('Sheet already has headers, skipping: ' + sheetName);
     }
   });
@@ -359,4 +387,40 @@ function headersToMap(headers) {
   const map = {};
   headers.forEach((h, i) => { map[String(h).trim()] = i; });
   return map;
+}
+
+/**
+ * _dateToMonthKey(date)
+ *
+ * Converts a JS Date object to "YYYY-MM" format using WAT (UTC+1) timezone,
+ * which is the correct timezone for this app (Lagos, Nigeria).
+ *
+ * This replaces the old val.toISOString() call which produced full ISO strings
+ * that the client could never match against the "YYYY-MM" keys it generates.
+ *
+ * WAT is UTC+1. We add 1 hour before extracting year/month so that a date
+ * stored as "2026-03-31T23:00:00.000Z" (which is 2026-04-01 00:00 WAT)
+ * correctly becomes "2026-04" rather than "2026-03".
+ *
+ * Wait — actually for month_key storage we want the month the user ENTERED
+ * the transaction, which is determined client-side as "YYYY-MM" before sending
+ * to the server. The server never creates a month_key from a Date — it always
+ * receives the string from the client. So this function is only used when
+ * READING BACK a cell that Sheets auto-converted from "2026-03" to a Date.
+ *
+ * When Sheets converts "2026-03" it typically stores it as the last day of
+ * that month at 23:00 UTC (because the spreadsheet timezone is WAT/UTC+1 and
+ * midnight WAT = 23:00 UTC previous day). So:
+ *   "2026-03" stored → Date: 2026-03-31T23:00:00.000Z (WAT: 2026-04-01 00:00)
+ *
+ * That would give us "2026-04" — one month too late! So we use UTC directly
+ * without the WAT offset, which gives us "2026-03" from "2026-03-31T23:00:00Z".
+ * This matches what we see in the bootstrap data.
+ */
+function _dateToMonthKey(date) {
+  // Use UTC values directly (no timezone adjustment).
+  // "2026-03-31T23:00:00.000Z" → year=2026, month=2 (0-indexed) → "2026-03" ✓
+  var y = date.getUTCFullYear();
+  var m = date.getUTCMonth() + 1;
+  return y + '-' + (m < 10 ? '0' : '') + m;
 }

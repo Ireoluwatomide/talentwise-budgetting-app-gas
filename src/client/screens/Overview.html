@@ -97,12 +97,18 @@
                 <input  id="tx-name-d" placeholder="Description"    class="inp"/>
                 <input  id="tx-amt-d"  placeholder="Amount"         class="inp"
                         type="number" min="0" step="any"/>
-                <select id="tx-cat-d"  class="inp"></select>
-                <select id="tx-type-d" class="inp">
+                <!--
+                  Type select comes BEFORE category so changing the type
+                  immediately filters the category options below it.
+                  onchange → syncCategoryToType() repopulates tx-cat-d.
+                -->
+                <select id="tx-type-d" class="inp"
+                        onchange="syncCategoryToType('tx-cat-d','tx-type-d')">
                     <option value="expense">Expense</option>
                     <option value="income">Income</option>
                     <option value="savings">Savings deposit</option>
                 </select>
+                <select id="tx-cat-d"  class="inp"></select>
             </div>
             <input id="tx-note-d" placeholder="Note / tag (optional)"
                    class="inp" style="margin-bottom:14px;"/>
@@ -143,12 +149,17 @@
             <input  id="tx-name-m" placeholder="Description"    class="inp"/>
             <input  id="tx-amt-m"  placeholder="Amount"         class="inp"
                     type="number" min="0" step="any"/>
-            <select id="tx-cat-m"  class="inp"></select>
-            <select id="tx-type-m" class="inp">
+            <!--
+              Type select comes BEFORE category — onchange filters the
+              category select immediately via syncCategoryToType().
+            -->
+            <select id="tx-type-m" class="inp"
+                    onchange="syncCategoryToType('tx-cat-m','tx-type-m')">
                 <option value="expense">Expense</option>
                 <option value="income">Income</option>
                 <option value="savings">Savings deposit</option>
             </select>
+            <select id="tx-cat-m"  class="inp"></select>
         </div>
         <input id="tx-note-m" placeholder="Note / tag (optional)"
                class="inp" style="margin-bottom:12px;"/>
@@ -593,10 +604,13 @@
         if (!AppState.transactions[curKey()]) AppState.transactions[curKey()] = [];
         AppState.transactions[curKey()].push(newTx);
 
-        // Client-side savings goal sync.
+        // Client-side savings goal sync — matched by CATEGORY (mirrors Savings.gs).
+        // The selected savings category (e.g. "Emergency Fund") is compared
+        // against each goal's name (case-insensitive). This keeps the client
+        // state consistent with what the server wrote without a second round-trip.
         if (type === 'savings' && AppState.savingsGoals) {
             AppState.savingsGoals = AppState.savingsGoals.map(function(g) {
-                if (g.name.toLowerCase() !== name.toLowerCase()) return g;
+                if (g.name.toLowerCase() !== category.toLowerCase()) return g;
                 var saved  = (parseFloat(g.saved_amount)  || 0) + amount;
                 var target = parseFloat(g.target_amount)  || 0;
                 if (target > 0) saved = Math.min(saved, target);
@@ -618,7 +632,9 @@
     // ─── DESKTOP MODAL ────────────────────────────────────────────────────────────
 
     function openAddTxModal() {
-        _fillSelect('tx-cat-d');
+        // Populate the category select scoped to the currently selected type.
+        syncCategoryToType('tx-cat-d', 'tx-type-d');
+
         var m = document.getElementById('add-tx-modal');
         if (!m) return;
         m.classList.add('open');
@@ -657,7 +673,9 @@
     // ─── MOBILE SHEET ─────────────────────────────────────────────────────────────
 
     function openAddTxSheet() {
-        _fillSelect('tx-cat-m');
+        // Populate the category select scoped to the currently selected type.
+        syncCategoryToType('tx-cat-m', 'tx-type-m');
+
         var s = document.getElementById('add-tx-sheet');
         if (!s) return;
         s.classList.add('open');
@@ -707,25 +725,6 @@
 
 
     // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-    /**
-     * _fillSelect(id)
-     * Populates a category <select> from AppState.categories.
-     * These are private modal selects (not the shared tx-cat / g-cat ones).
-     */
-    function _fillSelect(id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        var cur = el.value;
-        el.innerHTML = '';
-        (AppState.categories || []).forEach(function(cat) {
-            var opt = document.createElement('option');
-            opt.value = cat.name;
-            opt.textContent = cat.name;
-            el.appendChild(opt);
-        });
-        if (cur && el.querySelector('option[value="' + cur + '"]')) el.value = cur;
-    }
 
     function _esc(str) {
         return String(str || '')

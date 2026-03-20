@@ -45,8 +45,8 @@ function getUpcomingBills(daysAhead) {
   return bills
     .filter(function(bill) { return !bill.paid; })
     .map(function(bill) {
-      var dueDay     = parseInt(bill.due_day, 10);
-      var daysUntil  = dueDay >= today
+      var dueDay    = parseInt(bill.due_day, 10);
+      var daysUntil = dueDay >= today
         ? dueDay - today
         : (31 - today) + dueDay;
       return Object.assign({}, bill, { daysUntilDue: daysUntil });
@@ -124,7 +124,8 @@ function toggleBillPaid(billId) {
 function deleteBill(billId) {
   if (!billId) throw new Error('Bills.gs: billId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.BILLS, function(row) {
+  // FIX: was findRowIndex(SHEET_NAMES.BILLS, ...) — must use scoped version
+  var rowIndex = getUserFindRowIndex('BILLS', function(row) {
     return String(row.id) === String(billId);
   });
 
@@ -146,7 +147,7 @@ function deleteBill(billId) {
  * to minimise unnecessary writes.
  */
 function resetAllBillsPaid() {
-  var sheet   = getSheet(SHEET_NAMES.BILLS);
+  var sheet   = getSheet(getUserSheetName('Bills'));
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { reset: 0 };
 
@@ -195,7 +196,7 @@ function _castBill(row) {
   return {
     id:      String(row.id      || '').trim(),
     name:    String(row.name    || '').trim(),
-    amount:  parseFloat(row.amount)  || 0,
+    amount:  parseFloat(row.amount)    || 0,
     due_day: parseInt(row.due_day, 10) || 1,
     paid:    paid
   };

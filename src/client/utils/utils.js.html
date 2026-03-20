@@ -445,6 +445,8 @@
 
         if (chartTabs[tabId]) {
             setTimeout(chartTabs[tabId], 50);
+            // Still update FAB before returning.
+            if (typeof _updateFabVisibility === 'function') _updateFabVisibility();
             return;
         }
 
@@ -458,6 +460,11 @@
 
         if (renderOnSwitch[tabId]) {
             renderOnSwitch[tabId]();
+        }
+
+        // Show/hide the Add Transaction FAB based on active tab.
+        if (typeof _updateFabVisibility === 'function') {
+            _updateFabVisibility();
         }
     }
 
@@ -566,7 +573,7 @@
      * Called on boot and after adding/deleting a category.
      */
     function populateCategorySelects() {
-        var selectIds = ['tx-cat', 'g-cat', 'r-cat'];
+        var selectIds = ['tx-cat', 'g-cat', 'r-cat', 'tx-cat-d', 'tx-cat-m'];
         var cats = AppState.categories || [];
 
         selectIds.forEach(function(id) {

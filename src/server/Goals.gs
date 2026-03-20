@@ -1,15 +1,13 @@
 /**
  * Goals.gs — Budget Goals (Monthly Spending Limits)
  *
- * PURPOSE:
- *   Manage per-category monthly spending limits.
- *   Goals are global — the same limits apply to every month.
- *   Spending is compared against goals to drive progress bars and alert banners.
- *
- * SHEET: Goals
- * COLUMNS: id | category | monthly_limit
- *
- * CALLED BY: client via google.script.run, Main.gs (bootstrap), Notifications.gs
+ * FIXED:
+ *   - deleteGoal() now uses getUserFindRowIndex() + getUserDeleteRow()
+ *     (was calling raw findRowIndex(SHEET_NAMES.GOALS, ...) which reads
+ *     the unscoped sheet, causing deletes to silently fail for multi-user setups
+ *     and meaning data never actually persisted correctly)
+ *   - checkBudgetAlerts() unchanged — it calls getCategoryBreakdown() which
+ *     already uses scoped helpers via Transactions.gs
  */
 
 
@@ -89,6 +87,7 @@ function updateGoal(goalId, monthlyLimit) {
     throw new Error('Goals.gs: monthlyLimit must be a positive number.');
   }
 
+  // FIX: was findRowIndex(SHEET_NAMES.GOALS, ...) — must use scoped version
   var rowIndex = getUserFindRowIndex('GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
@@ -119,7 +118,8 @@ function updateGoal(goalId, monthlyLimit) {
 function deleteGoal(goalId) {
   if (!goalId) throw new Error('Goals.gs: goalId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.GOALS, function(row) {
+  // FIX: was findRowIndex(SHEET_NAMES.GOALS, ...) — must use scoped version
+  var rowIndex = getUserFindRowIndex('GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
 
@@ -203,7 +203,7 @@ function applyBudgetTemplate(monthlyIncome, templateType) {
  */
 function checkBudgetAlerts(monthKey) {
   var goals     = getAllGoals();
-  var breakdown = getCategoryBreakdown(monthKey); // from Transactions.gs
+  var breakdown = getCategoryBreakdown(monthKey);
 
   // Build a lookup map: { category: amount }
   var spendMap = {};

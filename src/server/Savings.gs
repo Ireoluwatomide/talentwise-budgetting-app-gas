@@ -61,8 +61,8 @@ function addSavingsGoal(name, targetAmount) {
   }
 
   var goal = {
-    id:           generateId(),
-    name:         String(name).trim(),
+    id:            generateId(),
+    name:          String(name).trim(),
     target_amount: target,
     saved_amount:  0
   };
@@ -81,7 +81,8 @@ function addSavingsGoal(name, targetAmount) {
 function deleteSavingsGoal(goalId) {
   if (!goalId) throw new Error('Savings.gs: goalId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.SAVINGS_GOALS, function(row) {
+  // FIX: was findRowIndex(SHEET_NAMES.SAVINGS_GOALS, ...) — must use scoped version
+  var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
 

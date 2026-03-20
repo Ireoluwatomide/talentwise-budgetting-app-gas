@@ -46,14 +46,14 @@ function getNetWorthSummary() {
   var liabilities = 0;
 
   items.forEach(function(item) {
-    if (item.type === 'asset')      assets      += item.amount;
-    else if (item.type === 'liability') liabilities += item.amount;
+    if (item.type === 'asset')           assets      += item.amount;
+    else if (item.type === 'liability')  liabilities += item.amount;
   });
 
   return {
-    total_assets:       assets,
-    total_liabilities:  liabilities,
-    net_worth:          assets - liabilities
+    total_assets:      assets,
+    total_liabilities: liabilities,
+    net_worth:         assets - liabilities
   };
 }
 

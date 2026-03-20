@@ -69,7 +69,15 @@ function getAllTransactions() {
  *
  * Side-effect: if type === 'savings', calls updateSavingsGoalOnDeposit()
  * in Savings.gs to automatically credit the matching savings goal.
- * This is safe to call even before Savings.gs is implemented — the
+ *
+ * MATCHING STRATEGY (updated):
+ *   The auto-credit is now matched by CATEGORY, not by transaction name.
+ *   The user selects a savings category (e.g. "Emergency Fund") from the
+ *   typed dropdown, and the goal with that same name receives the credit.
+ *   This is more reliable than name-matching because the category is
+ *   always a known value from the predefined list.
+ *
+ * This side-effect is safe to call before Savings.gs is implemented — the
  * function reference is guarded with a typeof check.
  */
 function addTransaction(monthKey, name, amount, type, category, note) {
@@ -101,17 +109,22 @@ function addTransaction(monthKey, name, amount, type, category, note) {
     name:      String(name).trim(),
     amount:    parsedAmount,
     type:      normalisedType,
-    category:  category ? String(category).trim() : 'Other',
+    category:  category ? String(category).trim() : 'Other Expense',
     note:      note     ? String(note).trim()     : ''
   };
 
   getUserAppendRow('TRANSACTIONS', tx);
 
   // ── Side-effect: credit savings goal if applicable ───────────────────────
+  // Matched by CATEGORY (e.g. "Emergency Fund") rather than by name.
+  // The category is the typed dropdown value selected by the user —
+  // it is always a known, consistent string, making it a more reliable
+  // match key than the free-text transaction name.
+  //
   // Guard with typeof so this still works before Savings.gs is deployed.
   if (normalisedType === 'savings' && typeof updateSavingsGoalOnDeposit === 'function') {
     try {
-      updateSavingsGoalOnDeposit(tx.name, tx.amount);
+      updateSavingsGoalOnDeposit(tx.category, tx.amount); // ← category, not name
     } catch (e) {
       // Log but do NOT rethrow — the transaction was saved successfully.
       // A savings goal matching failure should not roll back the transaction.
@@ -255,7 +268,7 @@ function getCategoryBreakdown(monthKey) {
 
   txs.forEach(function(tx) {
     if (tx.type !== 'expense') return;
-    var cat = tx.category || 'Other';
+    var cat = tx.category || 'Other Expense';
     totals[cat] = (totals[cat] || 0) + tx.amount;
     grandTotal  += tx.amount;
   });
@@ -359,7 +372,7 @@ function _castTransaction(row) {
     name:      String(row.name      || '').trim(),
     amount:    parseFloat(row.amount) || 0,
     type:      String(row.type      || '').trim().toLowerCase(),
-    category:  String(row.category  || 'Other').trim(),
+    category:  String(row.category  || 'Other Expense').trim(),
     note:      String(row.note      || '').trim()
   };
 }

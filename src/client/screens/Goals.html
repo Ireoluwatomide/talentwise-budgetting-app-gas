@@ -7,6 +7,10 @@
        1. Goals list with progress bars (spent vs limit per category)
        2. Add Goal form
 
+     NOTE: Goal categories are always expense-type — budget goals track
+     spending limits. The category <select> is populated with only expense
+     categories via getCategoriesByType('expense').
+
      STATE: AppState.goals, AppState.transactions (current month)
      SERVER CALLS: addGoal, deleteGoal
      ───────────────────────────────────────────────────────────────────────── -->
@@ -25,7 +29,11 @@
     <!-- ── 2. Add Goal Form ───────────────────────────────────────────────────── -->
     <div class="sec">Add Goal</div>
     <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
-        <select id="g-cat"   class="inp"><!-- filled by populateCategorySelects() --></select>
+        <!--
+          g-cat is populated by populateCategorySelects() which always
+          fills it with expense-type categories (typeId === null → 'expense').
+        -->
+        <select id="g-cat"   class="inp"></select>
         <input  id="g-limit" class="inp" type="number" min="1" placeholder="Monthly limit"/>
         <button id="btn-add-goal" onclick="addGoalForm()" class="btn-primary">
             <span class="btn-label">Add</span>
@@ -218,7 +226,7 @@
         var map = {};
         curTxs().forEach(function(tx) {
             if (tx.type !== 'expense') return;
-            var cat = tx.category || 'Other';
+            var cat = tx.category || 'Other Expense';
             map[cat] = (map[cat] || 0) + (parseFloat(tx.amount) || 0);
         });
         return map;

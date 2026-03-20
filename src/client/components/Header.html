@@ -1,291 +1,303 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Header.html — Top Bar Component
 
-     Renders:
-       1. .app-header  — the visible top bar row
-       2. #avatar-dropdown  — desktop dropdown (position:fixed, not absolute)
-       3. #dropdown-backdrop — click-outside trap for dropdown
-       4. #profile-sheet — mobile bottom sheet
+     Desktop (≥ 768px):
+       LEFT  — current screen title + subtitle
+       RIGHT — currency selector · dark/light icon · export CSV icon
+
+     Mobile (< 768px):
+       LEFT  — app label + month navigation
+       RIGHT — balance figure + avatar circle (taps open profile sheet)
+
+     Net balance removed from header.
+     Avatar dropdown (desktop) now shows only: user info + sign out.
      ───────────────────────────────────────────────────────────────────────── -->
 
-<!-- ══ 1. TOP BAR ══════════════════════════════════════════════════════════ -->
+<!-- 1. TOP BAR -->
 <div class="app-header">
 
-    <!-- LEFT: label + month nav -->
-    <div class="header-left">
-        <div class="label-caps" style="margin-bottom:4px;">Talentwise Budget Tracker</div>
-        <div style="display:flex;align-items:center;gap:6px;">
+    <!-- Desktop left: screen title + subtitle -->
+    <div class="header-screen-info">
+        <div class="header-screen-title" id="header-screen-title">Overview</div>
+        <div class="header-screen-sub"   id="header-screen-sub"></div>
+    </div>
+
+    <!-- Mobile left: app label + month nav -->
+    <div class="header-mobile-left">
+        <div class="label-caps" style="margin-bottom:4px;">Budget Tracker</div>
+        <div class="header-month-nav-row">
             <button id="btn-prev-month" onclick="prevMonth()" class="month-nav-btn" title="Previous month" aria-label="Previous month">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
             <div id="hd-month" class="header-month-label"></div>
             <button id="btn-next-month" onclick="nextMonth()" class="month-nav-btn" title="Next month" aria-label="Next month">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
             </button>
         </div>
     </div>
 
-    <!-- RIGHT: balance + avatar -->
+    <!-- RIGHT -->
     <div class="header-right">
 
-        <!-- Net Balance (always visible) -->
-        <div style="text-align:right;">
-            <div class="label-caps" style="margin-bottom:2px;">Net Balance</div>
-            <div id="hd-bal" style="font-family:var(--mono);font-size:22px;font-weight:600;color:var(--acc);"></div>
+        <!-- Desktop utility controls -->
+        <div class="header-desktop-controls">
+            <select id="currency-sel" onchange="setCurrency(this.value)" class="inp header-currency-sel" aria-label="Currency">
+                <option value="NGN">&#x20A6; NGN</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">&#x20AC; EUR</option>
+                <option value="GBP">&#xA3; GBP</option>
+            </select>
+
+            <button id="dark-toggle-btn" onclick="toggleDark()" class="header-icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
+                <svg id="dark-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                <svg id="dark-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            </button>
+
+            <button onclick="exportCSV()" class="header-icon-btn" title="Export CSV" aria-label="Export current month as CSV">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
         </div>
 
-        <!-- Avatar button — desktop opens dropdown, mobile opens sheet -->
-        <div id="hdr-avatar-wrap" style="flex-shrink:0;"></div>
+        <!-- Mobile: balance + avatar -->
+        <div class="header-mobile-right">
+            <div class="header-mobile-balance">
+                <div class="label-caps" style="margin-bottom:2px;">Balance</div>
+                <div id="hd-bal" class="header-mobile-bal-val"></div>
+            </div>
+            <div id="hdr-avatar-wrap-mobile"></div>
+        </div>
 
     </div>
 </div>
 
 
-<!-- ══ 2. DESKTOP DROPDOWN ════════════════════════════════════════════════ -->
-<!--
-  position:fixed so it escapes any overflow:hidden ancestors.
-  Top/left co-ordinates are set in JS via getBoundingClientRect().
--->
+<!-- 2. DESKTOP DROPDOWN (from sidebar footer) — user info + sign out only -->
 <div id="dropdown-backdrop" onclick="closeAvatarDropdown()" style="display:none;position:fixed;inset:0;z-index:998;"></div>
-
-<div id="avatar-dropdown" style="display:none;position:fixed;z-index:999;width:240px;background:var(--bg);border:0.5px solid var(--border2);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.14);overflow:hidden;">
-
-    <!-- User info -->
-    <div id="dd-user-info" style="padding:14px 16px;border-bottom:0.5px solid var(--border);background:var(--bg2);">
-        <!-- populated by JS -->
-    </div>
-
-    <!-- Currency -->
-    <div style="padding:10px 12px;border-bottom:0.5px solid var(--border);">
-        <div class="label-caps" style="margin-bottom:6px;padding:0 4px;">Currency</div>
-        <select id="currency-sel-dd" onchange="setCurrency(this.value)" class="inp" style="font-size:13px;">
-            <option value="NGN">₦ NGN</option>
-            <option value="USD">$ USD</option>
-            <option value="EUR">€ EUR</option>
-            <option value="GBP">£ GBP</option>
-        </select>
-    </div>
-
-    <!-- Actions -->
+<div id="avatar-dropdown" style="display:none;position:fixed;z-index:999;width:220px;background:var(--bg);border:0.5px solid var(--border2);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.14);overflow:hidden;">
+    <div id="dd-user-info" style="padding:14px 16px 12px;background:var(--bg2);border-bottom:0.5px solid var(--border);"></div>
     <div style="padding:6px 8px;">
-        <button class="dd-item" onclick="toggleDark();_syncDropdownState();">
-            <span id="dd-dark-icon" style="font-size:15px;">🌙</span>
-            <span id="dd-dark-label">Dark mode</span>
-            <span id="dd-dark-state" style="margin-left:auto;font-size:11px;color:var(--text2);">Off</span>
-        </button>
-        <button class="dd-item" onclick="exportCSV();closeAvatarDropdown();">
-            <span style="font-size:15px;">📥</span>
-            <span>Export CSV</span>
-        </button>
-        <div style="height:0.5px;background:var(--border);margin:4px 0;"></div>
         <button class="dd-item" onclick="signOut();" style="color:var(--red);">
-            <span style="font-size:15px;">🚪</span>
+            <span style="font-size:15px;">&#x1F6AA;</span>
             <span>Sign out</span>
         </button>
     </div>
 </div>
 
 
-<!-- ══ 3. MOBILE PROFILE SHEET ════════════════════════════════════════════ -->
+<!-- 3. MOBILE PROFILE SHEET -->
 <div id="profile-sheet" style="display:none;position:fixed;inset:0;z-index:400;">
     <div id="profile-sheet-backdrop" onclick="closeProfileSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);"></div>
-    <div id="profile-sheet-panel" style="position:absolute;bottom:0;left:0;right:0;background:var(--bg);border-radius:20px 20px 0 0;padding:12px 20px 32px;max-height:80vh;overflow-y:auto;">
+    <div id="profile-sheet-panel" style="position:absolute;bottom:0;left:0;right:0;background:var(--bg);border-radius:20px 20px 0 0;padding:12px 20px max(28px, env(safe-area-inset-bottom));max-height:80vh;overflow-y:auto;">
         <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px;"></div>
-
-        <!-- User info row -->
         <div id="ps-user-info" style="margin-bottom:1.25rem;"></div>
-
-        <!-- Currency -->
         <div style="margin-bottom:12px;">
             <div class="label-caps" style="margin-bottom:6px;">Currency</div>
             <select id="currency-sel-mobile" onchange="setCurrency(this.value)" class="inp" style="width:100%;">
-                <option value="NGN">₦ NGN</option>
+                <option value="NGN">&#x20A6; NGN</option>
                 <option value="USD">$ USD</option>
-                <option value="EUR">€ EUR</option>
-                <option value="GBP">£ GBP</option>
+                <option value="EUR">&#x20AC; EUR</option>
+                <option value="GBP">&#xA3; GBP</option>
             </select>
         </div>
-
-        <!-- Actions -->
         <div style="display:flex;flex-direction:column;gap:4px;">
             <button class="ps-action-btn" onclick="toggleDark();_syncSheetState();">
-                <span id="ps-dark-icon">🌙</span>
+                <span id="ps-dark-icon">&#x1F319;</span>
                 <span id="ps-dark-label">Dark mode</span>
                 <span id="ps-dark-state" style="margin-left:auto;font-size:12px;color:var(--text2);">Off</span>
             </button>
             <button class="ps-action-btn" onclick="exportCSV();closeProfileSheet();">
-                <span>📥</span><span>Export CSV</span>
-                <span style="margin-left:auto;font-size:12px;color:var(--text2);">→</span>
+                <span>&#x1F4E5;</span><span>Export CSV</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--text2);">&#x2192;</span>
             </button>
             <button class="ps-action-btn" onclick="signOut();" style="color:var(--red);margin-top:8px;">
-                <span>🚪</span><span>Sign out</span>
-                <span style="margin-left:auto;font-size:12px;color:var(--text2);">→</span>
+                <span>&#x1F6AA;</span><span>Sign out</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--text2);">&#x2192;</span>
             </button>
         </div>
     </div>
 </div>
 
 
-<!-- ══ 4. SCOPED STYLES ═══════════════════════════════════════════════════ -->
+<!-- 4. SCOPED STYLES -->
 <style>
-    /* Header layout */
-    .header-left {
+    .app-header {
         display: flex;
-        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 0.5px solid var(--border);
+        gap: 16px;
+        min-height: 56px;
     }
 
     .header-right {
         display: flex;
         align-items: center;
-        gap: 12px;
-        flex-wrap: nowrap;
-    }
-
-    /* Month nav circular buttons */
-    .month-nav-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        background: var(--bg2);
-        border: 0.5px solid var(--border);
-        cursor: pointer;
-        color: var(--text2);
-        padding: 0;
-        transition: background 0.15s, color 0.15s;
+        gap: 8px;
         flex-shrink: 0;
     }
 
-    .month-nav-btn:hover:not(:disabled) {
-        background: var(--border);
+    /* Desktop: screen title */
+    .header-screen-info { flex: 1; min-width: 0; }
+
+    .header-screen-title {
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--text);
+        line-height: 1.2;
+    }
+
+    .header-screen-sub {
+        font-size: 13px;
+        color: var(--text2);
+        margin-top: 3px;
+    }
+
+    @media (max-width: 767px) { .header-screen-info { display: none; } }
+
+    /* Desktop utility controls */
+    .header-desktop-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .header-currency-sel {
+        width: auto;
+        font-size: 12px;
+        padding: 6px 28px 6px 10px;
+        height: auto;
+        min-width: 90px;
+    }
+
+    .header-icon-btn {
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        flex-shrink: 0;
+        transition: background var(--transition), color var(--transition);
+    }
+
+    .header-icon-btn:hover {
+        background: var(--bg2);
         color: var(--text);
     }
 
-    .month-nav-btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
+    @media (max-width: 767px) { .header-desktop-controls { display: none; } }
+
+    /* Mobile left */
+    .header-mobile-left { display: none; flex-direction: column; }
+    .header-month-nav-row { display: flex; align-items: center; gap: 6px; }
+    @media (max-width: 767px) { .header-mobile-left { display: flex; } }
+
+    /* Mobile right */
+    .header-mobile-right { display: none; align-items: center; gap: 10px; }
+    @media (max-width: 767px) { .header-mobile-right { display: flex; } }
+
+    .header-mobile-balance { text-align: right; }
+    .header-mobile-bal-val { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--acc); }
+
+    /* Month nav */
+    .month-nav-btn {
+        display: flex; align-items: center; justify-content: center;
+        width: 30px; height: 30px; border-radius: 50%;
+        background: var(--bg2); border: 0.5px solid var(--border);
+        cursor: pointer; color: var(--text2); padding: 0;
+        transition: background 0.15s, color 0.15s; flex-shrink: 0;
     }
+    .month-nav-btn:hover:not(:disabled) { background: var(--border); color: var(--text); }
+    .month-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .header-month-label {
-        font-size: 18px;
-        font-weight: 500;
-        min-width: 145px;
-        text-align: center;
-        color: var(--text);
+        font-size: 18px; font-weight: 500; min-width: 145px;
+        text-align: center; color: var(--text);
     }
 
-    /* Avatar circle */
-    .hdr-avatar-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 0;
-    }
-
-    .hdr-avatar-circle {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: var(--text);
-        color: var(--bg);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        font-weight: 700;
-        font-family: var(--font);
-        user-select: none;
-        transition: opacity 0.15s;
-    }
-
-    .hdr-avatar-btn:hover .hdr-avatar-circle { opacity: 0.78; }
-
-    /* Dropdown items */
+    /* Dropdown */
     .dd-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-        background: none;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 10px;
-        font-family: var(--font);
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text);
-        cursor: pointer;
-        text-align: left;
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        background: none; border: none; border-radius: 8px;
+        padding: 10px; font-family: var(--font); font-size: 13px;
+        font-weight: 500; color: var(--text); cursor: pointer; text-align: left;
         transition: background 0.12s;
     }
-
     .dd-item:hover { background: var(--bg2); }
 
-    /* Mobile profile sheet action buttons */
+    /* Profile sheet action buttons */
     .ps-action-btn {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        width: 100%;
-        background: var(--bg2);
-        border: none;
-        border-radius: 8px;
-        padding: 14px 16px;
-        font-family: var(--font);
-        font-size: 15px;
-        font-weight: 500;
-        color: var(--text);
-        cursor: pointer;
-        text-align: left;
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        background: var(--bg2); border: none; border-radius: 8px;
+        padding: 14px 16px; font-family: var(--font); font-size: 15px;
+        font-weight: 500; color: var(--text); cursor: pointer; text-align: left;
     }
-
     .ps-action-btn:active { opacity: 0.7; }
 
-    /* Dropdown open animation */
-    @keyframes ddIn {
-        from { opacity: 0; transform: translateY(-6px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
+    @keyframes ddIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+    #avatar-dropdown.dd-open { animation: ddIn 0.15s ease; }
 
-    #avatar-dropdown.dd-open {
-        animation: ddIn 0.15s ease;
-    }
+    /* Dark mode */
+    .app.dark #avatar-dropdown     { background: #1e1e21; border-color: var(--border2); }
+    .app.dark .dd-item             { color: var(--text); }
+    .app.dark .dd-item:hover       { background: rgba(255,255,255,0.06); }
+    .app.dark #profile-sheet-panel { background: var(--bg); }
 
-    /* ── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 600px) {
-        .header-month-label {
-            font-size: 14px !important;
-            min-width: 90px !important;
-        }
-
+        .header-month-label { font-size: 15px !important; min-width: 90px !important; }
         .month-nav-btn { width: 28px !important; height: 28px !important; }
-
-        #hd-bal { font-size: 18px !important; }
+        .header-mobile-bal-val { font-size: 16px !important; }
     }
-
     @media (max-width: 390px) {
-        .header-month-label { font-size: 13px !important; min-width: 80px !important; }
+        .header-month-label { font-size: 14px !important; min-width: 80px !important; }
         .month-nav-btn { width: 26px !important; height: 26px !important; }
-        #hd-bal { font-size: 16px !important; }
+        .header-mobile-bal-val { font-size: 15px !important; }
     }
 </style>
 
 
-<!-- ══ 5. HEADER JAVASCRIPT ═══════════════════════════════════════════════ -->
+<!-- 5. HEADER JAVASCRIPT -->
 <script>
-    // ─── Master update called from renderAll() ────────────────────────────────
+
+    var SCREEN_META = {
+        overview:   function(y,m){ return { title:'Overview',    sub:monthLabel(y,m)+' \u00b7 Track income, expenses and savings' }; },
+        goals:      function(y,m){ return { title:'Goals',       sub:monthLabel(y,m)+' \u00b7 Monthly spending limits' }; },
+        bills:      function(y,m){ return { title:'Bills',       sub:'Recurring bills and due-date alerts' }; },
+        savings:    function(y,m){ return { title:'Savings',     sub:'Track your savings goals' }; },
+        debt:       function(y,m){ return { title:'Debt',        sub:'Loans, credit cards and payoff tracker' }; },
+        networth:   function(y,m){ return { title:'Net Worth',   sub:'Assets minus liabilities' }; },
+        recurring:  function(y,m){ return { title:'Recurring',   sub:'Auto-applied monthly transactions' }; },
+        templates:  function(y,m){ return { title:'Templates',   sub:'50/30/20 and 70/20/10 budget rules' }; },
+        charts:     function(y,m){ return { title:'Charts',      sub:monthLabel(y,m)+' \u00b7 Income, expenses and spending' }; },
+        categories: function(y,m){ return { title:'Categories',  sub:monthLabel(y,m)+' \u00b7 Spending by category' }; },
+        insights:   function(y,m){ return { title:'Insights',    sub:'Auto-generated spending analysis' }; },
+        forecast:   function(y,m){ return { title:'Forecast',    sub:'6-month cash flow projection' }; },
+        multimonth: function(y,m){ return { title:'Multi-Month', sub:'6-month trend and summary' }; },
+        report:     function(y,m){ return { title:'Report',      sub:'Full printable budget summary' }; },
+        settings:   function(y,m){ return { title:'Settings',    sub:'Categories, preferences and danger zone' }; }
+    };
 
     function updateHeader() {
-        // Month label
-        var el = document.getElementById('hd-month');
-        if (el) el.textContent = monthLabel(AppState.curYear, AppState.curMonth);
+        var tab = AppState.activeTab || 'overview';
+        var y = AppState.curYear;
+        var m = AppState.curMonth;
 
-        // Net balance
+        var meta = SCREEN_META[tab] ? SCREEN_META[tab](y,m) : { title: tab.charAt(0).toUpperCase()+tab.slice(1), sub:'' };
+        var titleEl = document.getElementById('header-screen-title');
+        var subEl   = document.getElementById('header-screen-sub');
+        if (titleEl) titleEl.textContent = meta.title;
+        if (subEl)   subEl.textContent   = meta.sub;
+
+        var hdMonth = document.getElementById('hd-month');
+        if (hdMonth) hdMonth.textContent = monthLabel(y, m);
+
         var stats = getMonthStats(curKey());
         var balEl = document.getElementById('hd-bal');
         if (balEl) {
@@ -293,44 +305,50 @@
             balEl.style.color = stats.bal >= 0 ? 'var(--acc)' : 'var(--red)';
         }
 
-        // Sync all currency selectors (dropdown + mobile sheet only now)
-        ['currency-sel-dd', 'currency-sel-mobile'].forEach(function(id) {
+        ['currency-sel','currency-sel-mobile'].forEach(function(id){
             var s = document.getElementById(id);
             if (s) s.value = AppState.currency;
         });
 
-        // Avatar button
-        _buildAvatar();
-
-        // Sync dropdown + sheet labels
-        _syncDropdownState();
+        _syncDarkIcon();
+        _buildMobileAvatar();
         _syncSheetState();
+
+        if (typeof updateSidebar === 'function') updateSidebar();
     }
 
+    function _syncDarkIcon() {
+        var sun  = document.getElementById('dark-icon-sun');
+        var moon = document.getElementById('dark-icon-moon');
+        var on   = AppState.darkMode;
+        if (sun)  sun.style.display  = on ? 'block' : 'none';
+        if (moon) moon.style.display = on ? 'none'  : 'block';
+    }
 
-    // ─── Build avatar button ──────────────────────────────────────────────────
-
-    function _buildAvatar() {
-        var wrap = document.getElementById('hdr-avatar-wrap');
+    function _buildMobileAvatar() {
+        var wrap = document.getElementById('hdr-avatar-wrap-mobile');
         if (!wrap) return;
-
         var user     = (typeof window !== 'undefined' && window.__USER__) ? window.__USER__ : null;
-        var name     = user && user.display_name ? user.display_name
-            : user && user.email        ? user.email.split('@')[0]
-                : '';
-        var initials = name ? name.slice(0, 2).toUpperCase() : '?';
-
-        var isMobile = window.innerWidth <= 600;
-        var handler  = isMobile ? 'openProfileSheet()' : 'toggleAvatarDropdown(event)';
-
+        var name     = user && user.display_name ? user.display_name : user && user.email ? user.email.split('@')[0] : '';
+        var initials = name ? name.slice(0,2).toUpperCase() : '?';
         wrap.innerHTML = (
-            '<button class="hdr-avatar-btn" onclick="' + handler + '" ' +
-            'id="avatar-trigger-btn" aria-label="Account menu">' +
-            '<div class="hdr-avatar-circle">' + initials + '</div>' +
-            '</button>'
+            '<button onclick="openProfileSheet()" aria-label="Account menu" ' +
+            'style="display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;padding:0;">' +
+            '<div style="width:32px;height:32px;border-radius:50%;background:var(--text);color:var(--bg);' +
+            'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:var(--font);">' +
+            initials + '</div></button>'
         );
-
-        // Populate dropdown user info
+        var psUser = document.getElementById('ps-user-info');
+        if (psUser && name) {
+            psUser.innerHTML = (
+                '<div style="display:flex;align-items:center;gap:12px;">' +
+                '<div style="width:44px;height:44px;border-radius:50%;background:var(--text);color:var(--bg);' +
+                'display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">' + initials + '</div>' +
+                '<div><div style="font-size:16px;font-weight:600;">' + _hesc(name) + '</div>' +
+                (user && user.email ? '<div style="font-size:13px;color:var(--text2);">' + _hesc(user.email) + '</div>' : '') +
+                '</div></div>'
+            );
+        }
         var ddUser = document.getElementById('dd-user-info');
         if (ddUser && name) {
             ddUser.innerHTML = (
@@ -338,45 +356,23 @@
                 (user && user.email ? '<div style="font-size:12px;color:var(--text2);">' + _hesc(user.email) + '</div>' : '')
             );
         }
-
-        // Populate sheet user info
-        var psUser = document.getElementById('ps-user-info');
-        if (psUser && name) {
-            psUser.innerHTML = (
-                '<div style="display:flex;align-items:center;gap:12px;">' +
-                '<div class="hdr-avatar-circle" style="width:44px;height:44px;font-size:16px;">' + initials + '</div>' +
-                '<div>' +
-                '<div style="font-size:16px;font-weight:600;">' + _hesc(name) + '</div>' +
-                (user && user.email ? '<div style="font-size:13px;color:var(--text2);">' + _hesc(user.email) + '</div>' : '') +
-                '</div></div>'
-            );
-        }
     }
-
-
-    // ─── Dropdown open / close ────────────────────────────────────────────────
 
     function toggleAvatarDropdown(event) {
         if (event) event.stopPropagation();
-
         var dd = document.getElementById('avatar-dropdown');
         var bk = document.getElementById('dropdown-backdrop');
         if (!dd) return;
-
-        var isOpen = dd.style.display === 'block';
-
-        if (isOpen) {
+        if (dd.style.display === 'block') {
             closeAvatarDropdown();
         } else {
-            // Position using fixed coords from the trigger button
-            var btn = document.getElementById('avatar-trigger-btn');
+            var btn = document.getElementById('sidebar-avatar-trigger');
             if (btn) {
                 var r = btn.getBoundingClientRect();
-                dd.style.top   = (r.bottom + 8) + 'px';
-                dd.style.right = (window.innerWidth - r.right) + 'px';
-                dd.style.left  = 'auto';
+                dd.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+                dd.style.left   = r.left + 'px';
+                dd.style.top = 'auto'; dd.style.right = 'auto';
             }
-            _syncDropdownState();
             dd.style.display = 'block';
             dd.classList.add('dd-open');
             if (bk) bk.style.display = 'block';
@@ -390,40 +386,9 @@
         if (bk) bk.style.display = 'none';
     }
 
-    // Close on Escape
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeAvatarDropdown();
+        if (e.key === 'Escape') { closeAvatarDropdown(); closeProfileSheet(); }
     });
-
-
-    // ─── Sync state labels ────────────────────────────────────────────────────
-
-    function _syncDropdownState() {
-        var on = AppState.darkMode;
-        var icon  = document.getElementById('dd-dark-icon');
-        var label = document.getElementById('dd-dark-label');
-        var state = document.getElementById('dd-dark-state');
-        var sel   = document.getElementById('currency-sel-dd');
-        if (icon)  icon.textContent  = on ? '☀️' : '🌙';
-        if (label) label.textContent = on ? 'Light mode' : 'Dark mode';
-        if (state) state.textContent = on ? 'On' : 'Off';
-        if (sel)   sel.value         = AppState.currency;
-    }
-
-    function _syncSheetState() {
-        var on = AppState.darkMode;
-        var icon  = document.getElementById('ps-dark-icon');
-        var label = document.getElementById('ps-dark-label');
-        var state = document.getElementById('ps-dark-state');
-        var sel   = document.getElementById('currency-sel-mobile');
-        if (icon)  icon.textContent  = on ? '☀️' : '🌙';
-        if (label) label.textContent = on ? 'Light mode' : 'Dark mode';
-        if (state) state.textContent = on ? 'On' : 'Off';
-        if (sel)   sel.value         = AppState.currency;
-    }
-
-
-    // ─── Mobile sheet open / close ────────────────────────────────────────────
 
     function openProfileSheet() {
         _syncSheetState();
@@ -436,23 +401,28 @@
         if (sheet) { sheet.style.display = 'none'; document.body.style.overflow = ''; }
     }
 
-
-    // ─── Month nav loading state ──────────────────────────────────────────────
+    function _syncSheetState() {
+        var on = AppState.darkMode;
+        var icon  = document.getElementById('ps-dark-icon');
+        var label = document.getElementById('ps-dark-label');
+        var state = document.getElementById('ps-dark-state');
+        var sel   = document.getElementById('currency-sel-mobile');
+        if (icon)  icon.textContent  = on ? '\u2600\uFE0F' : '\uD83C\uDF19';
+        if (label) label.textContent = on ? 'Light mode' : 'Dark mode';
+        if (state) state.textContent = on ? 'On' : 'Off';
+        if (sel)   sel.value         = AppState.currency;
+    }
 
     function setMonthNavLoading(isLoading) {
-        ['btn-prev-month', 'btn-next-month'].forEach(function(id) {
+        ['btn-prev-month','btn-next-month'].forEach(function(id){
             var btn = document.getElementById(id);
             if (btn) btn.disabled = isLoading;
         });
     }
 
-
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-
     function _hesc(str) {
-        return String(str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
+
+    // close script tag via string concat to avoid GAS template parser issues
 </script>

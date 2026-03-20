@@ -454,12 +454,23 @@
             return;
         }
 
-        // Non-chart tabs that still need a fresh render on switch.
+        // Non-chart tabs that need a fresh render on switch.
+        // Every data tab is listed here so navigating to it always draws
+        // the current AppState — even on first load after a page refresh,
+        // when renderAll() only rendered the default 'overview' tab.
         var renderOnSwitch = {
-            'report':     function() { if (typeof renderReport     === 'function') renderReport();     },
-            'insights':   function() { if (typeof renderInsights   === 'function') renderInsights();   },
-            'categories': function() { if (typeof renderCategories === 'function') renderCategories(); },
-            'templates':  function() { if (typeof renderTemplates  === 'function') renderTemplates();  }
+            'overview':   function() { if (typeof renderOverview    === 'function') renderOverview();    },
+            'goals':      function() { if (typeof renderGoals       === 'function') renderGoals();       },
+            'bills':      function() { if (typeof renderBills       === 'function') renderBills();       },
+            'savings':    function() { if (typeof renderSavings     === 'function') renderSavings();     },
+            'debt':       function() { if (typeof renderDebt        === 'function') renderDebt();        },
+            'networth':   function() { if (typeof renderNetWorth    === 'function') renderNetWorth();    },
+            'recurring':  function() { if (typeof renderRecurring   === 'function') renderRecurring();   },
+            'settings':   function() { if (typeof renderSettings    === 'function') renderSettings();    },
+            'report':     function() { if (typeof renderReport      === 'function') renderReport();      },
+            'insights':   function() { if (typeof renderInsights    === 'function') renderInsights();    },
+            'categories': function() { if (typeof renderCategories  === 'function') renderCategories();  },
+            'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   }
         };
 
         if (renderOnSwitch[tabId]) {

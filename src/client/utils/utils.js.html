@@ -2,28 +2,22 @@
     // =============================================================================
     // utils.js.html — Shared Client-Side Utilities
     //
-    // Included via <?!= include('src/client/utils/utils.js') ?> in Index.html.
-    // This file is the single source of truth for all client-side shared state
-    // and utility functions. Screen files depend on this — it must load first.
-    //
     // SECTIONS:
     //   1.  Constants
     //   2.  AppState
     //   3.  Server bridge (callServer / callServerSilent)
-    //   4.  Loading state helpers (setButtonLoading, withButtonLoading,
-    //         initAllBtnStructures)
-    //   5.  Formatters (fmt, pct, monthLabel, monthKey, curKey, parseMonthKey)
+    //   4.  Loading state helpers
+    //   5.  Formatters
     //   6.  Toast notifications
     //   7.  Tab router (switchTab)
-    //   8.  Month navigation (prevMonth, nextMonth, applyRecurringForMonth)
-    //   9.  Category utilities (getCategoryColor, getCategoriesByType,
-    //         populateCategorySelects, syncCategoryToType)
-    //   10. Month stats helpers (getMonthStats, curTxs)
-    //   11. DOM helpers ($, setHTML, getVal, clearInputs)
-    //   12. Chart helpers (destroyChart, registerChart, getChartDefaults)
-    //   13. Dark mode & currency (toggleDark, setCurrency)
-    //   14. CSV (exportCSV, importCSV)
-    //   15. renderAll — master re-render dispatcher
+    //   8.  Month navigation  ← REWRITTEN: optimistic render + background sync
+    //   9.  Category utilities
+    //   10. Month stats helpers  ← PATCHED: null-safe curTxs / getMonthStats
+    //   11. DOM helpers
+    //   12. Chart helpers
+    //   13. Dark mode & currency
+    //   14. CSV export / import
+    //   15. renderAll
     // =============================================================================
 
 
@@ -264,12 +258,12 @@
         var num = parseFloat(amount);
         if (isNaN(num)) num = 0;
 
-        var rate    = FX_RATES[AppState.currency]   || 1;
-        var symbol  = FX_SYMBOLS[AppState.currency] || '₦';
+        var rate      = FX_RATES[AppState.currency]   || 1;
+        var symbol    = FX_SYMBOLS[AppState.currency] || '₦';
         var converted = Math.round(num * rate);
 
-        var isNeg = converted < 0;
-        var abs   = Math.abs(converted);
+        var isNeg     = converted < 0;
+        var abs       = Math.abs(converted);
         var formatted = symbol + abs.toLocaleString();
 
         return isNeg ? '-' + formatted : formatted;
@@ -368,13 +362,12 @@
             error:   { bg: '#D85A30', color: '#fff' },
             info:    { bg: '#1a1a1a', color: '#f5f5f3' }
         };
-        var style = styles[type] || styles.info;
+        var style           = styles[type] || styles.info;
         toast.style.background = style.bg;
-        toast.style.color       = style.color;
-        toast.textContent       = message;
-        toast.style.opacity     = '1';
+        toast.style.color      = style.color;
+        toast.textContent      = message;
+        toast.style.opacity    = '1';
 
-        // Clear any existing dismiss timer.
         if (_toastTimer) clearTimeout(_toastTimer);
         _toastTimer = setTimeout(function() {
             toast.style.opacity = '0';
@@ -477,7 +470,6 @@
             renderOnSwitch[tabId]();
         }
 
-        // Show/hide the Add Transaction FAB based on active tab.
         if (typeof _updateFabVisibility === 'function') {
             _updateFabVisibility();
         }
@@ -485,16 +477,40 @@
 
 
     // ─── 8. MONTH NAVIGATION ──────────────────────────────────────────────────────
+    //
+    // OPTIMISTIC PATTERN — how it works:
+    //
+    //   OLD (blocking):
+    //     click → await server fetch → await recurring apply → renderAll()
+    //     Result: 6–10s freeze before anything appears
+    //
+    //   NEW (optimistic):
+    //     click → update month counters → renderAll() immediately (~0ms)
+    //             ↳ shows cached data if visited before, or empty state otherwise
+    //     then  → background fetch if not cached → re-render on arrival
+    //     then  → background recurring apply → re-render only if new rows added
+    //
+    //   Stale-result guard: after every async step, checks curKey() === key
+    //   before writing to AppState. Rapid navigation discards out-of-order results.
+    //
+    //   Debounce: _monthNavInFlight prevents overlapping calls from double-taps.
+    //   It resets immediately after the optimistic render so the user can keep
+    //   tapping — but one background sync per navigation is still enforced.
+
+    // null sentinel: means "this month is known to be uncached, fetch in progress"
+    // undefined:     means "this month has never been referenced"
+    // []:            means "fetched from server, no transactions"
+    // [{...}, ...]:  means "fetched from server, has transactions"
+
+    var _monthNavInFlight = false;
 
     /**
      * prevMonth()
-     * Steps back one month, fetches transactions for that month if not cached,
-     * applies recurring entries, then re-renders.
+     * Steps back one calendar month with an instant optimistic render.
      */
     async function prevMonth() {
-        // Disable nav buttons during the server round-trip to prevent
-        // overlapping navigations if the user taps quickly.
-        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(true);
+        if (_monthNavInFlight) return;
+        _monthNavInFlight = true;
 
         AppState.curMonth -= 1;
         if (AppState.curMonth < 1) {
@@ -502,19 +518,23 @@
             AppState.curYear  -= 1;
         }
 
-        await _ensureMonthLoaded(curKey());
-        await applyRecurringForMonth();
-        renderAll();
+        // Step 1: render NOW from whatever is already in cache.
+        _renderMonthInstant();
 
-        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(false);
+        // Step 2: release debounce so rapid taps still work responsively.
+        _monthNavInFlight = false;
+
+        // Step 3: background sync — fetch + recurring (non-blocking).
+        _backgroundSyncMonth(curKey());
     }
 
     /**
      * nextMonth()
-     * Steps forward one month, same pattern as prevMonth.
+     * Steps forward one calendar month with an instant optimistic render.
      */
     async function nextMonth() {
-        if (typeof setMonthNavLoading === 'function') setMonthNavLoading(true);
+        if (_monthNavInFlight) return;
+        _monthNavInFlight = true;
 
         AppState.curMonth += 1;
         if (AppState.curMonth > 12) {
@@ -522,21 +542,181 @@
             AppState.curYear  += 1;
         }
 
-        await _ensureMonthLoaded(curKey());
-        await applyRecurringForMonth();
-        renderAll();
+        _renderMonthInstant();
+        _monthNavInFlight = false;
+        _backgroundSyncMonth(curKey());
+    }
 
+    /**
+     * _renderMonthInstant()
+     *
+     * Renders the new month from AppState immediately — zero server calls.
+     *
+     * If this month has never been loaded (undefined), we set it to null
+     * (fetch-in-progress sentinel) so curTxs() returns [] and the UI shows
+     * "No transactions this month" cleanly rather than stale data or errors.
+     *
+     * If it was previously fetched (array), it renders the real cached data
+     * instantly — repeat visits to past months feel completely synchronous.
+     */
+    function _renderMonthInstant() {
+        var key = curKey();
+
+        if (AppState.transactions[key] === undefined) {
+            // Never seen this month — mark as pending fetch so curTxs() returns [].
+            AppState.transactions[key] = null;
+        }
+
+        // Show a subtle "syncing" dot on the month label when fetching.
+        _setMonthSyncIndicator(AppState.transactions[key] === null);
+
+        // Disable nav buttons only during the instant render (< 50ms), not the
+        // background fetch, so the user can keep tapping through months freely.
         if (typeof setMonthNavLoading === 'function') setMonthNavLoading(false);
+
+        renderAll();
+        if (typeof updateSidebar === 'function') updateSidebar();
+    }
+
+    /**
+     * _backgroundSyncMonth(key)
+     *
+     * Runs entirely in the background without blocking the UI.
+     *
+     * Phase 1 — fetch transactions if not cached:
+     *   Checks for null sentinel (pending) or missing key. If cached ([]),
+     *   skips the fetch entirely. On arrival, stale-result guard ensures
+     *   we only update AppState if the user hasn't navigated away.
+     *
+     * Phase 2 — apply recurring:
+     *   Calls applyRecurringToMonth silently. If it created new rows (applied > 0),
+     *   re-fetches the month to pick them up, then re-renders.
+     */
+    async function _backgroundSyncMonth(key) {
+        var needsFetch = !AppState.transactions[key] ||
+            !Array.isArray(AppState.transactions[key]);
+
+        // ── Phase 1: fetch transactions ────────────────────────────────────────
+        if (needsFetch) {
+            try {
+                var txs = await callServerSilent('getTransactionsByMonth', key);
+
+                // Stale-result guard — user may have navigated away while we waited.
+                if (curKey() !== key) return;
+
+                AppState.transactions[key] = txs || [];
+                _setMonthSyncIndicator(false);
+                renderAll();
+                if (typeof updateSidebar === 'function') updateSidebar();
+            } catch(e) {
+                if (curKey() === key) {
+                    // On error, leave as empty so UI shows "No transactions" rather
+                    // than staying in a loading state forever.
+                    AppState.transactions[key] = [];
+                    _setMonthSyncIndicator(false);
+                    renderAll();
+                }
+                console.warn('Month fetch failed for', key, e);
+                return; // Don't attempt recurring if the fetch itself failed.
+            }
+        }
+
+        // ── Phase 2: apply recurring (fire-and-forget) ─────────────────────────
+        if (!AppState.recurring || AppState.recurring.length === 0) return;
+
+        try {
+            var result = await callServerSilent('applyRecurringToMonth', key);
+
+            // Only re-fetch if the server actually added new rows.
+            if (result && result.applied > 0 && curKey() === key) {
+                var updatedTxs = await callServerSilent('getTransactionsByMonth', key);
+                if (curKey() === key) {
+                    AppState.transactions[key] = updatedTxs || [];
+                    renderAll();
+                }
+            }
+        } catch(e) {
+            // Recurring failures are non-fatal — transactions were already loaded.
+            console.warn('Recurring apply failed for', key, e);
+        }
+    }
+
+    /**
+     * _setMonthSyncIndicator(isSyncing)
+     *
+     * Shows/hides a subtle pulsing dot next to the month label to signal
+     * that a background fetch is in progress. Gives the user a visual cue
+     * without blocking interaction.
+     *
+     * Targets both the header month label (#hd-month) and the sidebar label
+     * (#sidebar-month-label) if present.
+     */
+    function _setMonthSyncIndicator(isSyncing) {
+        var dotId = 'month-sync-dot';
+        var dot   = document.getElementById(dotId);
+
+        if (!isSyncing) {
+            if (dot) dot.style.opacity = '0';
+            return;
+        }
+
+        // Create the dot once and reuse it.
+        if (!dot) {
+            dot = document.createElement('span');
+            dot.id = dotId;
+            dot.style.cssText = [
+                'display:inline-block',
+                'width:6px',
+                'height:6px',
+                'border-radius:50%',
+                'background:var(--acc)',
+                'margin-left:6px',
+                'vertical-align:middle',
+                'opacity:0',
+                'transition:opacity 0.2s ease',
+                'animation:monthSyncPulse 1.2s ease-in-out infinite'
+            ].join(';');
+
+            // Inject the keyframe once.
+            if (!document.getElementById('month-sync-style')) {
+                var style = document.createElement('style');
+                style.id = 'month-sync-style';
+                style.textContent = [
+                    '@keyframes monthSyncPulse {',
+                    '  0%, 100% { opacity: 0.25; transform: scale(0.85); }',
+                    '  50%       { opacity: 1;    transform: scale(1.1);  }',
+                    '}'
+                ].join('');
+                document.head.appendChild(style);
+            }
+
+            // Attach to the header month label if it exists.
+            var hdMonth = document.getElementById('hd-month');
+            if (hdMonth && hdMonth.parentElement) {
+                hdMonth.parentElement.appendChild(dot);
+            } else {
+                document.body.appendChild(dot); // fallback
+            }
+        }
+
+        dot.style.opacity = '1';
+    }
+
+    /**
+     * applyRecurringForMonth()
+     * Public alias kept for backward compatibility (called from Recurring.html).
+     */
+    async function applyRecurringForMonth() {
+        await _backgroundSyncMonth(curKey());
     }
 
     /**
      * _ensureMonthLoaded(key)
-     * Fetches transactions for the given month from the server if they're
-     * not already cached in AppState. Prevents redundant server calls.
+     * Kept for backward compatibility. Delegates to the background sync path.
      */
     async function _ensureMonthLoaded(key) {
-        if (AppState.transactions[key] !== undefined) return; // already loaded (even if empty)
-
+        if (AppState.transactions[key] && Array.isArray(AppState.transactions[key])) return;
+        AppState.transactions[key] = null;
         try {
             var txs = await callServerSilent('getTransactionsByMonth', key);
             AppState.transactions[key] = txs || [];
@@ -545,62 +725,24 @@
         }
     }
 
-    /**
-     * applyRecurringForMonth()
-     * Silently applies recurring transactions to the current month.
-     * Merges results into AppState without duplicating existing entries.
-     */
-    async function applyRecurringForMonth() {
-        if (!AppState.recurring || AppState.recurring.length === 0) return;
-
-        try {
-            var result = await callServerSilent('applyRecurringToMonth', curKey());
-            if (result && result.applied > 0) {
-                // Re-fetch the month to get the newly applied transactions.
-                var txs = await callServerSilent('getTransactionsByMonth', curKey());
-                AppState.transactions[curKey()] = txs || [];
-            }
-        } catch(e) {
-            // Non-fatal — recurring apply failure should not break month navigation.
-            console.warn('applyRecurringForMonth failed:', e);
-        }
-    }
-
 
     // ─── 9. CATEGORY UTILITIES ────────────────────────────────────────────────────
 
-    /**
-     * getCategoryColor(categoryName)
-     * Returns the hex color for a category, falling back to 'Other' grey.
-     */
     function getCategoryColor(categoryName) {
-        var cats = AppState.categories || [];
+        var cats  = AppState.categories || [];
         var match = cats.find(function(c) {
             return c.name.toLowerCase() === String(categoryName).toLowerCase();
         });
         return match ? match.color : '#888780';
     }
 
-    /**
-     * getCategoriesByType(type)
-     *
-     * Returns only the categories from AppState matching the given type.
-     * type: 'income' | 'expense' | 'savings'
-     *
-     * Falls back to the full list if type is unrecognised, so the UI
-     * never ends up with an empty category select.
-     */
     function getCategoriesByType(type) {
         var cats = AppState.categories || [];
         var norm = String(type || '').toLowerCase();
 
-        if (CATEGORY_TYPES.indexOf(norm) === -1) {
-            // Unknown type — return everything as a safe fallback.
-            return cats;
-        }
+        if (CATEGORY_TYPES.indexOf(norm) === -1) return cats;
 
         var filtered = cats.filter(function(c) { return c.type === norm; });
-        // Extra safety: if filtering somehow yields nothing, show all.
         return filtered.length > 0 ? filtered : cats;
     }
 
@@ -633,7 +775,7 @@
         ];
 
         pairs.forEach(function(pair) {
-            var catEl  = document.getElementById(pair.catId);
+            var catEl = document.getElementById(pair.catId);
             if (!catEl) return;
 
             // Determine which type to filter by.
@@ -675,36 +817,42 @@
      * value; falls back to the first option if it's no longer present.
      */
     function _fillCategorySelect(selectEl, type) {
-        var current = selectEl.value; // preserve selection
+        var current = selectEl.value;
         var cats    = getCategoriesByType(type);
 
         selectEl.innerHTML = '';
         cats.forEach(function(cat) {
-            var opt = document.createElement('option');
+            var opt         = document.createElement('option');
             opt.value       = cat.name;
             opt.textContent = cat.name;
             selectEl.appendChild(opt);
         });
 
-        // Restore previous selection if still valid for this type.
         if (current && selectEl.querySelector('option[value="' + current + '"]')) {
             selectEl.value = current;
         }
-        // Otherwise the browser defaults to the first option, which is correct.
     }
 
 
     // ─── 10. MONTH STATS HELPERS ──────────────────────────────────────────────────
+    //
+    // PATCH: both helpers are now null-safe.
+    //
+    // AppState.transactions[key] can be:
+    //   undefined  — never referenced (treated as empty)
+    //   null       — fetch in progress (treated as empty, dot is showing)
+    //   []         — fetched, no transactions
+    //   [{...}]    — fetched, has transactions
+    //
+    // Using `|| []` would coerce null → [] correctly, but being explicit
+    // with Array.isArray() makes the intent clear and guards against any
+    // accidental non-array value that could sneak in.
 
-    /**
-     * getMonthStats(key)
-     * Computes income/expenses/savings/balance for a given month key
-     * from the client-side AppState cache.
-     */
     function getMonthStats(key) {
-        var txs = AppState.transactions[key] || [];
-        var inc = 0, exp = 0, sav = 0;
+        var raw = AppState.transactions[key];
+        var txs = (raw && Array.isArray(raw)) ? raw : [];
 
+        var inc = 0, exp = 0, sav = 0;
         txs.forEach(function(tx) {
             var amt = parseFloat(tx.amount) || 0;
             if      (tx.type === 'income')  inc += amt;
@@ -715,21 +863,15 @@
         return { inc: inc, exp: exp, sav: sav, bal: inc - exp - sav };
     }
 
-    /**
-     * curTxs()
-     * Shorthand: returns the transactions array for the current month.
-     */
     function curTxs() {
-        return AppState.transactions[curKey()] || [];
+        var raw = AppState.transactions[curKey()];
+        return (raw && Array.isArray(raw)) ? raw : [];
     }
 
 
     // ─── 11. DOM HELPERS ──────────────────────────────────────────────────────────
 
-    /** $(id) — shorthand for document.getElementById */
-    function $(id) {
-        return document.getElementById(id);
-    }
+    function $(id) { return document.getElementById(id); }
 
     /**
      * setHTML(id, html)
@@ -738,10 +880,7 @@
      */
     function setHTML(id, html) {
         var el = document.getElementById(id);
-        if (!el) {
-            console.warn('setHTML: element #' + id + ' not found');
-            return;
-        }
+        if (!el) { console.warn('setHTML: element #' + id + ' not found'); return; }
         el.innerHTML = html;
     }
 
@@ -800,24 +939,21 @@
      */
     function getChartDefaults() {
         return {
-            responsive: true,
+            responsive:          true,
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false }
             },
             scales: {
                 x: {
-                    grid: { display: false },
-                    ticks: {
-                        color: '#888',
-                        font: { size: 11 }
-                    }
+                    grid:  { display: false },
+                    ticks: { color: '#888', font: { size: 11 } }
                 },
                 y: {
-                    grid: { color: 'rgba(128,128,128,0.1)' },
+                    grid:  { color: 'rgba(128,128,128,0.1)' },
                     ticks: {
                         color: '#888',
-                        font: { size: 11 },
+                        font:  { size: 11 },
                         callback: function(v) {
                             var symbol = FX_SYMBOLS[AppState.currency] || '₦';
                             var rate   = FX_RATES[AppState.currency]   || 1;
@@ -868,7 +1004,7 @@
     }
 
 
-    // ─── 14. Export CSV ──────────────────────────────────────────────────────────────────
+    // ─── 14. CSV ──────────────────────────────────────────────────────────────────
 
     /**
      * exportCSV()
@@ -891,9 +1027,9 @@
             var url      = URL.createObjectURL(blob);
             var filename = 'budget_' + curKey() + '.csv';
 
-            var a      = document.createElement('a');
-            a.href     = url;
-            a.download = filename;
+            var a           = document.createElement('a');
+            a.href          = url;
+            a.download      = filename;
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
@@ -908,7 +1044,7 @@
             showToast('Exported ' + filename, 'success');
 
         } catch (e) {
-            // Error toast shown by callServer's failure handler.
+            // Error toast shown by callServer.
         }
     }
 
@@ -932,8 +1068,7 @@
         // Reset the input so the same file can be re-selected if needed.
         event.target.value = '';
 
-        var reader = new FileReader();
-
+        var reader    = new FileReader();
         reader.onload = function(e) {
             var csvText = e.target.result;
 
@@ -960,9 +1095,7 @@
                             showToast(msg, imported > 0 ? 'success' : 'info');
                         });
                 })
-                .catch(function() {
-                    // Error toast shown by callServer's failure handler.
-                });
+                .catch(function() {});
         };
 
         reader.onerror = function() {
@@ -973,7 +1106,7 @@
     }
 
 
-    // ─── 16. RENDER ALL ───────────────────────────────────────────────────────────
+    // ─── 15. RENDER ALL ───────────────────────────────────────────────────────────
 
     /**
      * renderAll()
@@ -1008,9 +1141,7 @@
             'report':     function() { if (typeof renderReport      === 'function') renderReport();      },
             'insights':   function() { if (typeof renderInsights    === 'function') renderInsights();    },
             'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   },
-            // Chart tabs: let switchTab() handle the 50ms delay.
-            // renderAll() itself does NOT re-render chart tabs to avoid canvas flicker.
-            'charts':     function() { /* rendered by switchTab */ },
+            'charts':     function() { /* rendered by switchTab — avoids canvas flicker */ },
             'multimonth': function() { /* rendered by switchTab */ },
             'forecast':   function() { /* rendered by switchTab */ }
         };

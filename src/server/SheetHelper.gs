@@ -32,7 +32,7 @@ const SHEET_NAMES = {
  */
 const SHEET_HEADERS = {
   Transactions:  ['id', 'month_key', 'name', 'amount', 'type', 'category', 'note'],
-  Goals:         ['id', 'category', 'monthly_limit'],
+  Goals:         ['id', 'month_key', 'category', 'monthly_limit'],
   Bills:         ['id', 'name', 'amount', 'due_day', 'paid'],
   SavingsGoals:  ['id', 'name', 'target_amount', 'saved_amount'],
   Debts:         ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate'],
@@ -424,3 +424,56 @@ function _dateToMonthKey(date) {
   var m = date.getUTCMonth() + 1;
   return y + '-' + (m < 10 ? '0' : '') + m;
 }
+
+/**
+ * reinitGoalsSheet()
+ *
+ * One-time migration helper.
+ * Run this ONCE from the Apps Script editor after deploying this branch.
+ *
+ * What it does:
+ *   1. Deletes all data rows in the user's Goals sheet (preserves header row)
+ *   2. Rewrites the header row with the new 4-column schema
+ *   3. Applies Plain Text format to the month_key column (col 2) so Sheets
+ *      never auto-converts "2026-03" to a Date cell
+ *
+ * Safe to run multiple times — it clears and rewrites the header each time.
+ */
+function reinitGoalsSheet() {
+  var email = Session.getActiveUser().getEmail();
+  if (!email) {
+    Logger.log('reinitGoalsSheet: No active user — run this while signed in.');
+    return;
+  }
+
+  var userKey   = getCurrentUserKey();
+  var sheetName = userKey + ':Goals';
+  var ss        = getSpreadsheet();
+  var sheet     = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    Logger.log('reinitGoalsSheet: Sheet "' + sheetName + '" not found — creating it.');
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  // Wipe everything.
+  sheet.clearContents();
+
+  // Write new headers.
+  var newHeaders = ['id', 'month_key', 'category', 'monthly_limit'];
+  sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
+  sheet.getRange(1, 1, 1, newHeaders.length).setFontWeight('bold');
+  sheet.getRange(1, 1, 1, newHeaders.length).setBackground('#f0f0f0');
+
+  // Apply Plain Text to month_key column (column 2) so Sheets never
+  // auto-converts "2026-03" to a Date object.
+  sheet.getRange(2, 2, 1000, 1).setNumberFormat('@STRING@');
+
+  SpreadsheetApp.flush();
+
+  Logger.log(
+    'reinitGoalsSheet: Done. Sheet "' + sheetName + '" cleared and ' +
+    'reinitialized with schema: [' + newHeaders.join(', ') + ']'
+  );
+}
+

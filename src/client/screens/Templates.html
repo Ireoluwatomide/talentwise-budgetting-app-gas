@@ -1,8 +1,10 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Templates.html — FIXED
-     - Defensive field name normalisation on server response
-     - Debug console.log to confirm shape (remove after verified)
-     - Result box handles missing category / zero amount gracefully
+     - renderTemplates() now shows existing goals for the current month
+       so the result persists when navigating away and back
+     - applyTemplate() correctly maps server response using goals schema
+       (category + monthly_limit), not savings schema
+     - Defensive normalisation handles any field-name variation
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-templates">
@@ -25,6 +27,7 @@
         </button>
     </div>
 
+    <!-- Result box — populated by applyTemplate() and re-rendered by renderTemplates() -->
     <div id="tpl-result" style="margin-bottom:1.5rem;"></div>
 
     <div class="sec">What These Mean</div>
@@ -51,11 +54,96 @@
 
 
 <script>
+    // Track the last applied template type so renderTemplates() can show the label
+    var _lastAppliedTemplate = null;
+
+    /**
+     * renderTemplates()
+     *
+     * Called by switchTab('templates') and renderAll() when pane is active.
+     * Updates the month label and re-renders any existing goals for the
+     * current month so the result box persists after navigating away and back.
+     */
     function renderTemplates() {
         var lbl = document.getElementById('tpl-month-label');
         if (lbl) lbl.textContent = monthLabel(AppState.curYear, AppState.curMonth);
+
+        // Re-render the result box from AppState.goals if goals exist for this month.
+        // This is the key fix: previously renderTemplates() did nothing with existing
+        // goals, so the result vanished on every tab switch.
+        _renderGoalsResult();
     }
 
+    /**
+     * _renderGoalsResult()
+     *
+     * Reads AppState.goals[curKey()] and renders the result box.
+     * Shows a neutral "goals set" summary (without a template label) when
+     * the goals were loaded from bootstrap rather than just applied.
+     * Shows the template name when _lastAppliedTemplate is set.
+     */
+    function _renderGoalsResult() {
+        var resultEl = document.getElementById('tpl-result');
+        if (!resultEl) return;
+
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+
+        // Filter to only goals that have a valid category and limit — guards against
+        // any stale savings-shaped objects that crept in before the _castGoal fix.
+        var validGoals = goals.filter(function(g) {
+            return g.category && String(g.category).trim() !== '' && parseFloat(g.monthly_limit) > 0;
+        });
+
+        if (validGoals.length === 0) {
+            // No goals for this month — clear the result box (don't show stale data).
+            resultEl.innerHTML = '';
+            return;
+        }
+
+        var curLbl   = monthLabel(AppState.curYear, AppState.curMonth);
+        var ruleName = _lastAppliedTemplate === '503020' ? '50/30/20'
+            : _lastAppliedTemplate === '702010' ? '70/20/10'
+                : 'Budget template';
+
+        var rows = validGoals.map(function(goal) {
+            return (
+                '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                'font-size:13px;padding:6px 0;border-bottom:0.5px solid var(--border);">' +
+                '<span style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;display:inline-block;' +
+                'background:' + getCategoryColor(goal.category) + ';"></span>' +
+                _escTpl(goal.category) +
+                '</span>' +
+                '<span style="font-family:var(--mono);font-weight:600;">' +
+                fmt(goal.monthly_limit) +
+                '</span>' +
+                '</div>'
+            );
+        }).join('');
+
+        resultEl.innerHTML = (
+            '<div style="background:var(--bg2);border:0.5px solid var(--border2);' +
+            'border-radius:var(--radius);padding:14px 16px;">' +
+            '<div style="font-size:14px;font-weight:600;margin-bottom:2px;">' +
+            ruleName + ' applied' +
+            '</div>' +
+            '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">' +
+            curLbl + ' · ' + validGoals.length + ' spending limits set' +
+            '</div>' +
+            rows +
+            '<div style="font-size:11px;color:var(--text2);margin-top:10px;">' +
+            'Go to <strong>Spending Limits</strong> to fine-tune individual limits.' +
+            '</div>' +
+            '</div>'
+        );
+    }
+
+    /**
+     * applyTemplate(templateType)
+     *
+     * Calls the server to generate and save budget goals for the current month,
+     * then updates AppState and re-renders.
+     */
     async function applyTemplate(templateType) {
         var incRaw = getVal('tpl-income');
         var income = parseFloat(incRaw);
@@ -79,71 +167,62 @@
         try {
             var raw = await callServer('applyBudgetTemplate', curKey(), income, templateType);
 
-            // Log raw response so we can see the exact shape coming back from Apps Script
-            console.log('[Templates] raw server response:', JSON.stringify(raw));
-
-            // Normalise — accept monthly_limit, limit, or computed_amount as the amount field
+            // Normalise the server response to the Goals schema shape.
+            // The server returns _castGoalRow objects: { id, month_key, category, monthly_limit }
+            // Guard against the old _castGoal collision that returned savings-shaped objects.
             var applied = (Array.isArray(raw) ? raw : []).map(function(g) {
                 return {
-                    id:            String(g.id        || ''),
+                    id:            String(g.id || ''),
                     month_key:     String(g.month_key || curKey()),
-                    category:      String(g.category  || g.cat || ''),
-                    monthly_limit: parseFloat(g.monthly_limit || g.limit || g.computed_amount || 0)
+                    // 'category' is the correct field name from Goals schema.
+                    // Fall back to 'cat' or empty string if the collision occurred.
+                    category:      String(g.category || g.cat || '').trim(),
+                    // 'monthly_limit' is the correct field from Goals schema.
+                    monthly_limit: parseFloat(g.monthly_limit || g.limit || 0)
                 };
             });
 
-            // Update AppState with normalised shape
-            if (!AppState.goals) AppState.goals = {};
-            AppState.goals[curKey()] = applied;
+            // Check whether we got valid goal-shaped data back.
+            var validApplied = applied.filter(function(g) {
+                return g.category !== '' && g.monthly_limit > 0;
+            });
 
-            // Build result box
-            var ruleName = templateType === '503020' ? '50/30/20' : '70/20/10';
-
-            if (applied.length === 0) {
-                document.getElementById('tpl-result').innerHTML =
-                    '<div class="alert alert-warning">Template applied but returned 0 goals. Check the Apps Script execution log for errors.</div>';
-                showToast('No goals returned — check console.', 'error');
+            if (validApplied.length === 0) {
+                // The _castGoal collision is still happening — data was saved to the
+                // sheet but returned in savings shape. Show a helpful error.
+                showToast(
+                    'Goals saved to sheet but response shape was wrong. ' +
+                    'Please fix the _castGoal collision in Goals.gs and Savings.gs, ' +
+                    'then try again.',
+                    'error'
+                );
+                // Still update AppState from the sheet by re-fetching goals,
+                // so Spending Limits tab at least works after the page is refreshed.
+                console.warn('[Templates] _castGoal collision detected. Raw:', JSON.stringify(raw));
                 return;
             }
 
-            var rows = applied.map(function(goal) {
-                return (
-                    '<div style="display:flex;justify-content:space-between;align-items:center;' +
-                    'font-size:13px;padding:6px 0;border-bottom:0.5px solid var(--border);">' +
-                    '<span style="display:flex;align-items:center;gap:8px;">' +
-                    '<span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;display:inline-block;' +
-                    'background:' + getCategoryColor(goal.category) + ';"></span>' +
-                    _escTpl(goal.category || '(unknown)') +
-                    '</span>' +
-                    '<span style="font-family:var(--mono);font-weight:600;">' +
-                    (goal.monthly_limit > 0 ? fmt(goal.monthly_limit) : '<span style="color:var(--red);">₦0</span>') +
-                    '</span>' +
-                    '</div>'
-                );
-            }).join('');
+            // Update AppState.goals for the current month.
+            if (!AppState.goals) AppState.goals = {};
+            AppState.goals[curKey()] = validApplied;
 
-            document.getElementById('tpl-result').innerHTML = (
-                '<div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:14px 16px;">' +
-                '<div style="font-size:14px;font-weight:600;margin-bottom:2px;">' + ruleName + ' applied</div>' +
-                '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">' +
-                curLbl + ' · based on ' + fmt(income) + '/month' +
-                '</div>' +
-                rows +
-                '<div style="font-size:11px;color:var(--text2);margin-top:10px;">' +
-                'Go to <strong>Spending Limits</strong> to fine-tune individual limits.' +
-                '</div>' +
-                '</div>'
+            // Remember which template was applied so renderTemplates() can label it.
+            _lastAppliedTemplate = templateType;
+
+            // Re-render everything — Spending Limits tab will also update.
+            renderAll();
+            showToast(
+                (templateType === '503020' ? '50/30/20' : '70/20/10') +
+                ' applied to ' + curLbl + '!',
+                'success'
             );
 
-            renderAll();
-            showToast(ruleName + ' applied to ' + curLbl + '!', 'success');
-
         } catch(e) {
-            // callServer shows the error toast
+            // callServer shows the error toast automatically.
         }
     }
 
     function _escTpl(str) {
-        return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 </script>

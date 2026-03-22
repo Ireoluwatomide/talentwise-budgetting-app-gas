@@ -1,6 +1,17 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Overview.html — Main Dashboard Screen
-     CSV Import moved into Add Transaction modal/sheet (removed from inline area).
+
+     GUARDRAIL FLOW (new):
+       When a user tries to add an EXPENSE transaction for a category that
+       has no spending limit set for the current month, the transaction is
+       NOT saved. Instead, an interruption modal/sheet appears that:
+         1. Explains why (no limit = no budget = flying blind)
+         2. Shows a pre-filled "Set Limit" mini-form (category locked)
+         3. On "Add Limit & Continue" — saves the goal, then asks the user
+            to confirm they still want to add the original transaction
+         4. On "Skip & Save Anyway" (de-emphasised) — saves the transaction
+            without a limit (escape hatch for edge cases)
+         5. On "Cancel" — drops everything, no goal, no transaction
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane active" id="pane-overview">
@@ -25,6 +36,23 @@
         </div>
     </div>
 
+    <!-- ── No-income banner (shown when no income recorded this month) ──────── -->
+    <div id="ov-no-income-banner" style="display:none;margin-bottom:1rem;">
+        <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
+                    border-radius:var(--radius);padding:10px 14px;font-size:13px;line-height:1.5;
+                    display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:16px;flex-shrink:0;line-height:1.4;">💡</span>
+            <span style="color:var(--text);">
+                <strong style="color:var(--amber);">No income recorded yet for this month.</strong>
+                Add your salary or other income first — it helps your budget limits and forecasts
+                reflect reality.
+                <button onclick="_dismissNoIncomeBanner()" style="background:none;border:none;
+                        cursor:pointer;color:var(--text2);font-size:11px;margin-left:8px;
+                        text-decoration:underline;padding:0;font-family:var(--font);">Dismiss</button>
+            </span>
+        </div>
+    </div>
+
     <!-- ── 2. Section header: "Transactions" + Add button ────────────────────── -->
     <div class="ov-section-hdr">
         <span class="sec" style="margin:0;">Transactions</span>
@@ -45,8 +73,6 @@
 
     <!-- ── 4. Pagination ─────────────────────────────────────────────────────── -->
     <div id="tx-pagination"></div>
-
-    <!-- CSV import removed from here — now lives inside the Add Transaction modal/sheet -->
 
 </div><!-- /#pane-overview -->
 
@@ -86,7 +112,6 @@
                 <span class="btn-label">Add Transaction</span>
                 <span class="btn-spinner"></span>
             </button>
-            <!-- CSV import — desktop modal -->
             <div style="text-align:center;">
                 <label class="btn-sm" style="cursor:pointer;display:inline-block;">
                     Import CSV instead
@@ -141,7 +166,6 @@
             <span class="btn-label">Add Transaction</span>
             <span class="btn-spinner"></span>
         </button>
-        <!-- CSV import — mobile sheet -->
         <div style="text-align:center;">
             <label class="btn-sm" style="cursor:pointer;display:inline-block;">
                 Import CSV instead
@@ -150,6 +174,233 @@
                        style="display:none;"/>
             </label>
         </div>
+    </div>
+</div>
+
+
+<!-- ══ NO-GOAL INTERRUPTION MODAL (desktop) ══════════════════════════════ -->
+<!--
+  Shown when user tries to add an expense with no spending limit for
+  the selected category. Transaction is held pending, not saved.
+  User must either set a limit first or explicitly skip.
+-->
+<div id="no-goal-modal" role="dialog" aria-modal="true" aria-label="Set Spending Limit">
+    <div id="no-goal-modal-backdrop" onclick="_noGoalCancel()"></div>
+    <div id="no-goal-modal-panel">
+
+        <!-- Header -->
+        <div class="atx-modal-header" style="border-bottom:0.5px solid var(--border);">
+            <div>
+                <div class="atx-modal-title">No Spending Limit Set</div>
+                <div style="font-size:12px;color:var(--text2);margin-top:2px;">
+                    Set one first, then continue with your transaction.
+                </div>
+            </div>
+            <button class="atx-modal-close" onclick="_noGoalCancel()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="atx-modal-body">
+
+            <!-- Context: what was the pending transaction? -->
+            <div id="ng-pending-summary" style="
+                background:var(--bg2);border:0.5px solid var(--border);
+                border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;
+                font-size:13px;line-height:1.5;">
+                <!-- populated by _openNoGoalInterrupt() -->
+            </div>
+
+            <!-- Explanation -->
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px;">
+                You're about to record an expense under
+                <strong id="ng-cat-display" style="color:var(--text);"></strong>,
+                but there's no spending limit for this category in
+                <strong id="ng-month-display" style="color:var(--text);"></strong>.
+                A limit lets you track how much of your budget you've used.
+            </div>
+
+            <!-- Set limit form -->
+            <div style="margin-bottom:6px;">
+                <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                               text-transform:uppercase;color:var(--text2);
+                               display:block;margin-bottom:5px;">Monthly Limit for
+                    <span id="ng-cat-label"></span>
+                </label>
+                <!-- Category is locked — shown as read-only pill -->
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                    <div style="flex:1;background:var(--bg2);border:0.5px solid var(--border);
+                                border-radius:var(--radius);padding:9px 11px;font-size:13px;
+                                color:var(--text2);display:flex;align-items:center;gap:8px;">
+                        <span id="ng-cat-dot" style="width:8px;height:8px;border-radius:50%;
+                               flex-shrink:0;display:inline-block;"></span>
+                        <span id="ng-cat-locked"></span>
+                        <span style="font-size:10px;margin-left:auto;
+                                     background:var(--border);border-radius:3px;
+                                     padding:1px 5px;color:var(--text2);">locked</span>
+                    </div>
+                </div>
+                <input id="ng-limit-input" class="inp" type="number" min="1"
+                       placeholder="Enter monthly limit (e.g. 50000)"
+                       style="margin-bottom:4px;"/>
+                <div style="font-size:11px;color:var(--text2);">
+                    This limit applies only to <span id="ng-month-hint"></span>.
+                </div>
+            </div>
+
+            <!-- Primary action -->
+            <button id="btn-ng-save" onclick="_noGoalSaveAndContinue()"
+                    class="btn-primary" style="width:100%;margin-top:14px;margin-bottom:10px;">
+                <span class="btn-label">Add Limit &amp; Continue</span>
+                <span class="btn-spinner"></span>
+            </button>
+
+            <!-- Secondary actions row -->
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <button onclick="_noGoalCancel()"
+                        style="background:none;border:none;cursor:pointer;
+                               font-size:12px;color:var(--text2);font-family:var(--font);
+                               padding:4px 0;">
+                    Cancel
+                </button>
+                <button onclick="_noGoalSkipAndSave()"
+                        style="background:none;border:none;cursor:pointer;
+                               font-size:12px;color:var(--text2);font-family:var(--font);
+                               padding:4px 0;text-decoration:underline;"
+                        title="Save the transaction without setting a spending limit">
+                    Skip &amp; save anyway
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ NO-GOAL INTERRUPTION SHEET (mobile) ═══════════════════════════════ -->
+<div id="no-goal-sheet">
+    <div id="no-goal-sheet-backdrop" onclick="_noGoalCancel()"></div>
+    <div id="no-goal-sheet-panel">
+        <div id="no-goal-sheet-handle"></div>
+
+        <div class="atx-modal-title" style="margin-bottom:3px;">No Spending Limit Set</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">
+            Set one first, then continue with your transaction.
+        </div>
+
+        <div id="ng-pending-summary-m" style="
+            background:var(--bg2);border:0.5px solid var(--border);
+            border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;
+            font-size:13px;line-height:1.5;"></div>
+
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
+            No spending limit for
+            <strong id="ng-cat-display-m" style="color:var(--text);"></strong>
+            in <strong id="ng-month-display-m" style="color:var(--text);"></strong>.
+        </div>
+
+        <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                       text-transform:uppercase;color:var(--text2);
+                       display:block;margin-bottom:5px;">Monthly Limit for
+            <span id="ng-cat-label-m"></span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <div style="flex:1;background:var(--bg2);border:0.5px solid var(--border);
+                        border-radius:var(--radius);padding:9px 11px;font-size:13px;
+                        color:var(--text2);display:flex;align-items:center;gap:8px;">
+                <span id="ng-cat-dot-m" style="width:8px;height:8px;border-radius:50%;
+                       flex-shrink:0;display:inline-block;"></span>
+                <span id="ng-cat-locked-m"></span>
+                <span style="font-size:10px;margin-left:auto;background:var(--border);
+                             border-radius:3px;padding:1px 5px;color:var(--text2);">locked</span>
+            </div>
+        </div>
+        <input id="ng-limit-input-m" class="inp" type="number" min="1"
+               placeholder="Enter monthly limit (e.g. 50000)"
+               style="margin-bottom:4px;"/>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:14px;">
+            Applies only to <span id="ng-month-hint-m"></span>.
+        </div>
+
+        <button id="btn-ng-save-m" onclick="_noGoalSaveAndContinue()"
+                class="btn-primary" style="width:100%;margin-bottom:10px;">
+            <span class="btn-label">Add Limit &amp; Continue</span>
+            <span class="btn-spinner"></span>
+        </button>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <button onclick="_noGoalCancel()"
+                    style="background:none;border:none;cursor:pointer;
+                           font-size:12px;color:var(--text2);font-family:var(--font);
+                           padding:4px 0;">
+                Cancel
+            </button>
+            <button onclick="_noGoalSkipAndSave()"
+                    style="background:none;border:none;cursor:pointer;
+                           font-size:12px;color:var(--text2);font-family:var(--font);
+                           padding:4px 0;text-decoration:underline;">
+                Skip &amp; save anyway
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ CONFIRM-TRANSACTION MODAL (shown after limit is set) ══════════════ -->
+<!--
+  After the spending limit is saved, this confirmation asks: do you still
+  want to add the original transaction?
+-->
+<div id="confirm-tx-modal" role="dialog" aria-modal="true" aria-label="Confirm Transaction">
+    <div id="confirm-tx-modal-backdrop" onclick="_confirmTxDecline()"></div>
+    <div id="confirm-tx-modal-panel">
+
+        <!-- Success indicator -->
+        <div style="text-align:center;padding:20px 20px 0;">
+            <div style="width:48px;height:48px;border-radius:50%;background:rgba(29,158,117,0.12);
+                        display:flex;align-items:center;justify-content:center;
+                        margin:0 auto 12px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                     stroke="var(--acc)" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">
+                Spending limit saved!
+            </div>
+            <div id="ctm-limit-confirmation" style="font-size:13px;color:var(--text2);
+                 line-height:1.5;margin-bottom:20px;"></div>
+        </div>
+
+        <!-- Pending transaction recap -->
+        <div style="margin:0 20px 16px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                        text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
+                Your pending transaction
+            </div>
+            <div id="ctm-tx-recap" style="
+                background:var(--bg2);border:0.5px solid var(--border);
+                border-radius:var(--radius);padding:12px 14px;font-size:13px;
+                line-height:1.6;"></div>
+        </div>
+
+        <!-- Actions -->
+        <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;">
+            <button id="btn-ctm-yes" onclick="_confirmTxProceed()"
+                    class="btn-primary" style="width:100%;">
+                <span class="btn-label">Yes, Add Transaction</span>
+                <span class="btn-spinner"></span>
+            </button>
+            <button onclick="_confirmTxDecline()"
+                    class="btn-sm" style="width:100%;text-align:center;">
+                No, cancel the transaction
+            </button>
+        </div>
+
     </div>
 </div>
 
@@ -231,8 +482,8 @@
     }
 
 
-    /* ── Desktop modal ───────────────────────────────────────────────────── */
-    #add-tx-modal {
+    /* ── Desktop modal (shared with Goals modal) ─────────────────────────── */
+    #add-tx-modal, #no-goal-modal, #confirm-tx-modal {
         display: none;
         position: fixed;
         inset: 0;
@@ -241,9 +492,9 @@
         justify-content: center;
         padding: 1rem;
     }
-    #add-tx-modal.open { display: flex; }
+    #add-tx-modal.open, #no-goal-modal.open, #confirm-tx-modal.open { display: flex; }
 
-    #add-tx-modal-backdrop {
+    #add-tx-modal-backdrop, #no-goal-modal-backdrop, #confirm-tx-modal-backdrop {
         position: absolute;
         inset: 0;
         background: rgba(0,0,0,0.45);
@@ -251,7 +502,7 @@
         -webkit-backdrop-filter: blur(2px);
     }
 
-    #add-tx-modal-panel {
+    #add-tx-modal-panel, #no-goal-modal-panel, #confirm-tx-modal-panel {
         position: relative;
         background: var(--bg);
         border: 0.5px solid var(--border2);
@@ -262,6 +513,7 @@
         animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
         overflow: hidden;
     }
+
     @keyframes atxModalIn {
         from { opacity:0; transform:translateY(10px) scale(0.97); }
         to   { opacity:1; transform:translateY(0)    scale(1);    }
@@ -270,7 +522,7 @@
     .atx-modal-header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        align-items: flex-start;
         padding: 16px 18px 14px;
         border-bottom: 0.5px solid var(--border);
     }
@@ -300,9 +552,13 @@
 
     .atx-modal-body { padding: 16px 18px 20px; }
 
-    @media (max-width: 600px) { #add-tx-modal { display: none !important; } }
+    @media (max-width: 600px) {
+        #add-tx-modal, #no-goal-modal, #confirm-tx-modal { display: none !important; }
+    }
 
-    .app.dark #add-tx-modal-panel { background: var(--bg); }
+    .app.dark #add-tx-modal-panel,
+    .app.dark #no-goal-modal-panel,
+    .app.dark #confirm-tx-modal-panel { background: var(--bg); }
 
 
     /* ── Mobile FAB ──────────────────────────────────────────────────────── */
@@ -335,44 +591,49 @@
     }
 
 
-    /* ── Mobile bottom sheet ─────────────────────────────────────────────── */
-    #add-tx-sheet {
+    /* ── Mobile bottom sheets ────────────────────────────────────────────── */
+    #add-tx-sheet, #no-goal-sheet {
         display: none;
         position: fixed;
         inset: 0;
         z-index: 350;
     }
-    #add-tx-sheet.open { display: block; }
+    #add-tx-sheet.open, #no-goal-sheet.open { display: block; }
 
-    #add-tx-sheet-backdrop {
+    #add-tx-sheet-backdrop, #no-goal-sheet-backdrop {
         position: absolute;
         inset: 0;
         background: rgba(0,0,0,0.4);
     }
 
-    #add-tx-sheet-panel {
+    #add-tx-sheet-panel, #no-goal-sheet-panel {
         position: absolute;
         bottom: 0; left: 0; right: 0;
         background: var(--bg);
         border-radius: 20px 20px 0 0;
         padding: 12px 20px max(28px, env(safe-area-inset-bottom));
-        max-height: 88vh;
+        max-height: 92vh;
         overflow-y: auto;
         animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
     }
+
     @keyframes atxSheetUp {
         from { transform: translateY(100%); }
         to   { transform: translateY(0); }
     }
 
-    #add-tx-sheet-handle {
+    #add-tx-sheet-handle, #no-goal-sheet-handle {
         width: 36px; height: 4px;
         background: var(--border2);
         border-radius: 2px;
         margin: 0 auto 16px;
     }
 
-    .app.dark #add-tx-sheet-panel { background: var(--bg); }
+    .app.dark #add-tx-sheet-panel,
+    .app.dark #no-goal-sheet-panel { background: var(--bg); }
+
+    /* No-goal sheet appears above add-tx-sheet z-index */
+    #no-goal-sheet { z-index: 360; }
 
 </style>
 
@@ -387,6 +648,9 @@
         if (AppState._txPgKey === undefined) AppState._txPgKey = null;
     }
 
+    // Tracks whether the no-income banner has been dismissed this session.
+    var _noIncomeBannerDismissed = false;
+
 
     // ─── RENDER ──────────────────────────────────────────────────────────────────
 
@@ -394,6 +658,7 @@
         _syncMetrics();
         _renderTxPage();
         _updateFabVisibility();
+        _checkNoIncomeBanner();
     }
 
     function _syncMetrics() {
@@ -408,6 +673,33 @@
         upd('ov-exp', fmt(s.exp), 'var(--red)');
         upd('ov-sav', fmt(s.sav), 'var(--blue)');
         upd('ov-rem', fmt(s.bal), s.bal >= 0 ? 'var(--acc)' : 'var(--red)');
+    }
+
+    /**
+     * _checkNoIncomeBanner()
+     *
+     * Shows a soft amber banner when no income has been recorded for the
+     * current month AND the user hasn't dismissed it this session.
+     * Only shown on the Overview pane — it disappears as soon as income exists.
+     */
+    function _checkNoIncomeBanner() {
+        var bannerEl = document.getElementById('ov-no-income-banner');
+        if (!bannerEl) return;
+
+        if (_noIncomeBannerDismissed) {
+            bannerEl.style.display = 'none';
+            return;
+        }
+
+        var s = getMonthStats(curKey());
+        // Show banner only when there's genuinely zero income this month.
+        bannerEl.style.display = s.inc === 0 ? 'block' : 'none';
+    }
+
+    function _dismissNoIncomeBanner() {
+        _noIncomeBannerDismissed = true;
+        var bannerEl = document.getElementById('ov-no-income-banner');
+        if (bannerEl) bannerEl.style.display = 'none';
     }
 
     function _renderTxPage() {
@@ -515,6 +807,25 @@
     }
 
 
+    // ─── GUARD: check if expense category has a spending limit ───────────────────
+
+    /**
+     * _expenseNeedsGoalCheck(type, category)
+     *
+     * Returns true if we should interrupt and ask the user to set a limit.
+     * Conditions: type is 'expense' AND no goal exists for this category
+     * in the current month.
+     */
+    function _expenseNeedsGoalCheck(type, category) {
+        if (type !== 'expense') return false;
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+        var hasGoal = goals.some(function(g) {
+            return g.category.toLowerCase() === String(category).toLowerCase();
+        });
+        return !hasGoal;
+    }
+
+
     // ─── SHARED SUBMIT ────────────────────────────────────────────────────────────
 
     function _validateTx(name, amtRaw, type) {
@@ -574,6 +885,14 @@
         var cat  = getVal('tx-cat-d');
         var note = getVal('tx-note-d');
         if (!_validateTx(name, amt, type)) return;
+
+        // ── GUARDRAIL: check for missing spending limit ────────────────────────
+        if (_expenseNeedsGoalCheck(type, cat)) {
+            closeAddTxModal();
+            _openNoGoalInterrupt(name, parseFloat(amt), type, cat, note);
+            return; // do NOT save yet
+        }
+
         await withButtonLoading(btn, async function() {
             try {
                 await _submitTx(name, parseFloat(amt), type, cat, note);
@@ -611,6 +930,14 @@
         var cat  = getVal('tx-cat-m');
         var note = getVal('tx-note-m');
         if (!_validateTx(name, amt, type)) return;
+
+        // ── GUARDRAIL: check for missing spending limit ────────────────────────
+        if (_expenseNeedsGoalCheck(type, cat)) {
+            closeAddTxSheet();
+            _openNoGoalInterrupt(name, parseFloat(amt), type, cat, note);
+            return; // do NOT save yet
+        }
+
         await withButtonLoading(btn, async function() {
             try {
                 await _submitTx(name, parseFloat(amt), type, cat, note);
@@ -621,7 +948,12 @@
     }
 
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') { closeAddTxModal(); closeAddTxSheet(); }
+        if (e.key === 'Escape') {
+            closeAddTxModal();
+            closeAddTxSheet();
+            _closeNoGoalInterrupt();
+            _closeConfirmTxModal();
+        }
     });
 
 
@@ -630,6 +962,261 @@
     function _updateFabVisibility() {
         var fab = document.getElementById('fab-add-tx');
         if (fab) fab.classList.toggle('fab-visible', AppState.activeTab === 'overview');
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // NO-GOAL INTERRUPTION FLOW
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    // Holds the pending transaction details while the user sets a limit.
+    var _pendingTx = null;
+
+    /**
+     * _openNoGoalInterrupt(name, amount, type, category, note)
+     *
+     * Stashes the pending transaction and opens the interruption UI.
+     * On desktop: modal. On mobile: bottom sheet.
+     */
+    function _openNoGoalInterrupt(name, amount, type, category, note) {
+        _pendingTx = { name: name, amount: amount, type: type, category: category, note: note };
+
+        var curLabel  = monthLabel(AppState.curYear, AppState.curMonth);
+        var catColor  = getCategoryColor(category);
+        var amtFormatted = fmt(amount);
+
+        var summaryHtml = (
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+            'display:inline-block;background:' + catColor + ';"></span>' +
+            '<div>' +
+            '<div style="font-weight:500;">' + _esc(name) + '</div>' +
+            '<div style="font-size:12px;color:var(--text2);">' +
+            _esc(category) + ' &middot; ' +
+            '<span style="font-family:var(--mono);color:var(--red);">' + amtFormatted + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>'
+        );
+
+        var isMobile = window.innerWidth <= 600;
+
+        if (isMobile) {
+            // Populate sheet
+            var el = function(id) { return document.getElementById(id); };
+            if (el('ng-pending-summary-m'))   el('ng-pending-summary-m').innerHTML   = summaryHtml;
+            if (el('ng-cat-display-m'))       el('ng-cat-display-m').textContent     = category;
+            if (el('ng-month-display-m'))     el('ng-month-display-m').textContent   = curLabel;
+            if (el('ng-cat-label-m'))         el('ng-cat-label-m').textContent       = category;
+            if (el('ng-cat-dot-m'))           el('ng-cat-dot-m').style.background    = catColor;
+            if (el('ng-cat-locked-m'))        el('ng-cat-locked-m').textContent      = category;
+            if (el('ng-month-hint-m'))        el('ng-month-hint-m').textContent      = curLabel;
+            if (el('ng-limit-input-m'))       el('ng-limit-input-m').value           = '';
+
+            var sheet = el('no-goal-sheet');
+            if (sheet) {
+                sheet.classList.add('open');
+                document.body.style.overflow = 'hidden';
+                setTimeout(function() { if (el('ng-limit-input-m')) el('ng-limit-input-m').focus(); }, 300);
+            }
+        } else {
+            // Populate modal
+            var el = function(id) { return document.getElementById(id); };
+            if (el('ng-pending-summary'))   el('ng-pending-summary').innerHTML  = summaryHtml;
+            if (el('ng-cat-display'))       el('ng-cat-display').textContent    = category;
+            if (el('ng-month-display'))     el('ng-month-display').textContent  = curLabel;
+            if (el('ng-cat-label'))         el('ng-cat-label').textContent      = category;
+            if (el('ng-cat-dot'))           el('ng-cat-dot').style.background   = catColor;
+            if (el('ng-cat-locked'))        el('ng-cat-locked').textContent     = category;
+            if (el('ng-month-hint'))        el('ng-month-hint').textContent     = curLabel;
+            if (el('ng-limit-input'))       el('ng-limit-input').value          = '';
+
+            var modal = el('no-goal-modal');
+            if (modal) {
+                modal.classList.add('open');
+                document.body.style.overflow = 'hidden';
+                setTimeout(function() { if (el('ng-limit-input')) el('ng-limit-input').focus(); }, 220);
+            }
+        }
+    }
+
+    function _closeNoGoalInterrupt() {
+        var modal = document.getElementById('no-goal-modal');
+        var sheet = document.getElementById('no-goal-sheet');
+        if (modal) modal.classList.remove('open');
+        if (sheet) sheet.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    /**
+     * _noGoalSaveAndContinue()
+     *
+     * Called when the user clicks "Add Limit & Continue".
+     * 1. Validates the limit input.
+     * 2. Saves the goal via server.
+     * 3. Closes the interruption UI.
+     * 4. Opens the confirm-transaction modal.
+     */
+    async function _noGoalSaveAndContinue() {
+        if (!_pendingTx) return;
+
+        var isMobile  = window.innerWidth <= 600;
+        var limitRaw  = isMobile ? getVal('ng-limit-input-m') : getVal('ng-limit-input');
+        var limitVal  = parseFloat(limitRaw);
+
+        if (!limitRaw || isNaN(limitVal) || limitVal <= 0) {
+            showToast('Please enter a valid spending limit.', 'error');
+            var inp = document.getElementById(isMobile ? 'ng-limit-input-m' : 'ng-limit-input');
+            if (inp) inp.focus();
+            return;
+        }
+
+        var btn = document.getElementById(isMobile ? 'btn-ng-save-m' : 'btn-ng-save');
+
+        await withButtonLoading(btn, async function() {
+            try {
+                // Save the goal
+                var newGoal = await callServer('addGoal', curKey(), _pendingTx.category, limitVal);
+
+                // Update AppState.goals
+                if (!AppState.goals) AppState.goals = {};
+                if (!AppState.goals[curKey()]) AppState.goals[curKey()] = [];
+                var alreadyExists = false;
+                AppState.goals[curKey()] = AppState.goals[curKey()].map(function(g) {
+                    if (g.category.toLowerCase() === _pendingTx.category.toLowerCase()) {
+                        alreadyExists = true; return newGoal;
+                    }
+                    return g;
+                });
+                if (!alreadyExists) AppState.goals[curKey()].push(newGoal);
+
+                _closeNoGoalInterrupt();
+
+                // Open confirmation modal
+                _openConfirmTxModal(limitVal);
+
+            } catch(e) {
+                // callServer shows the toast
+            }
+        });
+    }
+
+    /**
+     * _noGoalSkipAndSave()
+     *
+     * Escape hatch — save the transaction without setting a limit.
+     * De-emphasised in the UI but always available.
+     */
+    async function _noGoalSkipAndSave() {
+        if (!_pendingTx) return;
+        _closeNoGoalInterrupt();
+
+        try {
+            await _submitTx(
+                _pendingTx.name, _pendingTx.amount,
+                _pendingTx.type, _pendingTx.category, _pendingTx.note
+            );
+        } catch(e) {}
+
+        _pendingTx = null;
+    }
+
+    /**
+     * _noGoalCancel()
+     *
+     * User backs out entirely — no goal, no transaction.
+     */
+    function _noGoalCancel() {
+        _closeNoGoalInterrupt();
+        _pendingTx = null;
+        showToast('Transaction cancelled.', 'info');
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CONFIRM-TRANSACTION MODAL
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * _openConfirmTxModal(savedLimit)
+     *
+     * Opens after the spending limit has been successfully saved.
+     * Shows a success checkmark, the saved limit details, and the pending
+     * transaction recap. User confirms or cancels.
+     */
+    function _openConfirmTxModal(savedLimit) {
+        if (!_pendingTx) return;
+
+        var curLabel    = monthLabel(AppState.curYear, AppState.curMonth);
+        var catColor    = getCategoryColor(_pendingTx.category);
+        var limitFmt    = fmt(savedLimit);
+        var amtFmt      = fmt(_pendingTx.amount);
+
+        var limitConfEl = document.getElementById('ctm-limit-confirmation');
+        if (limitConfEl) {
+            limitConfEl.innerHTML = (
+                'Spending limit of <strong style="color:var(--acc);">' + limitFmt +
+                '</strong> set for <strong>' + _esc(_pendingTx.category) +
+                '</strong> in ' + curLabel + '.'
+            );
+        }
+
+        var recapEl = document.getElementById('ctm-tx-recap');
+        if (recapEl) {
+            recapEl.innerHTML = (
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+                'display:inline-block;background:' + catColor + ';"></span>' +
+                '<div style="flex:1;">' +
+                '<div style="font-weight:500;">' + _esc(_pendingTx.name) + '</div>' +
+                '<div style="font-size:12px;color:var(--text2);">' + _esc(_pendingTx.category) + '</div>' +
+                '</div>' +
+                '<div style="font-family:var(--mono);font-size:14px;font-weight:600;' +
+                'color:var(--red);">' + amtFmt + '</div>' +
+                '</div>'
+            );
+        }
+
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) {
+            modal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    function _closeConfirmTxModal() {
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    /**
+     * _confirmTxProceed()
+     * User says "Yes, Add Transaction" — save the stashed transaction.
+     */
+    async function _confirmTxProceed() {
+        if (!_pendingTx) { _closeConfirmTxModal(); return; }
+
+        var btn = document.getElementById('btn-ctm-yes');
+        var tx  = _pendingTx;
+        _pendingTx = null;
+
+        await withButtonLoading(btn, async function() {
+            try {
+                await _submitTx(tx.name, tx.amount, tx.type, tx.category, tx.note);
+                _closeConfirmTxModal();
+            } catch(e) {}
+        });
+    }
+
+    /**
+     * _confirmTxDecline()
+     * User says "No, cancel" — limit was saved, transaction is dropped.
+     */
+    function _confirmTxDecline() {
+        _pendingTx = null;
+        _closeConfirmTxModal();
+        showToast('Transaction cancelled. Spending limit was saved.', 'info');
+        renderAll(); // refresh to show the new goal
     }
 
 

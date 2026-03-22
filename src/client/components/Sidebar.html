@@ -1,0 +1,714 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Sidebar.html — Desktop Left Navigation Sidebar
+
+     LAYOUT:
+       The sidebar is a flex column INSIDE #layout-root (the max-width container).
+       Expanded → 220px wide. Collapsed → 56px wide.
+       The main #app column fills the remaining width automatically via flex:1.
+       Everything stays inside the 1100px max-width frame.
+
+     COLLAPSE TOGGLE:
+       Uses the sidebar layout icon (two-panel SVG) — top of sidebar in both states.
+       When expanded: icon + "Budget Tracker" text on same row.
+       When collapsed: only the toggle icon is shown. Logo disappears.
+
+     COLLAPSED STATE:
+       - Nav items: icon only, centred in a 36×36px rounded square when active/hover
+       - Avatar: larger circle with initials only, centred
+       - Tooltips on hover via CSS ::after
+
+     Desktop only — hidden on mobile (BottomNav handles navigation there).
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<aside id="app-sidebar" class="sidebar" role="navigation" aria-label="Main navigation">
+
+    <!-- ── TOP ROW: toggle icon (always) + logo text (expanded only) ───────── -->
+    <div class="sidebar-header">
+
+        <!-- The sidebar toggle — same icon in both states -->
+        <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+            <!-- Sidebar layout icon: two-panel rectangle with lines in left panel -->
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1.5" y="2.5" width="17" height="15" rx="3" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="7" y1="2.5" x2="7" y2="17.5" stroke="currentColor" stroke-width="1.5"/>
+                <line x1="3" y1="6.5" x2="5.5" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="3" y1="9.5" x2="5.5" y2="9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="3" y1="12.5" x2="5.5" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+        </button>
+
+        <!-- Logo text — hidden when collapsed -->
+        <span class="sidebar-logo-text">Budget Tracker</span>
+
+    </div>
+
+    <!-- ── MONTH NAV — hidden when collapsed ───────────────────────────────── -->
+    <div class="sidebar-month-row" id="sidebar-month-nav">
+        <button onclick="prevMonth()" class="sidebar-month-btn" title="Previous month" aria-label="Previous month">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M8 2L4 6L8 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+        <div id="sidebar-month-label" class="sidebar-month-label">March 2026</div>
+        <button onclick="nextMonth()" class="sidebar-month-btn" title="Next month" aria-label="Next month">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M4 2L8 6L4 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- ── NAV ─────────────────────────────────────────────────────────────── -->
+    <nav class="sidebar-nav">
+
+        <div class="snav-group-label">Main</div>
+
+        <button class="snav-item active" id="snav-overview" onclick="switchTabSidebar('overview')" title="Overview">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2.5" y="2.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"/>
+                    <rect x="2.5" y="11.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"/>
+                </svg>
+            </span>
+            <span class="snav-label">Overview</span>
+        </button>
+
+        <button class="snav-item" id="snav-goals" onclick="switchTabSidebar('goals')" title="Spending Limits">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="4.5"/>
+                    <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none"/>
+                </svg>
+            </span>
+            <span class="snav-label">Spending Limits</span>
+        </button>
+
+        <button class="snav-item" id="snav-bills" onclick="switchTabSidebar('bills')" title="Bills">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <rect x="2.5" y="2.5" width="15" height="15" rx="2.5"/>
+                    <path d="M2.5 7.5h15M6 11h3M6 14h5"/>
+                </svg>
+            </span>
+            <span class="snav-label">Bills</span>
+        </button>
+
+        <button class="snav-item" id="snav-savings" onclick="switchTabSidebar('savings')" title="Savings">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M15 10c0 3.31-2.24 6-5 6s-5-2.69-5-6 2.24-6 5-6c1.29 0 2.47.49 3.36 1.3"/>
+                    <path d="M13 4l2.5-2.5 2.5 2.5M15.5 1.5v5"/>
+                </svg>
+            </span>
+            <span class="snav-label">Savings</span>
+        </button>
+
+        <button class="snav-item" id="snav-debt" onclick="switchTabSidebar('debt')" title="Debt">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <rect x="1.5" y="5" width="17" height="11" rx="2"/>
+                    <path d="M1.5 9h17M6.5 13h3"/>
+                </svg>
+            </span>
+            <span class="snav-label">Debt</span>
+        </button>
+
+        <button class="snav-item" id="snav-networth" onclick="switchTabSidebar('networth')" title="Net Worth">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <polyline points="17 6 11 12 7 8 3 13"/>
+                    <polyline points="13 6 17 6 17 10"/>
+                </svg>
+            </span>
+            <span class="snav-label">Net Worth</span>
+        </button>
+
+        <button class="snav-item" id="snav-recurring" onclick="switchTabSidebar('recurring')" title="Recurring">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <polyline points="14 2 17 5 14 8"/>
+                    <path d="M3 9.5V9a4 4 0 014-4h10"/>
+                    <polyline points="6 18 3 15 6 12"/>
+                    <path d="M17 10.5V11a4 4 0 01-4 4H3"/>
+                </svg>
+            </span>
+            <span class="snav-label">Recurring</span>
+        </button>
+
+        <button class="snav-item" id="snav-templates" onclick="switchTabSidebar('templates')" title="Templates">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M10 2L3 6v5c0 4 3 6.5 7 7 4-.5 7-3 7-7V6L10 2z"/>
+                </svg>
+            </span>
+            <span class="snav-label">Templates</span>
+        </button>
+
+        <div class="snav-group-label" style="margin-top:4px;">Analytics</div>
+
+        <button class="snav-item" id="snav-charts" onclick="switchTabSidebar('charts')" title="Charts">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M3 17V10h3.5v7M8.75 17V4h3.5v13M14.5 17V7h3v10"/>
+                </svg>
+            </span>
+            <span class="snav-label">Charts</span>
+        </button>
+
+        <button class="snav-item" id="snav-categories" onclick="switchTabSidebar('categories')" title="Categories">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <circle cx="5" cy="5" r="2.5"/><circle cx="15" cy="5" r="2.5"/>
+                    <circle cx="5" cy="15" r="2.5"/><circle cx="15" cy="15" r="2.5"/>
+                </svg>
+            </span>
+            <span class="snav-label">Categories</span>
+        </button>
+
+        <button class="snav-item" id="snav-insights" onclick="switchTabSidebar('insights')" title="Insights">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M10 2a6 6 0 016 6c0 2.2-1.14 4.14-2.86 5.27L12.5 14.5v1a1.5 1.5 0 01-3 0v-1l-.64-1.23A6 6 0 0110 2z"/>
+                    <path d="M8 18h4"/>
+                </svg>
+            </span>
+            <span class="snav-label">Insights</span>
+        </button>
+
+        <button class="snav-item" id="snav-forecast" onclick="switchTabSidebar('forecast')" title="Forecast">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M3 13l4-6 4 4 4-5 4 4"/>
+                </svg>
+            </span>
+            <span class="snav-label">Forecast</span>
+        </button>
+
+        <button class="snav-item" id="snav-multimonth" onclick="switchTabSidebar('multimonth')" title="Multi-Month">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <rect x="2.5" y="3.5" width="15" height="13" rx="2"/>
+                    <path d="M2.5 8.5h15M6.5 3.5v5M13.5 3.5v5"/>
+                </svg>
+            </span>
+            <span class="snav-label">Multi-Month</span>
+        </button>
+
+        <button class="snav-item" id="snav-report" onclick="switchTabSidebar('report')" title="Report">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M12 2H5a1.5 1.5 0 00-1.5 1.5v13A1.5 1.5 0 005 18h10a1.5 1.5 0 001.5-1.5V7z"/>
+                    <polyline points="12 2 12 7 16.5 7"/>
+                    <line x1="6.5" y1="11" x2="13.5" y2="11"/>
+                    <line x1="6.5" y1="14" x2="10" y2="14"/>
+                </svg>
+            </span>
+            <span class="snav-label">Report</span>
+        </button>
+
+        <button class="snav-item" id="snav-settings" onclick="switchTabSidebar('settings')" title="Settings">
+            <span class="snav-icon-wrap">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <circle cx="10" cy="10" r="2.5"/>
+                    <path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.22 4.22l1.77 1.77M14.01 14.01l1.77 1.77M4.22 15.78l1.77-1.77M14.01 5.99l1.77-1.77"/>
+                </svg>
+            </span>
+            <span class="snav-label">Settings</span>
+        </button>
+
+    </nav>
+
+    <!-- ── FOOTER: avatar ──────────────────────────────────────────────────── -->
+    <div class="sidebar-footer">
+        <button class="sidebar-avatar-btn" id="sidebar-avatar-trigger" onclick="toggleAvatarDropdown(event)" aria-label="Account menu">
+            <div class="sidebar-avatar-circle" id="sidebar-avatar-initials">?</div>
+            <div class="sidebar-avatar-info">
+                <div class="sidebar-avatar-name" id="sidebar-avatar-name">—</div>
+                <div class="sidebar-avatar-email" id="sidebar-avatar-email">—</div>
+            </div>
+        </button>
+    </div>
+
+</aside>
+
+
+<!-- ══ SIDEBAR CSS ══════════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Shell ─────────────────────────────────────────────────────────── */
+    .sidebar {
+        /* Width transitions smoothly between expanded and collapsed */
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg2);
+        border-right: 0.5px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        /* Stick to top, fill full height of the scroll container */
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        align-self: flex-start;
+        overflow: hidden;
+        transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        /* Prevent any child from overflowing the sidebar width */
+        min-width: 0;
+    }
+
+    .sidebar.collapsed { width: 56px; }
+
+    /* ── Header row: toggle + logo text ────────────────────────────────── */
+    .sidebar-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 12px 12px;
+        flex-shrink: 0;
+        min-height: 52px;
+    }
+
+    /* Sidebar toggle button */
+    .sidebar-toggle {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        border-radius: 7px;
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        transition: background var(--transition), color var(--transition);
+    }
+
+    .sidebar-toggle:hover {
+        background: var(--border);
+        color: var(--text);
+    }
+
+    /* Logo text — fades out and takes no space when collapsed */
+    .sidebar-logo-text {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        opacity: 1;
+        max-width: 160px;
+        overflow: hidden;
+        transition: opacity 0.15s ease, max-width 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .sidebar.collapsed .sidebar-logo-text {
+        opacity: 0;
+        max-width: 0;
+        pointer-events: none;
+    }
+
+    /* ── Month nav ──────────────────────────────────────────────────────── */
+    .sidebar-month-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 12px 12px;
+        border-bottom: 0.5px solid var(--border);
+        flex-shrink: 0;
+        overflow: hidden;
+        /* Height transition for smooth hide/show */
+        max-height: 48px;
+        opacity: 1;
+        transition: max-height 0.2s ease, opacity 0.15s ease, padding 0.2s ease;
+    }
+
+    .sidebar.collapsed .sidebar-month-row {
+        max-height: 0;
+        opacity: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        pointer-events: none;
+        border-bottom-color: transparent;
+    }
+
+    .sidebar-month-btn {
+        width: 24px;
+        height: 24px;
+        background: var(--bg);
+        border: 0.5px solid var(--border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        flex-shrink: 0;
+        transition: background var(--transition);
+    }
+
+    .sidebar-month-btn:hover { background: var(--border); color: var(--text); }
+
+    .sidebar-month-label {
+        flex: 1;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+    }
+
+    /* ── Nav ────────────────────────────────────────────────────────────── */
+    .sidebar-nav {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 8px 8px;
+        scrollbar-width: none;
+    }
+    .sidebar-nav::-webkit-scrollbar { display: none; }
+
+    .snav-group-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        padding: 8px 6px 4px;
+        white-space: nowrap;
+        opacity: 1;
+        overflow: hidden;
+        max-height: 30px;
+        transition: opacity 0.15s ease, max-height 0.2s ease, padding 0.2s ease;
+    }
+
+    .sidebar.collapsed .snav-group-label {
+        opacity: 0;
+        max-height: 0;
+        padding: 0;
+        pointer-events: none;
+    }
+
+    /* Nav item — wraps icon + label */
+    .snav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 4px 6px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        font-family: var(--font);
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--text2);
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+        margin-bottom: 1px;
+        transition: background var(--transition), color var(--transition);
+        /* Prevent text overflowing during collapse animation */
+        overflow: hidden;
+        min-height: 36px;
+    }
+
+    /* Hover: full row gets a background — icon + text together */
+    .snav-item:hover {
+        color: var(--text);
+        background: rgba(0,0,0,0.06);
+    }
+
+    /* Active: full row highlight */
+    .snav-item.active {
+        color: var(--text);
+        font-weight: 600;
+        background: var(--bg);
+        box-shadow: 0 0 0 0.5px var(--border2);
+    }
+
+    /* Icon wrapper — centres the SVG, no own background in expanded state */
+    .snav-icon-wrap {
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        /* background handled by .snav-item in expanded state;
+           by .snav-icon-wrap directly in collapsed state (icon-only pill) */
+        transition: background var(--transition), box-shadow var(--transition);
+    }
+
+    .snav-icon-wrap svg {
+        opacity: 0.6;
+        transition: opacity var(--transition);
+        flex-shrink: 0;
+    }
+
+    .snav-item:hover .snav-icon-wrap svg,
+    .snav-item.active .snav-icon-wrap svg { opacity: 1; }
+
+    /* Nav item label */
+    .snav-label {
+        opacity: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        transition: opacity 0.15s ease;
+    }
+
+    .sidebar.collapsed .snav-label {
+        opacity: 0;
+        pointer-events: none;
+        width: 0;
+        flex: 0;
+    }
+
+    /* Collapsed: item fills the full 56px column and centres its icon-wrap */
+    .sidebar.collapsed .sidebar-nav {
+        padding: 8px 0;
+    }
+
+    .sidebar.collapsed .snav-item {
+        justify-content: center;
+        padding: 4px 0;
+        width: 56px;
+        /* Remove the row-level background in collapsed mode — pill goes on icon-wrap */
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    /* In collapsed mode, active/hover pill is on the icon-wrap only, centred */
+    .sidebar.collapsed .snav-item:hover .snav-icon-wrap {
+        background: rgba(0,0,0,0.06);
+    }
+
+    .sidebar.collapsed .snav-item.active .snav-icon-wrap {
+        background: var(--bg);
+        box-shadow: 0 0 0 0.5px var(--border2);
+    }
+
+    /* Tooltip on hover when collapsed */
+    .sidebar.collapsed .snav-item {
+        position: relative;
+    }
+
+    .sidebar.collapsed .snav-item::after {
+        content: attr(title);
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--text);
+        color: var(--bg);
+        font-size: 11px;
+        font-weight: 500;
+        padding: 5px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.1s ease;
+        z-index: 9999;
+    }
+
+    .sidebar.collapsed .snav-item:hover::after { opacity: 1; }
+
+    /* ── Footer: avatar ─────────────────────────────────────────────────── */
+    .sidebar-footer {
+        border-top: 0.5px solid var(--border);
+        padding: 10px 8px;
+        flex-shrink: 0;
+    }
+
+    .sidebar-avatar-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        padding: 4px 6px;
+        cursor: pointer;
+        text-align: left;
+        min-height: 44px;
+        transition: background var(--transition);
+        overflow: hidden;
+    }
+
+    .sidebar-avatar-btn:hover { background: var(--border); }
+
+    /* Avatar circle — sized to match the 36px icon wraps */
+    .sidebar-avatar-circle {
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--text);
+        color: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        font-family: var(--font);
+        transition: opacity var(--transition);
+    }
+
+    .sidebar-avatar-btn:hover .sidebar-avatar-circle { opacity: 0.82; }
+
+    .sidebar-avatar-info {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        opacity: 1;
+        transition: opacity 0.15s ease;
+    }
+
+    .sidebar-avatar-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sidebar-avatar-email {
+        font-size: 11px;
+        color: var(--text2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Collapsed footer — centre the avatar circle */
+    .sidebar.collapsed .sidebar-footer {
+        padding: 10px 0;
+    }
+
+    .sidebar.collapsed .sidebar-avatar-btn {
+        justify-content: center;
+        padding: 4px 0;
+        width: 56px;
+        background: transparent !important;
+    }
+
+    .sidebar.collapsed .sidebar-avatar-info {
+        opacity: 0;
+        pointer-events: none;
+        width: 0;
+        flex: 0;
+        overflow: hidden;
+    }
+
+    /* Tooltip for avatar when collapsed */
+    .sidebar.collapsed .sidebar-avatar-btn {
+        position: relative;
+    }
+
+    .sidebar.collapsed .sidebar-avatar-btn::after {
+        content: 'Account';
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--text);
+        color: var(--bg);
+        font-size: 11px;
+        font-weight: 500;
+        padding: 5px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.1s ease;
+        z-index: 9999;
+    }
+
+    .sidebar.collapsed .sidebar-avatar-btn:hover::after { opacity: 1; }
+
+    /* ── Mobile: hide sidebar entirely ─────────────────────────────────── */
+    @media (max-width: 767px) {
+        .sidebar { display: none; }
+    }
+
+</style>
+
+
+<!-- ══ SIDEBAR JS ════════════════════════════════════════════════════════════ -->
+<script>
+
+    function toggleSidebar() {
+        var sidebar = document.getElementById('app-sidebar');
+        if (!sidebar) return;
+
+        var isCollapsed = sidebar.classList.toggle('collapsed');
+
+        var btn = document.getElementById('sidebar-collapse-btn');
+        if (btn) btn.setAttribute('aria-label', isCollapsed ? 'Expand sidebar' : 'Collapse sidebar');
+
+        // Persist silently
+        if (typeof callServerSilent === 'function') {
+            callServerSilent('setPreference', 'sidebar_collapsed', isCollapsed ? 'true' : 'false')
+                .catch(function() {});
+        }
+    }
+
+    function updateSidebar() {
+        // Month label
+        var ml = document.getElementById('sidebar-month-label');
+        if (ml && typeof monthLabel === 'function') {
+            ml.textContent = monthLabel(AppState.curYear, AppState.curMonth);
+        }
+        // Active nav item
+        _updateSidebarActiveItem(AppState.activeTab || 'overview');
+        // Avatar info
+        _updateSidebarAvatar();
+    }
+
+    function switchTabSidebar(tabId) {
+        if (typeof switchTab === 'function') switchTab(tabId);
+        _updateSidebarActiveItem(tabId);
+        if (typeof updateHeader === 'function') updateHeader();
+        if (typeof switchTabMobile === 'function') switchTabMobile(tabId);
+    }
+
+    function _updateSidebarActiveItem(tabId) {
+        document.querySelectorAll('.snav-item').forEach(function(btn) {
+            btn.classList.remove('active');
+        });
+        var active = document.getElementById('snav-' + tabId);
+        if (active) active.classList.add('active');
+    }
+
+    function _updateSidebarAvatar() {
+        var user     = (typeof window !== 'undefined' && window.__USER__) ? window.__USER__ : null;
+        var name     = user && user.display_name ? user.display_name
+            : user && user.email ? user.email.split('@')[0] : '';
+        var initials = name ? name.slice(0, 2).toUpperCase() : '?';
+
+        var circleEl = document.getElementById('sidebar-avatar-initials');
+        var nameEl   = document.getElementById('sidebar-avatar-name');
+        var emailEl  = document.getElementById('sidebar-avatar-email');
+
+        if (circleEl) circleEl.textContent = initials;
+        if (nameEl)   nameEl.textContent   = name || '—';
+        if (emailEl)  emailEl.textContent  = (user && user.email) ? user.email : '';
+    }
+
+    // Restore collapsed state from persisted preference
+    (function _restoreSidebarState() {
+        var prefs = (typeof window !== 'undefined' && window.__BOOTSTRAP__ && window.__BOOTSTRAP__.preferences)
+            ? window.__BOOTSTRAP__.preferences : {};
+        if (prefs.sidebar_collapsed === true || prefs.sidebar_collapsed === 'true') {
+            var sidebar = document.getElementById('app-sidebar');
+            if (sidebar) sidebar.classList.add('collapsed');
+        }
+    })();
+
+</script>

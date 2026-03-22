@@ -39,8 +39,11 @@ const VALID_TYPES = ['income', 'expense', 'savings'];
 function getTransactionsByMonth(monthKey) {
   if (!monthKey) throw new Error('Transactions.gs: monthKey is required.');
 
-  return getRowsByFilter(SHEET_NAMES.TRANSACTIONS, function(row) {
-    return String(row.month_key).trim() === String(monthKey).trim();
+  // Normalise the incoming monthKey too, in case the caller passes an ISO date.
+  var normKey = _normaliseMonthKey(monthKey);
+
+  return getUserRowsByFilter('TRANSACTIONS', function(row) {
+    return _normaliseMonthKey(String(row.month_key)) === normKey;
   }).map(_castTransaction);
 }
 
@@ -51,7 +54,7 @@ function getTransactionsByMonth(monthKey) {
  * Used by Report tab, multi-month analytics, and getAllMonthSummaries().
  */
 function getAllTransactions() {
-  return getAllRows(SHEET_NAMES.TRANSACTIONS).map(_castTransaction);
+  return getUserAllRows('Transactions').map(_castTransaction);
 }
 
 
@@ -66,7 +69,15 @@ function getAllTransactions() {
  *
  * Side-effect: if type === 'savings', calls updateSavingsGoalOnDeposit()
  * in Savings.gs to automatically credit the matching savings goal.
- * This is safe to call even before Savings.gs is implemented — the
+ *
+ * MATCHING STRATEGY (updated):
+ *   The auto-credit is now matched by CATEGORY, not by transaction name.
+ *   The user selects a savings category (e.g. "Emergency Fund") from the
+ *   typed dropdown, and the goal with that same name receives the credit.
+ *   This is more reliable than name-matching because the category is
+ *   always a known value from the predefined list.
+ *
+ * This side-effect is safe to call before Savings.gs is implemented — the
  * function reference is guarded with a typeof check.
  */
 function addTransaction(monthKey, name, amount, type, category, note) {
@@ -94,21 +105,26 @@ function addTransaction(monthKey, name, amount, type, category, note) {
   // ── Build the new row object ─────────────────────────────────────────────
   var tx = {
     id:        generateId(),
-    month_key: String(monthKey).trim(),
+    month_key: String(monthKey).trim(),   // always store as "YYYY-MM"
     name:      String(name).trim(),
     amount:    parsedAmount,
     type:      normalisedType,
-    category:  category ? String(category).trim() : 'Other',
+    category:  category ? String(category).trim() : 'Other Expense',
     note:      note     ? String(note).trim()     : ''
   };
 
-  appendRow(SHEET_NAMES.TRANSACTIONS, tx);
+  getUserAppendRow('TRANSACTIONS', tx);
 
   // ── Side-effect: credit savings goal if applicable ───────────────────────
+  // Matched by CATEGORY (e.g. "Emergency Fund") rather than by name.
+  // The category is the typed dropdown value selected by the user —
+  // it is always a known, consistent string, making it a more reliable
+  // match key than the free-text transaction name.
+  //
   // Guard with typeof so this still works before Savings.gs is deployed.
   if (normalisedType === 'savings' && typeof updateSavingsGoalOnDeposit === 'function') {
     try {
-      updateSavingsGoalOnDeposit(tx.name, tx.amount);
+      updateSavingsGoalOnDeposit(tx.category, tx.amount); // ← category, not name
     } catch (e) {
       // Log but do NOT rethrow — the transaction was saved successfully.
       // A savings goal matching failure should not roll back the transaction.
@@ -129,7 +145,7 @@ function addTransaction(monthKey, name, amount, type, category, note) {
 function deleteTransaction(transactionId) {
   if (!transactionId) throw new Error('Transactions.gs: transactionId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.TRANSACTIONS, function(row) {
+  var rowIndex = getUserFindRowIndex('TRANSACTIONS', function(row) {
     return String(row.id) === String(transactionId);
   });
 
@@ -137,7 +153,7 @@ function deleteTransaction(transactionId) {
     throw new Error('Transactions.gs: Transaction "' + transactionId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.TRANSACTIONS, rowIndex);
+  getUserDeleteRow('TRANSACTIONS', rowIndex);
   return { success: true };
 }
 
@@ -156,7 +172,8 @@ function deleteTransaction(transactionId) {
 function clearMonthTransactions(monthKey) {
   if (!monthKey) throw new Error('Transactions.gs: monthKey is required.');
 
-  var sheet   = getSheet(SHEET_NAMES.TRANSACTIONS);
+  var normKey = _normaliseMonthKey(monthKey);
+  var sheet   = getSheet(getUserSheetName('Transactions'));
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { deleted: 0 };
 
@@ -169,11 +186,12 @@ function clearMonthTransactions(monthKey) {
     throw new Error('Transactions.gs: "month_key" column not found in Transactions sheet.');
   }
 
-  // Collect matching row indices (1-indexed sheet rows), reversed for safe deletion.
   var toDelete = [];
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][mkIdx]).trim() === String(monthKey).trim()) {
-      toDelete.push(i + 1); // +1: array is 0-indexed, sheet rows are 1-indexed
+    var rawKey = data[i][mkIdx];
+    // Normalise the stored key before comparing so ISO dates still match
+    if (_normaliseMonthKey(String(rawKey)) === normKey) {
+      toDelete.push(i + 1);
     }
   }
 
@@ -199,7 +217,7 @@ function clearMonthTransactions(monthKey) {
  */
 function getMonthSummary(monthKey) {
   var txs = getTransactionsByMonth(monthKey);
-  return _computeSummary(monthKey, txs);
+  return _computeSummary(_normaliseMonthKey(monthKey), txs);
 }
 
 /**
@@ -218,7 +236,7 @@ function getAllMonthSummaries() {
   // Group transactions by month_key.
   var groups = {};
   all.forEach(function(tx) {
-    var key = tx.month_key;
+    var key = tx.month_key; // already normalised by _castTransaction
     if (!groups[key]) groups[key] = [];
     groups[key].push(tx);
   });
@@ -250,7 +268,7 @@ function getCategoryBreakdown(monthKey) {
 
   txs.forEach(function(tx) {
     if (tx.type !== 'expense') return;
-    var cat = tx.category || 'Other';
+    var cat = tx.category || 'Other Expense';
     totals[cat] = (totals[cat] || 0) + tx.amount;
     grandTotal  += tx.amount;
   });
@@ -291,6 +309,53 @@ function importTransactionsFromCSV(csvString, monthKey) {
 // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
 /**
+ * _normaliseMonthKey(raw)
+ *
+ * Converts any month_key format to "YYYY-MM".
+ *
+ * Google Sheets auto-converts "2026-03" to a Date cell. SheetHelper reads
+ * it back as a JS Date and converts it to ISO: "2026-03-31T23:00:00.000Z".
+ * This function extracts just the "YYYY-MM" portion regardless of input format.
+ *
+ * Handles:
+ *   "2026-03"                    → "2026-03"  (already correct, pass through)
+ *   "2026-03-31T23:00:00.000Z"   → "2026-03"  (ISO date string)
+ *   "2026-03-01T00:00:00.000Z"   → "2026-03"  (ISO date string, start of month)
+ *   Date object                  → "2026-03"  (shouldn't happen but guard anyway)
+ */
+function _normaliseMonthKey(raw) {
+  if (!raw) return '';
+
+  var str = String(raw).trim();
+
+  // Already in correct format "YYYY-MM"
+  if (/^\d{4}-\d{2}$/.test(str)) return str;
+
+  // ISO date string: "2026-03-31T23:00:00.000Z" or "2026-03-01T00:00:00.000Z"
+  // The month stored is always the end-of-month date in WAT (UTC+1), so the
+  // ISO UTC string may show the last day of the previous month at 23:00.
+  // We parse the date and check both UTC and UTC+1 to get the right month.
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      // Use UTC+1 (Lagos/WAT) to determine the correct month.
+      // Add 1 hour to shift from UTC to WAT before extracting month.
+      var wat = new Date(d.getTime() + 60 * 60 * 1000);
+      var y = wat.getUTCFullYear();
+      var m = wat.getUTCMonth() + 1;
+      return y + '-' + (m < 10 ? '0' : '') + m;
+    }
+  }
+
+  // Fallback: extract first 7 chars if they look like YYYY-MM
+  if (str.length >= 7 && /^\d{4}-\d{2}/.test(str)) {
+    return str.slice(0, 7);
+  }
+
+  return str;
+}
+
+/**
  * _castTransaction(row)
  *
  * Normalises a raw row object from getAllRows():
@@ -303,11 +368,11 @@ function importTransactionsFromCSV(csvString, monthKey) {
 function _castTransaction(row) {
   return {
     id:        String(row.id        || '').trim(),
-    month_key: String(row.month_key || '').trim(),
+    month_key: _normaliseMonthKey(String(row.month_key || '')),
     name:      String(row.name      || '').trim(),
     amount:    parseFloat(row.amount) || 0,
     type:      String(row.type      || '').trim().toLowerCase(),
-    category:  String(row.category  || 'Other').trim(),
+    category:  String(row.category  || 'Other Expense').trim(),
     note:      String(row.note      || '').trim()
   };
 }

@@ -1,20 +1,17 @@
 <style>
     /*
      * styles.css.html — Budget Tracker Master Stylesheet
-     *
-     * Included in the page via <?!= include('src/client/utils/styles.css') ?>
-     * All 20 sections implemented. Do not add inline styles to screen files —
-     * add a class here instead to keep the design system centralised.
+     * Updated: sidebar layout, extra top padding, mobile header cleanup.
      */
 
 
     /* ─── 1. CSS CUSTOM PROPERTIES ─────────────────────────────────────────────── */
     :root {
-        --acc:       #1D9E75;  /* income, positive, success    */
-        --red:       #D85A30;  /* expenses, over-budget, danger */
-        --blue:      #185FA5;  /* savings                       */
-        --amber:     #BA7517;  /* warnings, approaching limit   */
-        --purple:    #7F77DD;  /* entertainment category        */
+        --acc:       #1D9E75;
+        --red:       #D85A30;
+        --blue:      #185FA5;
+        --amber:     #BA7517;
+        --purple:    #7F77DD;
 
         --bg:        #ffffff;
         --bg2:       #f5f5f3;
@@ -23,7 +20,7 @@
         --border2:   rgba(0, 0, 0, 0.22);
 
         --text:      #1a1a1a;
-        --text2:     #666;
+        --text2:     #555;
 
         --font:      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         --mono:      'Courier New', Courier, monospace;
@@ -31,7 +28,12 @@
         --radius:    8px;
         --radius-lg: 12px;
         --transition: 0.15s ease;
-        --max-width:  720px;
+
+        --sidebar-expanded-w: 220px;
+        --sidebar-collapsed-w: 52px;
+
+        --max-width:  1100px;
+        --page-pad:   clamp(1.5rem, 3vw, 2.5rem);
     }
 
 
@@ -42,52 +44,106 @@
         padding: 0;
     }
 
+    html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        height: 100%;
+    }
+
     body {
         background: var(--bg);
         color: var(--text);
         font-family: var(--font);
-        font-size: 14px;
-        line-height: 1.5;
-        min-height: 100vh;
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.55;
+        min-height: 100%;
         -webkit-font-smoothing: antialiased;
     }
 
 
-    /* ─── 3. LAYOUT ─────────────────────────────────────────────────────────────── */
-    .app {
+    /* ─── 3. LAYOUT ROOT ────────────────────────────────────────────────────────── */
+
+    /*
+     * The entire layout lives inside a single centred container.
+     *
+     * #layout-root  — the max-width flex row. Height = 100vh so the sidebar
+     *                 can use position:sticky against it (not the viewport).
+     *                 overflow-y:auto here means scroll happens inside the
+     *                 bounded frame, keeping the sidebar within max-width.
+     *
+     * .sidebar      — sticky left column; width transitions between 220px
+     *                 and 56px. The main content reflows automatically.
+     *
+     * .app          — flex:1 scrollable right column.
+     */
+
+    #layout-root {
+        display: flex;
+        height: 100vh;
+        overflow-y: auto;
+        width: 100%;
+        /*
+         * Total frame is exactly 1100px — the sidebar is a slice WITHIN it.
+         * Collapsing the sidebar just gives more room to .app inside the same
+         * 1100px frame. The outer boundary never changes.
+         */
         max-width: var(--max-width);
         margin: 0 auto;
-        padding: 1.5rem 1rem;
+        background: var(--bg);
+        position: relative;
     }
 
-    .app-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1.25rem;
-        border-bottom: 0.5px solid var(--border);
+    @media (min-width: 1100px) {
+        body { background: var(--bg2); }
+        #layout-root { box-shadow: 0 0 0 0.5px var(--border); }
+    }
+
+    /* App content column — fills whatever width is left after the sidebar */
+    .app {
+        flex: 1;
+        min-width: 0;
+        padding: 2rem var(--page-pad) 1.5rem;
+        min-height: 100%;
+        overflow: visible;
+    }
+
+    @media (min-width: 768px) {
+        .app { max-width: none; }
+    }
+
+    /* Mobile: normal block flow, sidebar hidden */
+    @media (max-width: 767px) {
+        #layout-root {
+            height: auto;
+            overflow-y: visible;
+            max-width: 100%;
+        }
+        .app {
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
+        }
     }
 
 
     /* ─── 4. TYPOGRAPHY SCALE ───────────────────────────────────────────────────── */
     h1 {
         font-size: 24px;
-        font-weight: 400;
+        font-weight: 500;
     }
 
     .label-caps {
         font-size: 11px;
-        font-weight: 500;
+        font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--text2);
+        margin: 1.25rem 0 10px;
     }
 
     .mono-value {
         font-family: var(--mono);
         font-size: 15px;
-        font-weight: 500;
+        font-weight: 600;
     }
 
 
@@ -105,28 +161,27 @@
     .row2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 10px;
+        margin-bottom: 10px;
     }
 
     .row3 {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 10px;
+        gap: 12px;
         margin-bottom: 1.25rem;
     }
 
     .row4 {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
+        gap: 12px;
         margin-bottom: 1.25rem;
     }
 
-    /* Section heading — label-caps with spacing */
     .sec {
         font-size: 11px;
-        font-weight: 500;
+        font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--text2);
@@ -138,75 +193,65 @@
     .metric {
         background: var(--bg2);
         border-radius: var(--radius);
-        padding: 12px 14px;
+        padding: 14px 16px;
     }
 
     .metric .lbl {
-        font-size: 10px;
-        font-weight: 500;
-        letter-spacing: 0.08em;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
         text-transform: uppercase;
         color: var(--text2);
-        margin-bottom: 4px;
+        margin-bottom: 5px;
     }
 
     .metric .val {
         font-family: var(--mono);
-        font-size: 15px;
-        font-weight: 500;
+        font-size: 17px;
+        font-weight: 600;
         color: var(--text);
     }
 
 
     /* ─── 8. TAB NAVIGATION ─────────────────────────────────────────────────────── */
+    /*
+     * The horizontal tab strip is hidden — sidebar replaces it on desktop,
+     * BottomNav replaces it on mobile. The .tabs div still exists in the DOM
+     * so switchTab() can find and toggle #tab-{id} active states.
+     */
     .tabs {
-        display: flex;
-        gap: 0;
-        border-bottom: 0.5px solid var(--border);
-        margin-bottom: 1.5rem;
-        overflow-x: auto;
-        /* Hide scrollbar — still scrollable on mobile */
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-
-    .tabs::-webkit-scrollbar {
-        display: none;
+        display: none !important; /* hidden on all breakpoints */
     }
 
     .tab {
-        background: none;
-        border: none;
-        border-bottom: 2px solid transparent;
-        padding: 8px 11px 10px;
-        margin-bottom: -1px; /* overlaps the strip border so active border sits on top */
-        font-size: 11px;
-        font-weight: 400;
+        background: var(--bg2);
+        border: 0.5px solid transparent;
+        border-radius: 20px;
+        padding: 6px 14px;
+        font-size: 13px;
+        font-weight: 500;
         font-family: var(--font);
         cursor: pointer;
         color: var(--text2);
         white-space: nowrap;
-        transition: color var(--transition);
+        transition: background var(--transition), color var(--transition), border-color var(--transition);
+        flex-shrink: 0;
     }
 
     .tab:hover {
+        background: rgba(0,0,0,0.06);
         color: var(--text);
     }
 
     .tab.active {
-        border-bottom-color: var(--text);
-        color: var(--text);
-        font-weight: 500;
+        background: var(--text);
+        color: var(--bg);
+        border-color: var(--text);
+        font-weight: 600;
     }
 
-    /* Screen pane — hidden by default, shown when .active */
-    .pane {
-        display: none;
-    }
-
-    .pane.active {
-        display: block;
-    }
+    .pane { display: none; }
+    .pane.active { display: block; }
 
 
     /* ─── 9. TRANSACTION ROWS ───────────────────────────────────────────────────── */
@@ -214,35 +259,32 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 9px 0;
+        padding: 10px 0;
         border-bottom: 0.5px solid var(--border);
     }
 
-    .tx-row:last-child {
-        border-bottom: none;
-    }
+    .tx-row:last-child { border-bottom: none; }
 
     .tx-left {
         display: flex;
         align-items: center;
         gap: 10px;
         flex: 1;
-        min-width: 0; /* allows text-overflow on long names */
+        min-width: 0;
     }
 
     .tx-dot {
-        width: 8px;
-        height: 8px;
+        width: 9px;
+        height: 9px;
         border-radius: 50%;
         flex-shrink: 0;
     }
 
-    .tx-meta {
-        min-width: 0;
-    }
+    .tx-meta { min-width: 0; }
 
     .tx-name {
-        font-size: 13px;
+        font-size: 15px;
+        font-weight: 500;
         color: var(--text);
         white-space: nowrap;
         overflow: hidden;
@@ -250,7 +292,7 @@
     }
 
     .tx-cat {
-        font-size: 11px;
+        font-size: 12px;
         color: var(--text2);
         margin-top: 1px;
     }
@@ -270,8 +312,8 @@
 
     .tx-amount {
         font-family: var(--mono);
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 15px;
+        font-weight: 600;
     }
 
     .tx-delete {
@@ -279,29 +321,27 @@
         border: none;
         cursor: pointer;
         color: var(--text2);
-        font-size: 16px;
+        font-size: 18px;
         line-height: 1;
         padding: 0 2px;
         transition: color var(--transition);
     }
 
-    .tx-delete:hover {
-        color: var(--red);
-    }
+    .tx-delete:hover { color: var(--red); }
 
 
     /* ─── 10. PROGRESS BARS ─────────────────────────────────────────────────────── */
     .prog-track {
-        height: 4px;
+        height: 5px;
         background: var(--border);
-        border-radius: 2px;
+        border-radius: 3px;
         overflow: hidden;
-        margin: 5px 0;
+        margin: 6px 0;
     }
 
     .prog-fill {
         height: 100%;
-        border-radius: 2px;
+        border-radius: 3px;
         transition: width 0.5s ease;
     }
 
@@ -311,40 +351,24 @@
         border-radius: var(--radius);
         padding: 10px 14px;
         margin-bottom: 0.5rem;
-        font-size: 12px;
+        font-size: 14px;
+        font-weight: 500;
         line-height: 1.5;
     }
 
-    .alert-danger {
-        background: #FCEBEB;
-        border: 0.5px solid #F09595;
-        color: #501313;
-    }
+    .alert-danger  { background: #FCEBEB; border: 0.5px solid #F09595; color: #501313; }
+    .alert-warning { background: #FAEEDA; border: 0.5px solid #FAC775; color: #412402; }
+    .alert-info    { background: #E6F1FB; border: 0.5px solid #B5D4F4; color: #042C53; }
 
-    .alert-warning {
-        background: #FAEEDA;
-        border: 0.5px solid #FAC775;
-        color: #412402;
-    }
-
-    .alert-info {
-        background: #E6F1FB;
-        border: 0.5px solid #B5D4F4;
-        color: #042C53;
-    }
-
-    /* Container zones — margin only when they have children */
     #alerts-budget:not(:empty),
-    #alerts-bills:not(:empty) {
-        margin-bottom: 1rem;
-    }
+    #alerts-bills:not(:empty) { margin-bottom: 1rem; }
 
 
     /* ─── 12. CARDS ─────────────────────────────────────────────────────────────── */
     .card {
         background: var(--bg2);
         border-radius: var(--radius-lg);
-        padding: 14px 16px;
+        padding: 16px 18px;
         margin-bottom: 10px;
     }
 
@@ -360,30 +384,15 @@
     .badge {
         display: inline-block;
         font-size: 10px;
-        font-weight: 500;
-        padding: 2px 6px;
+        font-weight: 600;
+        padding: 2px 7px;
         border-radius: 4px;
     }
 
-    .badge-red {
-        background: #FCEBEB;
-        color: #791F1F;
-    }
-
-    .badge-green {
-        background: #EAF3DE;
-        color: #27500A;
-    }
-
-    .badge-blue {
-        background: #E6F1FB;
-        color: #042C53;
-    }
-
-    .badge-amber {
-        background: #FAEEDA;
-        color: #412402;
-    }
+    .badge-red   { background: #FCEBEB; color: #791F1F; }
+    .badge-green { background: #EAF3DE; color: #27500A; }
+    .badge-blue  { background: #E6F1FB; color: #042C53; }
+    .badge-amber { background: #FAEEDA; color: #412402; }
 
 
     /* ─── 14. FORM INPUTS ───────────────────────────────────────────────────────── */
@@ -391,9 +400,10 @@
         background: transparent;
         border: 0.5px solid var(--border2);
         border-radius: var(--radius);
-        padding: 8px 10px;
+        padding: 9px 11px;
         font-family: var(--font);
-        font-size: 13px;
+        font-size: 15px;
+        font-weight: 400;
         color: var(--text);
         box-sizing: border-box;
         width: 100%;
@@ -405,19 +415,14 @@
         border-color: var(--acc);
     }
 
-    /* Remove default select arrow on WebKit so we control the look */
     select.inp {
         -webkit-appearance: none;
         appearance: none;
         cursor: pointer;
-    }
-
-    /* Restore a minimal custom arrow for selects */
-    select.inp {
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
         background-position: right 10px center;
-        padding-right: 28px;
+        padding-right: 30px;
     }
 
     textarea.inp {
@@ -432,86 +437,91 @@
         color: var(--bg);
         border: none;
         border-radius: var(--radius);
-        padding: 9px 16px;
+        padding: 10px 18px;
         font-family: var(--font);
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 15px;
+        font-weight: 600;
         cursor: pointer;
         white-space: nowrap;
         transition: opacity var(--transition);
+        position: relative;
     }
 
-    .btn-primary:hover {
-        opacity: 0.85;
+    .btn-primary:hover:not(:disabled):not(.loading) { opacity: 0.82; }
+
+    .btn-primary:disabled,
+    .btn-primary.loading {
+        opacity: 0.55;
+        cursor: not-allowed;
+        pointer-events: none;
     }
+
+    .btn-primary.loading::after {
+        content: '';
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,0.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: btnSpin 0.7s linear infinite;
+    }
+
+    @keyframes btnSpin { to { transform: translateY(-50%) rotate(360deg); } }
 
     .btn-sm {
         background: transparent;
         border: 0.5px solid var(--border2);
         border-radius: var(--radius);
-        padding: 5px 10px;
+        padding: 6px 11px;
         font-family: var(--font);
-        font-size: 11px;
+        font-size: 12px;
+        font-weight: 500;
         cursor: pointer;
         color: var(--text2);
         white-space: nowrap;
         transition: border-color var(--transition), color var(--transition);
     }
 
-    .btn-sm:hover {
-        border-color: var(--text);
-        color: var(--text);
-    }
+    .btn-sm:hover { border-color: var(--text); color: var(--text); }
 
-    .btn-danger {
-        color: var(--red);
-        border-color: var(--red);
-    }
-
-    .btn-danger:hover {
-        background: #FCEBEB;
-        color: var(--red);
-        border-color: var(--red);
-    }
+    .btn-danger { color: var(--red); border-color: var(--red); }
+    .btn-danger:hover { background: #FCEBEB; color: var(--red); border-color: var(--red); }
 
 
     /* ─── 16. TABLES ────────────────────────────────────────────────────────────── */
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
     th {
-        font-size: 10px;
-        font-weight: 500;
+        font-size: 11px;
+        font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: var(--text2);
         border-bottom: 0.5px solid var(--border);
-        padding: 6px 8px;
+        padding: 7px 8px;
         text-align: right;
     }
 
-    th:first-child {
-        text-align: left;
-    }
+    th:first-child { text-align: left; }
 
     td {
-        padding: 7px 8px;
+        padding: 8px 8px;
         border-bottom: 0.5px solid var(--border);
         font-family: var(--mono);
+        font-weight: 500;
         text-align: right;
     }
 
     td:first-child {
         font-family: var(--font);
         text-align: left;
+        font-weight: 400;
     }
 
-    tr.row-active td {
-        background: var(--bg2);
-    }
+    tr.row-active td { background: var(--bg2); }
 
 
     /* ─── 17. DIVIDERS ──────────────────────────────────────────────────────────── */
@@ -535,135 +545,356 @@
         color: var(--text);
     }
 
-    /* Dark mode: alert banners — slightly more muted */
-    .app.dark .alert-danger {
-        background: rgba(216, 90, 48, 0.15);
-        border-color: rgba(216, 90, 48, 0.3);
-        color: #f0a080;
-    }
+    .app.dark .alert-danger  { background: rgba(216,90,48,.15);  border-color: rgba(216,90,48,.3);  color: #f0a080; }
+    .app.dark .alert-warning { background: rgba(186,117,23,.15); border-color: rgba(186,117,23,.3); color: #e0b060; }
+    .app.dark .alert-info    { background: rgba(24,95,165,.15);  border-color: rgba(24,95,165,.3);  color: #80b0e0; }
 
-    .app.dark .alert-warning {
-        background: rgba(186, 117, 23, 0.15);
-        border-color: rgba(186, 117, 23, 0.3);
-        color: #e0b060;
-    }
+    .app.dark .badge-red   { background: rgba(216,90,48,.2);  color: #f0a080; }
+    .app.dark .badge-green { background: rgba(29,158,117,.2); color: #7dd8a8; }
+    .app.dark .badge-blue  { background: rgba(24,95,165,.2);  color: #80b0e0; }
+    .app.dark .badge-amber { background: rgba(186,117,23,.2); color: #e0b060; }
 
-    .app.dark .alert-info {
-        background: rgba(24, 95, 165, 0.15);
-        border-color: rgba(24, 95, 165, 0.3);
-        color: #80b0e0;
-    }
+    .app.dark .inp { color: var(--text); }
+    .app.dark .inp:focus { border-color: var(--acc); }
 
-    /* Dark mode: badges — invert to remain readable */
-    .app.dark .badge-red   { background: rgba(216, 90, 48,  0.2); color: #f0a080; }
-    .app.dark .badge-green { background: rgba(29,  158, 117, 0.2); color: #7dd8a8; }
-    .app.dark .badge-blue  { background: rgba(24,  95,  165, 0.2); color: #80b0e0; }
-    .app.dark .badge-amber { background: rgba(186, 117, 23,  0.2); color: #e0b060; }
+    /* dark dropdown */
+    .app.dark #avatar-dropdown   { background: #1e1e21; border-color: var(--border2); }
+    .app.dark .dd-item           { color: var(--text); }
+    .app.dark .dd-item:hover     { background: rgba(255,255,255,0.06); }
+    .app.dark #profile-sheet-panel { background: var(--bg); }
 
-    /* Dark mode: inputs */
-    .app.dark .inp {
+    /* dark loading overlay */
+    .app.dark #loading-overlay { background: rgba(15,15,17,0.72); color: var(--text2); }
+
+    /*
+     * Dark mode for sidebar — the sidebar lives outside .app so it doesn't
+     * inherit .app.dark. We scope dark overrides to body.dark instead,
+     * and the boot + toggleDark() both add .dark to body as well as #app.
+     */
+    body.dark .sidebar,
+    body.dark #avatar-dropdown {
+        --bg:      #0f0f11;
+        --bg2:     #1a1a1d;
+        --border:  rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.16);
+        --text:    #e8e6e1;
+        --text2:   #888;
+        background: var(--bg2);
         color: var(--text);
     }
 
-    .app.dark .inp:focus {
-        border-color: var(--acc);
+    body.dark #avatar-dropdown {
+        background: #1e1e21;
+        border-color: rgba(255, 255, 255, 0.16);
     }
 
 
     /* ─── 19. PRINT STYLES ──────────────────────────────────────────────────────── */
     @media print {
-        /* Hide everything that isn't the report pane */
-        .app-header,
-        .tabs,
-        #alerts-budget,
-        #alerts-bills,
-        .pane:not(#pane-report) {
-            display: none !important;
-        }
+        .sidebar, .app-header, .tabs,
+        #alerts-budget, #alerts-bills,
+        .pane:not(#pane-report),
+        #bottom-nav { display: none !important; }
 
-        /* Force the report pane to be visible */
-        #pane-report {
-            display: block !important;
-        }
+        #pane-report { display: block !important; }
 
-        /* Remove the app container max-width and padding */
-        .app {
-            max-width: 100%;
-            padding: 0;
-            margin: 0;
-        }
+        #layout-root { display: block; }
+        .app { max-width: 100%; padding: 0; margin: 0; box-shadow: none; }
 
-        body {
-            background: #fff;
-            color: #000;
-            font-size: 12px;
-        }
+        body { background: #fff; color: #000; font-size: 12px; }
 
-        /* Remove backgrounds and shadows for clean print */
-        .metric,
-        .card {
-            background: none;
-            border: 0.5px solid #ccc;
-        }
+        .metric, .card { background: none; border: 0.5px solid #ccc; }
 
-        /* Hide action buttons in the report */
-        .btn-primary,
-        .btn-sm,
-        .tx-delete {
-            display: none !important;
-        }
+        .btn-primary, .btn-sm, .tx-delete { display: none !important; }
 
-        /* Ensure page breaks don't split mid-section */
-        .card,
-        .tx-row {
-            page-break-inside: avoid;
-        }
+        .card, .tx-row { page-break-inside: avoid; }
     }
 
 
     /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
-    @media (max-width: 600px) {
-        .app {
-            padding: 1rem 0.75rem;
-        }
 
-        /* 4-column grid collapses to 2 columns on mobile */
-        .row4 {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        /* 3-column grid collapses to 2 columns on mobile */
-        .row3 {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        /* Header stacks vertically on very small screens */
+    /* ── Desktop (≥ 768px): sidebar visible, header month nav hidden ──────── */
+    @media (min-width: 768px) {
+        /* app-header only shows balance + desktop controls on desktop */
         .app-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 1rem;
-        }
-
-        /* Net balance right-align becomes left-align in stacked layout */
-        .app-header > div:last-child {
-            text-align: left;
-        }
-
-        .app-header > div:last-child #hd-bal {
-            text-align: left;
-        }
-
-        /* Larger touch targets for tab buttons on mobile */
-        .tab {
-            padding: 10px 10px 12px;
-            font-size: 11px;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 0.5px solid var(--border);
         }
     }
 
-    @media (max-width: 400px) {
-        /* 2-column grid collapses to single column on very small screens */
-        .row2 {
-            grid-template-columns: 1fr;
+    /* ── Tablet (≤ 900px) ────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+        :root { --page-pad: 1.25rem; }
+        .row3 { grid-template-columns: 1fr 1fr; }
+        #pane-networth .row3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    /* ── Mobile (≤ 767px) — sidebar hidden, bottom nav visible ─────────── */
+    @media (max-width: 767px) {
+        :root { --page-pad: 1rem; }
+
+        body { font-size: 15px; }
+
+        .app {
+            /* Extra bottom padding so content clears fixed bottom nav */
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
         }
+
+        /* App header adjustments */
+        .app-header {
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 12px;
+            padding-bottom: 1rem;
+            /* Slightly less top margin on mobile since header is more compact */
+            margin-bottom: 1rem;
+        }
+
+        /* Tighter month nav on small screens */
+        .header-month-label {
+            font-size: 15px !important;
+            min-width: 90px !important;
+        }
+
+        .month-nav-btn {
+            width: 32px !important;
+            height: 32px !important;
+        }
+
+        #hd-bal { font-size: 18px !important; }
+
+        /* Grids */
+        .row4 { grid-template-columns: 1fr 1fr; }
+        .row3 { grid-template-columns: 1fr 1fr; }
+        .row2 { grid-template-columns: 1fr; }
+
+        /* Metric cards */
+        .metric { padding: 12px 12px; }
+        .metric .val { font-size: 15px; }
+
+        /* Transaction rows */
+        .tx-name { font-size: 14px; }
+        .tx-amount { white-space: nowrap; font-size: 14px; }
+        .tx-delete { font-size: 18px; min-width: 28px; min-height: 28px; }
+
+        /* Buttons */
+        .btn-sm { min-height: 34px; padding: 6px 12px; }
+        .btn-primary { padding: 12px 18px; font-size: 15px; }
+
+        /* Inputs */
+        .inp { font-size: 15px; padding: 10px 12px; }
+
+        /* Form grids → single column */
+        #pane-debt .row2,
+        #pane-goals [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-savings [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-recurring .row2 {
+            grid-template-columns: 1fr !important;
+        }
+
+        /* Bills 4-col form */
+        #pane-bills [style*="grid-template-columns: 1fr 1fr 70px auto"] {
+            grid-template-columns: 1fr 1fr auto !important;
+        }
+        #b-name { grid-column: 1 / -1; }
+
+        /* Net worth 4-col form */
+        #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
+            grid-template-columns: 1fr 1fr !important;
+        }
+        #nw-name { grid-column: 1 / -1; }
+
+        /* Tables — horizontal scroll */
+        #report-body table, #month-table table { min-width: 480px; }
+        #report-body, #month-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        /* Charts shorter on mobile */
+        #pane-charts [style*="height:200px"]    { height: 170px !important; }
+        #pane-charts [style*="height:240px"]    { height: 200px !important; }
+        #pane-multimonth [style*="height:220px"]{ height: 170px !important; }
+        #pane-forecast [style*="height:220px"]  { height: 170px !important; }
+
+        h1 { font-size: 20px; }
+        .sec { font-size: 10px; }
+    }
+
+    /* ── Very small phones (≤ 390px) ─────────────────────────────────────── */
+    @media (max-width: 390px) {
+        :root { --page-pad: 0.875rem; }
+        .header-month-label { font-size: 14px !important; min-width: 80px !important; }
+        .month-nav-btn { width: 28px !important; height: 28px !important; font-size: 14px !important; }
+        #hd-bal { font-size: 16px !important; }
+        .row4 { grid-template-columns: 1fr 1fr; gap: 8px; }
+    }
+
+
+    /* ─── BOTTOM NAVIGATION BAR (mobile only ≤ 767px) ──────────────────────── */
+    #bottom-nav {
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 200;
+        background: var(--bg);
+        border-top: 0.5px solid var(--border);
+        padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+    }
+
+    .bnav-inner {
+        display: flex;
+        justify-content: space-around;
+        align-items: flex-end;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .bnav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 8px;
+        min-width: 52px;
+        min-height: 48px;
+        justify-content: center;
+        color: var(--text2);
+        font-family: var(--font);
+        -webkit-tap-highlight-color: transparent;
+        transition: color .15s;
+    }
+
+    .bnav-item.active { color: var(--text); }
+
+    .bnav-item svg {
+        width: 24px;
+        height: 24px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .bnav-label {
+        font-size: 10px;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .bnav-item.active .bnav-label { font-weight: 600; }
+
+    /* More tab sheet */
+    #tab-sheet { display: none; position: fixed; inset: 0; z-index: 300; }
+    #tab-sheet.open { display: block; }
+    #tab-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+
+    #tab-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 16px max(24px, env(safe-area-inset-bottom));
+        max-height: 75vh;
+        overflow-y: auto;
+    }
+
+    #tab-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+
+    .tab-sheet-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    .tab-sheet-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 8px 10px;
+        cursor: pointer;
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text2);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .tab-sheet-item.active { color: var(--text); border-color: var(--border2); }
+
+    .tab-sheet-item svg {
+        width: 22px; height: 22px;
+        stroke: currentColor; fill: none;
+        stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    @media (max-width: 767px) {
+        #bottom-nav { display: flex; flex-direction: column; }
+    }
+
+
+    /* ─── LOADING STATES ────────────────────────────────────────────────────── */
+    .spinner {
+        display: inline-block;
+        width: 14px; height: 14px;
+        border: 2px solid var(--border2);
+        border-top-color: var(--text);
+        border-radius: 50%;
+        animation: spinnerR 0.7s linear infinite;
+        vertical-align: middle;
+        margin-left: 6px;
+    }
+    @keyframes spinnerR { to { transform: rotate(360deg); } }
+
+    .shimmer {
+        background: linear-gradient(90deg, var(--bg2) 25%, var(--border) 50%, var(--bg2) 75%);
+        background-size: 200% 100%;
+        animation: shimmerSlide 1.4s infinite;
+        border-radius: var(--radius);
+        height: 44px;
+        margin-bottom: 8px;
+    }
+    @keyframes shimmerSlide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+    #loading-overlay {
+        position: fixed; inset: 0;
+        background: rgba(255,255,255,0.72);
+        backdrop-filter: blur(4px);
+        z-index: 9998;
+        display: none;
+        align-items: center; justify-content: center;
+        flex-direction: column; gap: 12px;
+        font-size: 14px; font-weight: 500; color: var(--text2);
+    }
+    #loading-overlay .loading-spinner-lg {
+        width: 32px; height: 32px;
+        border: 3px solid var(--border2);
+        border-top-color: var(--text);
+        border-radius: 50%;
+        animation: spinnerR 0.8s linear infinite;
+    }
+
+    /* ─── SWIPE HINT ────────────────────────────────────────────────────────── */
+    @keyframes swipeHint {
+        0%   { transform: translateX(0);     opacity: 0; }
+        20%  { transform: translateX(0);     opacity: .7; }
+        60%  { transform: translateX(-18px); opacity: .7; }
+        80%  { transform: translateX(-18px); opacity: 0; }
+        100% { transform: translateX(0);     opacity: 0; }
     }
 </style>

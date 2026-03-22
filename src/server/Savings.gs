@@ -4,11 +4,18 @@
  * PURPOSE:
  *   Manage named savings targets (e.g. "Emergency Fund", "New Laptop").
  *   Each goal tracks a target amount and cumulative saved amount.
- *   When a savings-type transaction is added whose name matches a goal,
- *   updateSavingsGoalOnDeposit() is called automatically by Transactions.gs.
+ *
+ *   When a savings-type transaction is added, updateSavingsGoalOnDeposit()
+ *   is called automatically by Transactions.gs — matched by CATEGORY rather
+ *   than by transaction name.
  *
  * SHEET: SavingsGoals
  * COLUMNS: id | name | target_amount | saved_amount
+ *
+ * FIX: _castGoal renamed to _castSavingsGoal to avoid collision with the
+ *      _castGoalRow function in Goals.gs. Both files compile into the same
+ *      Apps Script global scope — duplicate names cause the last-loaded
+ *      version to silently override all earlier ones.
  *
  * CALLED BY:
  *   - Client via google.script.run
@@ -26,7 +33,7 @@
  * All numeric fields cast to numbers — Sheets can return strings.
  */
 function getAllSavingsGoals() {
-  return getAllRows(SHEET_NAMES.SAVINGS_GOALS).map(_castGoal);
+  return getUserAllRows('SavingsGoals').map(_castSavingsGoal);
 }
 
 /**
@@ -61,15 +68,15 @@ function addSavingsGoal(name, targetAmount) {
   }
 
   var goal = {
-    id:           generateId(),
-    name:         String(name).trim(),
+    id:            generateId(),
+    name:          String(name).trim(),
     target_amount: target,
     saved_amount:  0
   };
 
-  appendRow(SHEET_NAMES.SAVINGS_GOALS, goal);
+  getUserAppendRow('SAVINGS_GOALS', goal);
 
-  return _castGoal(goal);
+  return _castSavingsGoal(goal);
 }
 
 /**
@@ -81,7 +88,7 @@ function addSavingsGoal(name, targetAmount) {
 function deleteSavingsGoal(goalId) {
   if (!goalId) throw new Error('Savings.gs: goalId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.SAVINGS_GOALS, function(row) {
+  var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
     return String(row.id) === String(goalId);
   });
 
@@ -89,40 +96,38 @@ function deleteSavingsGoal(goalId) {
     throw new Error('Savings.gs: Savings goal "' + goalId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.SAVINGS_GOALS, rowIndex);
+  getUserDeleteRow('SAVINGS_GOALS', rowIndex);
   return { success: true };
 }
 
 /**
- * updateSavingsGoalOnDeposit(goalName, depositAmount)
+ * updateSavingsGoalOnDeposit(category, depositAmount)
  *
  * Called automatically from Transactions.addTransaction() when type === 'savings'.
- * Finds the savings goal whose name matches goalName (case-insensitive) and
- * increments its saved_amount, capped at target_amount.
+ *
+ * MATCHING STRATEGY — category-match:
+ *   Finds the savings goal whose name matches the transaction's category
+ *   (case-insensitive).
  *
  * Returns the updated goal object, or null if no matching goal is found.
- * A null return is NOT an error — the user may add savings transactions that
- * don't correspond to a named goal, which is perfectly valid.
  */
-function updateSavingsGoalOnDeposit(goalName, depositAmount) {
-  if (!goalName) return null;
+function updateSavingsGoalOnDeposit(category, depositAmount) {
+  if (!category) return null;
 
   var deposit = parseFloat(depositAmount);
   if (isNaN(deposit) || deposit <= 0) return null;
 
-  var trimmedName = String(goalName).trim().toLowerCase();
+  var trimmedCategory = String(category).trim().toLowerCase();
 
-  // Find the matching goal row.
-  var rowIndex = findRowIndex(SHEET_NAMES.SAVINGS_GOALS, function(row) {
-    return String(row.name || '').trim().toLowerCase() === trimmedName;
+  var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
+    return String(row.name || '').trim().toLowerCase() === trimmedCategory;
   });
 
-  if (rowIndex === -1) return null; // No matching goal — silent, not an error.
+  if (rowIndex === -1) return null;
 
-  // Re-read the current goal to get the latest saved_amount.
   var goals   = getAllSavingsGoals();
   var current = goals.find(function(g) {
-    return g.name.toLowerCase() === trimmedName;
+    return g.name.toLowerCase() === trimmedCategory;
   });
 
   if (!current) return null;
@@ -130,7 +135,6 @@ function updateSavingsGoalOnDeposit(goalName, depositAmount) {
   var newSaved = (parseFloat(current.saved_amount) || 0) + deposit;
   var target   = parseFloat(current.target_amount) || 0;
 
-  // Cap at target — you cannot oversave a goal in the tracker.
   if (target > 0) newSaved = Math.min(newSaved, target);
 
   var updated = {
@@ -140,22 +144,29 @@ function updateSavingsGoalOnDeposit(goalName, depositAmount) {
     saved_amount:  newSaved
   };
 
-  updateRow(SHEET_NAMES.SAVINGS_GOALS, rowIndex, updated);
+  getUserUpdateRow('SAVINGS_GOALS', rowIndex, updated);
 
-  return _castGoal(updated);
+  Logger.log(
+    'Savings.gs: updateSavingsGoalOnDeposit() — category "' + category +
+    '" matched goal "' + current.name + '", new saved: ' + newSaved
+  );
+
+  return _castSavingsGoal(updated);
 }
 
 
 // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
 /**
- * _castGoal(row)
+ * _castSavingsGoal(row)
  *
  * Normalises a raw row into a typed savings goal object with computed
- * percent_complete. Called on every row returned by getAllSavingsGoals()
- * and on newly created/updated objects before returning to the client.
+ * percent_complete.
+ *
+ * RENAMED from _castGoal to _castSavingsGoal to avoid collision with
+ * _castGoalRow in Goals.gs (same Apps Script global scope).
  */
-function _castGoal(row) {
+function _castSavingsGoal(row) {
   var target  = parseFloat(row.target_amount) || 0;
   var saved   = parseFloat(row.saved_amount)  || 0;
   var percent = target > 0

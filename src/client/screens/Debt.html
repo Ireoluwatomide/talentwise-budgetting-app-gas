@@ -43,7 +43,10 @@
     <input id="d-payment" class="inp" placeholder="Monthly payment"  type="number" min="0"/>
     <input id="d-rate"    class="inp" placeholder="Interest rate %"  type="number" min="0" step="0.1"/>
   </div>
-  <button onclick="addDebtForm()" class="btn-primary" style="width:100%;">Add Debt</button>
+  <button id="btn-add-debt" onclick="addDebtForm()" class="btn-primary" style="width:100%;">
+    <span class="btn-label">Add Debt</span>
+    <span class="btn-spinner"></span>
+  </button>
 
 </div>
 
@@ -133,10 +136,12 @@
               (isPaidOff ? 'var(--acc)' : 'var(--red)') + ';">' +
               fmt(owed) +
               '</span>' +
+              // Pay button passes itself so we can disable it during the call
               (!isPaidOff
-                      ? '<button class="btn-sm" onclick="payDebt(\'' + d.id + '\')">Pay</button>'
+                      ? '<button class="btn-sm" onclick="payDebt(\'' + d.id + '\', this)">Pay</button>'
                       : '') +
-              '<button class="tx-delete" onclick="deleteDebt(\'' + d.id + '\')" title="Remove debt">×</button>' +
+              // Delete button passes itself for optimistic dimming
+              '<button class="tx-delete" onclick="deleteDebt(\'' + d.id + '\', this)" title="Remove debt">×</button>' +
               '</div>' +
               '</div>' +
 
@@ -161,7 +166,12 @@
 
   // ─── ADD DEBT ────────────────────────────────────────────────────────────────
 
+  /**
+   * addDebtForm()
+   * Uses withButtonLoading() to show an inline spinner while saving.
+   */
   async function addDebtForm() {
+    var btn     = document.getElementById('btn-add-debt');
     var name    = getVal('d-name');
     var totRaw  = getVal('d-total');
     var payRaw  = getVal('d-payment');
@@ -183,27 +193,34 @@
     var payment = parseFloat(payRaw)  || 0;
     var rate    = parseFloat(rateRaw) || 0;
 
-    try {
-      var newDebt = await callServer('addDebt', name, total, payment, rate);
+    await withButtonLoading(btn, async function() {
+      try {
+        var newDebt = await callServer('addDebt', name, total, payment, rate);
 
-      if (!AppState.debts) AppState.debts = [];
-      AppState.debts.push(newDebt);
+        if (!AppState.debts) AppState.debts = [];
+        AppState.debts.push(newDebt);
 
-      clearInputs('d-name', 'd-total', 'd-payment', 'd-rate');
-      renderAll();
-      showToast('Debt added!', 'success');
+        clearInputs('d-name', 'd-total', 'd-payment', 'd-rate');
+        renderAll();
+        showToast('Debt added!', 'success');
 
-    } catch (e) {
-      // Error toast shown by callServer.
-    }
+      } catch (e) {
+        // Error toast shown by callServer.
+      }
+    });
   }
 
 
   // ─── RECORD PAYMENT ──────────────────────────────────────────────────────────
 
-  async function payDebt(debtId) {
-    // Use a browser prompt to ask for the payment amount.
-    // This keeps the UI clean without needing an inline form per debt.
+  /**
+   * payDebt(debtId, payBtnEl)
+   *
+   * Uses a browser prompt to ask for the payment amount.
+   * This keeps the UI clean without needing an inline form per debt.
+   * Disables the Pay button while the server call is in flight.
+   */
+  async function payDebt(debtId, payBtnEl) {
     var input = window.prompt('Enter payment amount:');
     if (input === null) return; // user cancelled
 
@@ -211,6 +228,11 @@
     if (isNaN(amount) || amount <= 0) {
       showToast('Please enter a valid payment amount.', 'error');
       return;
+    }
+
+    if (payBtnEl) {
+      payBtnEl.disabled = true;
+      payBtnEl.textContent = '…';
     }
 
     try {
@@ -225,6 +247,10 @@
       showToast('Payment recorded!', 'success');
 
     } catch (e) {
+      if (payBtnEl) {
+        payBtnEl.disabled = false;
+        payBtnEl.textContent = 'Pay';
+      }
       // Error toast shown by callServer.
     }
   }
@@ -232,7 +258,16 @@
 
   // ─── DELETE DEBT ─────────────────────────────────────────────────────────────
 
-  async function deleteDebt(debtId) {
+  /**
+   * deleteDebt(debtId, deleteBtnEl)
+   * Dims the delete button immediately as optimistic feedback.
+   */
+  async function deleteDebt(debtId, deleteBtnEl) {
+    if (deleteBtnEl) {
+      deleteBtnEl.disabled = true;
+      deleteBtnEl.style.opacity = '0.35';
+    }
+
     try {
       await callServer('deleteDebt', debtId);
 
@@ -244,6 +279,10 @@
       showToast('Debt removed.', 'info');
 
     } catch (e) {
+      if (deleteBtnEl) {
+        deleteBtnEl.disabled = false;
+        deleteBtnEl.style.opacity = '';
+      }
       // Error toast shown by callServer.
     }
   }

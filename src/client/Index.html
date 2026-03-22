@@ -3,16 +3,20 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Budget Tracker</title>
+  <title>Talentwise Budget Tracker</title>
 
   <!--
     ┌─────────────────────────────────────────────────────────────────────────┐
     │  Index.html — Root Page Shell                                           │
     │                                                                         │
-    │  Served by doGet() in Main.gs via:                                      │
-    │    HtmlService.createTemplateFromFile('src/client/Index')               │
-    │               .evaluate()                                               │
-    │               .setTitle('Budget Tracker')                               │
+    │  Layout (desktop ≥ 768px):                                              │
+    │    #layout-root — flex row, full viewport height                        │
+    │      Sidebar.html — fixed-width left nav (220px, collapsible to 52px)  │
+    │      #app.app    — flex: 1, scrollable content column                   │
+    │                                                                         │
+    │  Layout (mobile < 768px):                                               │
+    │    Sidebar is display:none                                              │
+    │    #app.app fills full width, bottom nav handles navigation             │
     │                                                                         │
     │  INCLUDE ORDER (dependencies before dependents — do not reorder):       │
     │    1. styles.css      — CSS variables + all component styles            │
@@ -21,10 +25,12 @@
     │    4. Metric.html     — makeMetric() helper used by screen renders      │
     │    5. utils.js        — AppState, callServer, fmt, renderAll, etc.      │
     │    6. AlertBanner     — updateAlertBanners() + alert zone divs          │
-    │    7. Header          — updateHeader() + header DOM                     │
-    │    8. Tabs            — tab strip DOM                                   │
-    │    9. Screen panes    — each pane div + its inline <script>             │
-    │   10. Boot sequence   — renderAll() called once, after all includes     │
+    │    7. Sidebar         — desktop left nav (NEW)                          │
+    │    8. Header          — updateHeader() + header DOM                     │
+    │    9. Tabs            — hidden tab strip (DOM anchors for switchTab)    │
+    │   10. BottomNav       — mobile bottom nav bar + swipe gesture           │
+    │   11. Screen panes    — each pane div + its inline <script>             │
+    │   12. Boot sequence   — renderAll() called once, after all includes     │
     └─────────────────────────────────────────────────────────────────────────┘
   -->
 
@@ -35,12 +41,8 @@
 <body>
 
 <!-- ── 2. Bootstrap Data ─────────────────────────────────────────────────── -->
-<!--
-  Injected by doGet() in Main.gs as a template variable.
-  Must appear BEFORE utils.js so window.__BOOTSTRAP__ is defined
-  when AppState initialises on the next line.
--->
 <?!= bootstrapScript ?>
+<?!= userProfile ?>
 
 <!-- ── 3. Chart.js CDN ───────────────────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -50,69 +52,98 @@
 
 <!-- ── 5. Shared Utilities ───────────────────────────────────────────────── -->
 <?!= include('src/client/utils/utils.js') ?>
+<?!= include('src/client/utils/utils_amt_addon') ?>
 
-<!-- ── App Container ─────────────────────────────────────────────────────── -->
-<div id="app" class="app">
-
-  <!-- ── 6. Alert Banners ────────────────────────────────────────────────── -->
-  <?!= include('src/client/components/AlertBanner') ?>
-
-  <!-- ── 7. Header ───────────────────────────────────────────────────────── -->
-  <?!= include('src/client/components/Header') ?>
-
-  <!-- ── 8. Tab Navigation ───────────────────────────────────────────────── -->
-  <?!= include('src/client/components/Tabs') ?>
-
-  <!-- ── 9. Screen Panes ─────────────────────────────────────────────────── -->
-  <?!= include('src/client/screens/Overview') ?>
-  <?!= include('src/client/screens/Charts') ?>
-  <?!= include('src/client/screens/Categories') ?>
-  <?!= include('src/client/screens/Insights') ?>
-  <?!= include('src/client/screens/Forecast') ?>
-  <?!= include('src/client/screens/MultiMonth') ?>
-  <?!= include('src/client/screens/Report') ?>
-  <?!= include('src/client/screens/Goals') ?>
-  <?!= include('src/client/screens/Savings') ?>
-  <?!= include('src/client/screens/Debt') ?>
-  <?!= include('src/client/screens/NetWorth') ?>
-  <?!= include('src/client/screens/Recurring') ?>
-  <?!= include('src/client/screens/Templates') ?>
-  <?!= include('src/client/screens/Bills') ?>
-  <?!= include('src/client/screens/Settings') ?>
-
-</div><!-- /#app -->
-
-<!-- ── 10. Boot Sequence ─────────────────────────────────────────────────── -->
+<!-- ══ LAYOUT ROOT ═══════════════════════════════════════════════════════ -->
 <!--
-  Runs once after ALL includes above have been parsed by the browser.
-  At this point: AppState is populated, all render functions are defined,
-  all DOM elements exist. Safe to call renderAll() immediately.
-
-  Do NOT wrap in DOMContentLoaded — HtmlService finishes rendering the
-  entire document before executing any script, so the DOM is always ready.
+  #layout-root: flex row that fills the full viewport height on desktop.
+  Sidebar sits on the left; #app is the scrollable content column on the right.
+  On mobile the sidebar is hidden and #app fills full width.
 -->
+<div id="layout-root">
+
+  <!-- ── 6. Alert Banners (outside #app so they don't affect sidebar) ──── -->
+  <!-- Moved inside #app below so alerts scroll with content -->
+
+  <!-- ── 7. Sidebar (desktop left nav) ──────────────────────────────────── -->
+  <?!= include('src/client/components/Sidebar') ?>
+
+  <!-- ── App content column ─────────────────────────────────────────────── -->
+  <div id="app" class="app">
+
+    <!-- Alert banners -->
+    <?!= include('src/client/components/AlertBanner') ?>
+
+    <?!= include('src/client/components/NotificationBell') ?>
+
+    <!-- ── 8. Header ─────────────────────────────────────────────────────── -->
+    <?!= include('src/client/components/Header') ?>
+
+    <!-- ── 9. Tab Navigation (hidden, kept for DOM anchors) ──────────────── -->
+    <?!= include('src/client/components/Tabs') ?>
+
+    <!-- ── 10. Bottom Navigation (mobile) ───────────────────────────────── -->
+    <?!= include('src/client/components/BottomNav') ?>
+
+    <!-- ── 11. Screen Panes ─────────────────────────────────────────────── -->
+    <?!= include('src/client/screens/Overview') ?>
+    <?!= include('src/client/screens/Charts') ?>
+    <?!= include('src/client/screens/Categories') ?>
+    <?!= include('src/client/screens/Insights') ?>
+    <?!= include('src/client/screens/Forecast') ?>
+    <?!= include('src/client/screens/MultiMonth') ?>
+    <?!= include('src/client/screens/Report') ?>
+    <?!= include('src/client/screens/Goals') ?>
+    <?!= include('src/client/screens/Savings') ?>
+    <?!= include('src/client/screens/Debt') ?>
+    <?!= include('src/client/screens/NetWorth') ?>
+    <?!= include('src/client/screens/Recurring') ?>
+    <?!= include('src/client/screens/Templates') ?>
+    <?!= include('src/client/screens/Bills') ?>
+    <?!= include('src/client/screens/Settings') ?>
+
+  </div><!-- /#app -->
+
+</div><!-- /#layout-root -->
+
+
+<!-- ── 12. Boot Sequence ─────────────────────────────────────────────────── -->
 <script>
   (function boot() {
-    // 1. Apply persisted dark mode BEFORE first render to avoid a flash
-    //    of the light theme appearing then immediately switching to dark.
+    // 1. Apply persisted dark mode BEFORE first render to avoid flash
     if (AppState.darkMode) {
       document.getElementById('app').classList.add('dark');
+      document.body.classList.add('dark');
       var darkBtn = document.getElementById('dark-btn');
       if (darkBtn) darkBtn.textContent = 'Light';
     }
 
-    // 2. Sync the currency selector in the header to the stored preference.
-    var currencySel = document.getElementById('currency-sel');
-    if (currencySel) currencySel.value = AppState.currency;
+    // 2. Sync all currency selectors to stored preference
+    ['currency-sel', 'currency-sel-dd', 'currency-sel-mobile'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = AppState.currency;
+    });
 
-    // 3. Populate all category <select> dropdowns from AppState.categories.
-    //    Must run before renderAll() so the Overview add-form select is filled.
+    // 3. Populate category <select> dropdowns
     if (typeof populateCategorySelects === 'function') {
       populateCategorySelects();
     }
 
-    // 4. First full render — populates metric cards, transaction list,
-    //    goals, bills, etc. from the bootstrap data already in AppState.
+    // 4. Ensure all .btn-primary buttons have label+spinner structure
+    if (typeof initAllBtnStructures === 'function') {
+      initAllBtnStructures();
+    }
+
+    // 4b. Wire comma formatting on all amount inputs
+    if (typeof initAmountInputs === 'function') {
+      initAmountInputs();
+    }
+
+    // 5. Set initial active state on mobile bottom nav
+    var bnavOverview = document.getElementById('bnav-overview');
+    if (bnavOverview) bnavOverview.classList.add('active');
+
+    // 6. First full render
     if (typeof renderAll === 'function') {
       renderAll();
     }

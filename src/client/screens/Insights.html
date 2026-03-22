@@ -136,7 +136,8 @@
         if (topCatEntry) {
             var topCatName = topCatEntry[0];
             var topCatAmt  = topCatEntry[1];
-            var hasGoal    = (AppState.goals || []).some(function(g) {
+            var curGoals = (AppState.goals && AppState.goals[curKey()]) || [];
+            var hasGoal = curGoals.some(function(g) {
                 return g.category && g.category.toLowerCase() === topCatName.toLowerCase();
             });
             var goalNote = hasGoal

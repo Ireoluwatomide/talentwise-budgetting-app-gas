@@ -1,0 +1,191 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     BottomNav.html — Mobile Bottom Navigation Bar
+
+     On mobile (≤ 600px), replaces the horizontal tab strip with a fixed
+     bottom nav showing 5 primary tabs plus a "More" sheet.
+
+     PRIMARY TABS: Overview · Goals · Bills · Savings · More ···
+     SECONDARY TABS (More sheet): all remaining tabs
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<!-- Bottom navigation bar -->
+<div id="bottom-nav">
+    <div class="bnav-inner">
+
+        <button class="bnav-item" id="bnav-overview" onclick="switchTabMobile('overview')">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span class="bnav-label">Overview</span>
+        </button>
+
+        <button class="bnav-item" id="bnav-goals" onclick="switchTabMobile('goals')">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+            <span class="bnav-label">Limits</span>
+        </button>
+
+        <button class="bnav-item" id="bnav-bills" onclick="switchTabMobile('bills')">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h5M8 15h3"/></svg>
+            <span class="bnav-label">Bills</span>
+        </button>
+
+        <button class="bnav-item" id="bnav-savings" onclick="switchTabMobile('savings')">
+            <svg viewBox="0 0 24 24"><path d="M19 11c0 4.42-3.13 8-7 8s-7-3.58-7-8 3.13-8 7-8c1.93 0 3.68.78 4.95 2.05"/><path d="M17 6l2-2 2 2M19 4v6"/></svg>
+            <span class="bnav-label">Savings</span>
+        </button>
+
+        <button class="bnav-item" id="bnav-more" onclick="openTabSheet()">
+            <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <span class="bnav-label">More</span>
+        </button>
+
+    </div>
+</div>
+
+<!-- "More" tab sheet overlay -->
+<div id="tab-sheet">
+    <div id="tab-sheet-backdrop" onclick="closeTabSheet()"></div>
+    <div id="tab-sheet-panel">
+        <div id="tab-sheet-handle"></div>
+        <div class="tab-sheet-grid">
+
+            <button class="tab-sheet-item" id="tsitem-charts"     onclick="switchTabMobile('charts');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><path d="M4 20V10h4v10M10 20V4h4v16M16 20v-6h4v6"/></svg>Charts
+            </button>
+            <button class="tab-sheet-item" id="tsitem-categories" onclick="switchTabMobile('categories');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/></svg>Categories
+            </button>
+            <button class="tab-sheet-item" id="tsitem-insights"   onclick="switchTabMobile('insights');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 017 7c0 2.5-1.3 4.7-3.3 6l-.7.8V18a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2.2l-.7-.8A7 7 0 015 9a7 7 0 017-7z"/><path d="M9 21h6"/></svg>Insights
+            </button>
+            <button class="tab-sheet-item" id="tsitem-forecast"   onclick="switchTabMobile('forecast');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><path d="M3 17l5-7 4 4 4-5 5 4"/></svg>Forecast
+            </button>
+            <button class="tab-sheet-item" id="tsitem-multimonth" onclick="switchTabMobile('multimonth');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M16 4v5"/></svg>Multi-Month
+            </button>
+            <button class="tab-sheet-item" id="tsitem-report"     onclick="switchTabMobile('report');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Report
+            </button>
+            <button class="tab-sheet-item" id="tsitem-debt"       onclick="switchTabMobile('debt');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Debt
+            </button>
+            <button class="tab-sheet-item" id="tsitem-networth"   onclick="switchTabMobile('networth');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Net Worth
+            </button>
+            <button class="tab-sheet-item" id="tsitem-recurring"  onclick="switchTabMobile('recurring');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Recurring
+            </button>
+            <button class="tab-sheet-item" id="tsitem-templates"  onclick="switchTabMobile('templates');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Templates
+            </button>
+            <button class="tab-sheet-item" id="tsitem-settings"   onclick="switchTabMobile('settings');closeTabSheet()">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
+            </button>
+
+        </div>
+    </div>
+</div>
+
+<script>
+    // =============================================================================
+    // Bottom navigation + swipe gesture
+    // =============================================================================
+
+    var BNAV_PRIMARY = ['overview', 'goals', 'bills', 'savings'];
+
+    /**
+     * switchTabMobile(tabId)
+     * Wrapper around switchTab() that also updates bottom nav active states.
+     */
+    function switchTabMobile(tabId) {
+        switchTab(tabId);
+
+        // Update bottom nav active state
+        BNAV_PRIMARY.forEach(function(id) {
+            var el = document.getElementById('bnav-' + id);
+            if (el) el.classList.toggle('active', id === tabId);
+        });
+
+        var moreBtn = document.getElementById('bnav-more');
+        if (moreBtn) {
+            moreBtn.classList.toggle('active', BNAV_PRIMARY.indexOf(tabId) === -1);
+        }
+
+        // Update More sheet item active state
+        document.querySelectorAll('.tab-sheet-item').forEach(function(el) {
+            el.classList.remove('active');
+        });
+        var tsItem = document.getElementById('tsitem-' + tabId);
+        if (tsItem) tsItem.classList.add('active');
+    }
+
+    function openTabSheet() {
+        var sheet = document.getElementById('tab-sheet');
+        if (sheet) {
+            sheet.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    function closeTabSheet() {
+        var sheet = document.getElementById('tab-sheet');
+        if (sheet) {
+            sheet.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    }
+
+
+    // ─── SWIPE GESTURE FOR MONTH NAVIGATION ──────────────────────────────────────
+    (function() {
+        var touchStartX = 0;
+        var touchStartY = 0;
+        var SWIPE_THRESHOLD = 60;
+        var DIRECTION_LOCK  = 30;
+
+        var app = document.getElementById('app');
+        if (!app) return;
+
+        app.addEventListener('touchstart', function(e) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        app.addEventListener('touchend', function(e) {
+            var dx = e.changedTouches[0].clientX - touchStartX;
+            var dy = e.changedTouches[0].clientY - touchStartY;
+
+            if (Math.abs(dy) > DIRECTION_LOCK) return;
+            if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+
+            var target = e.target;
+            while (target && target !== app) {
+                var style = window.getComputedStyle(target);
+                if (style.overflowX === 'auto' || style.overflowX === 'scroll') return;
+                target = target.parentElement;
+            }
+
+            if (dx < 0) {
+                if (typeof nextMonth === 'function') nextMonth();
+            } else {
+                if (typeof prevMonth === 'function') prevMonth();
+            }
+        }, { passive: true });
+    })();
+
+    /**
+     * signOut()
+     * Redirects to the landing page.
+     */
+    function signOut() {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(function(url) { window.top.location.href = url; })
+                .withFailureHandler(function() {
+                    window.top.location.href = window.top.location.href.split('?')[0] + '?page=landing';
+                })
+                .getSignOutUrl();
+        } else {
+            window.top.location.href = window.top.location.href.split('?')[0] + '?page=landing';
+        }
+    }
+</script>

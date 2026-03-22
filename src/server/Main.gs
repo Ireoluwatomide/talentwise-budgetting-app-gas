@@ -1,47 +1,78 @@
 /**
- * Main.gs — Entry Point
+ * Main.gs — Entry Point (Multi-User Edition)
  *
- * PURPOSE:
- *   Serves the HTML shell when the web app URL is opened.
- *   This is the only function Apps Script calls automatically on a GET request.
- *   All other server functions are called by the client via google.script.run.
+ * CHANGES FROM PHASE 1:
+ *   - doGet() now checks if the user is authenticated.
+ *   - Unauthenticated requests are served Landing.html (public page).
+ *   - Authenticated requests provision the user if new, then serve the app.
+ *   - getBootstrapData() scopes all data reads to the current user via UserManager.gs.
  *
- * PATTERN:
- *   doGet() creates an HtmlTemplate from Index.html.
- *   Index.html uses <?!= include('path') ?> scriptlet tags to inline every
- *   stylesheet, utility, component, and screen file into a single HTML document.
- *   Bootstrap data is injected as window.__BOOTSTRAP__ so the first render
- *   is instant — zero extra round-trips after page load.
+ * APPSSCRIPT.JSON REQUIREMENT:
+ *   Change "executeAs": "USER_DEPLOYING"  →  "USER_ACCESSING"
+ *   Change "access":    "ANYONE_ANONYMOUS" →  "ANYONE_WITH_GOOGLE_ACCOUNT"
+ *   This forces Google sign-in before the script runs, giving us the user's email.
  */
 
-
-// ─── WEB APP ENTRY POINT ─────────────────────────────────────────────────────
 
 /**
  * doGet(e)
  *
- * Called automatically by Apps Script when the web app URL is opened.
- * Builds the full page by evaluating Index.html as a template, then
- * injects bootstrap data so the client can render immediately.
- *
- * The `e` parameter (event object) is available but not used currently.
- * It would contain query parameters if the app ever needs deep-linking.
+ * Routes the request:
+ *   - ?page=landing  → always serve Landing.html
+ *   - No active user → serve Landing.html
+ *   - Active user    → provision if new, serve the full app
  */
 function doGet(e) {
-  // Build the bootstrap data payload and inject it into the template
-  // as a template variable. Index.html accesses it via <?!= bootstrapScript ?>.
-  var bootstrapData   = getBootstrapData();
-  var bootstrapScript = '<script>window.__BOOTSTRAP__ = ' +
-                        JSON.stringify(bootstrapData) +
-                        ';<\/script>';
+  var params = e && e.parameter ? e.parameter : {};
 
-  // Create the template from the root shell file.
-  // HtmlService.createTemplateFromFile() supports <?= ?> and <?!= ?> scriptlets.
+  if (params.page === 'landing') {
+    return _serveLanding();
+  }
+
+  var email = '';
+  try {
+    email = Session.getActiveUser().getEmail();
+  } catch (err) {
+    Logger.log('Main.gs: doGet() — could not read user session: ' + err.message);
+  }
+
+  if (!email) {
+    return _serveLanding();
+  }
+
+  try {
+    getOrCreateUser(email);
+  } catch (err) {
+    Logger.log('Main.gs: doGet() — user provisioning error: ' + err.message);
+  }
+
+  return _serveApp();
+}
+
+
+// ─── PAGE SERVERS ─────────────────────────────────────────────────────────────
+
+function _serveLanding() {
+  return HtmlService
+    .createTemplateFromFile('src/client/Landing')
+    .evaluate()
+    .setTitle('Budget Tracker — Track your finances, free')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function _serveApp() {
   var template = HtmlService.createTemplateFromFile('src/client/Index');
 
-  // Pass the bootstrap script block as a template variable.
-  // Index.html uses <?!= bootstrapScript ?> to inline it before utils.js loads.
-  template.bootstrapScript = bootstrapScript;
+  var data = getBootstrapData();
+  template.bootstrapScript =
+    '<script>window.__BOOTSTRAP__ = ' + JSON.stringify(data) + ';<\/script>';
+
+  var profile = {};
+  try { profile = getCurrentUserProfile(); }
+  catch (err) { Logger.log('Main.gs: profile error — ' + err.message); }
+
+  template.userProfile =
+    '<script>window.__USER__ = ' + JSON.stringify(profile) + ';<\/script>';
 
   return template
     .evaluate()
@@ -50,23 +81,8 @@ function doGet(e) {
 }
 
 
-// ─── TEMPLATE HELPER ─────────────────────────────────────────────────────────
+// ─── INCLUDE HELPER ───────────────────────────────────────────────────────────
 
-/**
- * include(filename)
- *
- * Inlines the content of another file into an HtmlTemplate.
- * Used inside .html files as: <?!= include('src/client/utils/styles.css') ?>
- *
- * The `!` in <?!= means "print without escaping HTML" — required here because
- * we're inlining raw HTML/CSS/JS, not user-generated content.
- *
- * Apps Script file naming note:
- *   clasp maps local paths like 'src/client/utils/styles.css' to a file named
- *   'src/client/utils/styles.css.html' on disk. In the Apps Script editor the
- *   file appears as 'src/client/utils/styles.css' (clasp strips the .html suffix
- *   on push). The include() call uses the path WITHOUT the .html extension.
- */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
@@ -77,109 +93,97 @@ function include(filename) {
 /**
  * getBootstrapData()
  *
- * Assembles all data needed for the initial page render into a single object.
- * Batching everything into one server call is critical — each google.script.run
- * call has ~300-500ms overhead, so 8 separate calls would add 2-4 seconds of
- * blank-screen time before any content appears.
- *
- * Each domain module is called inside its own try/catch so a failure in one
- * module (e.g. Bills.gs not yet deployed) does not prevent the whole app
- * from loading. The client always gets a complete object — missing data
- * just shows empty arrays/defaults, which render as empty states gracefully.
- *
- * Return shape (mirrors AppState structure in utils.js):
- * {
- *   currentMonthKey: 'YYYY-MM',
- *   transactions:    { 'YYYY-MM': [...] },   // current month only on first load
- *   goals:           [...],
- *   bills:           [...],
- *   savingsGoals:    [...],
- *   debts:           [...],
- *   netWorthItems:   [...],
- *   recurring:       [...],
- *   preferences:     { currency, dark_mode, categories }
- * }
+ * Loads all data needed for first render in a single server execution.
+ * FIXED: now loads ALL transactions (grouped by month) rather than only
+ * the current month, so Savings totals, multi-month charts, forecasts
+ * and the report tab all work correctly on first page load.
  */
 function getBootstrapData() {
-  // Build the current month key — "YYYY-MM" format matching Transactions.gs convention.
-  var now      = new Date();
-  var year     = now.getFullYear();
-  var month    = String(now.getMonth() + 1).padStart(2, '0');
-  var monthKey = year + '-' + month;
-
+  var now = new Date();
   var data = {
-    currentMonthKey: monthKey,
-    transactions:    {},
-    goals:           [],
-    bills:           [],
-    savingsGoals:    [],
-    debts:           [],
-    netWorthItems:   [],
-    recurring:       [],
-    preferences:     {
-      currency:   'NGN',
-      dark_mode:  false,
-      categories: []
-    }
+    curYear:      now.getFullYear(),
+    curMonth:     now.getMonth() + 1,
+    currency:     'NGN',
+    darkMode:     false,
+    categories:   [],
+    transactions: {},   // { 'YYYY-MM': [tx, ...] } — all months, not just current
+    goals:        {},
+    bills:        [],
+    savingsGoals: [],
+    debts:        [],
+    netWorthItems:[],
+    recurring:    []
   };
 
-  // ── Preferences ─────────────────────────────────────────────────────────────
-  // Load first — currency and categories are needed by all other render functions.
-  try {
-    data.preferences = getAllPreferences();
-  } catch (e) {
-    Logger.log('getBootstrapData: preferences failed — ' + e.message);
+  // Preferences
+  if (typeof getAllPreferences === 'function') {
+    try {
+      var prefs = getAllPreferences();
+      data.currency   = prefs.currency   || 'NGN';
+      data.darkMode   = prefs.dark_mode  || false;
+      data.categories = prefs.categories || [];
+    } catch (e) { Logger.log('Bootstrap: Preferences — ' + e.message); }
   }
 
-  // ── Current month transactions ───────────────────────────────────────────────
-  try {
-    data.transactions[monthKey] = getTransactionsByMonth(monthKey);
-  } catch (e) {
-    Logger.log('getBootstrapData: transactions failed — ' + e.message);
-    data.transactions[monthKey] = [];
+  // ── TRANSACTIONS: load ALL months, grouped by month_key ─────────────────────
+  // This is the key fix. Previously only the current month was loaded,
+  // causing Savings "Total Saved All Time", multi-month charts, forecast
+  // averages, and the Report to all show empty/zero data until the user
+  // manually navigated to each past month.
+  if (typeof getAllTransactions === 'function') {
+    try {
+      var allTxs = getAllTransactions();
+
+      // Group by month_key into the same structure the client uses.
+      allTxs.forEach(function(tx) {
+        var key = tx.month_key;
+        if (!key) return;
+        if (!data.transactions[key]) data.transactions[key] = [];
+        data.transactions[key].push(tx);
+      });
+
+      Logger.log('Bootstrap: Loaded transactions for ' +
+        Object.keys(data.transactions).length + ' month(s).');
+    } catch (e) {
+      // Fall back to just current month if getAllTransactions fails
+      Logger.log('Bootstrap: getAllTransactions failed — ' + e.message + '. Falling back to current month.');
+      try {
+        var mk = data.curYear + '-' + (data.curMonth < 10 ? '0' : '') + data.curMonth;
+        var monthTxs = getTransactionsByMonth(mk);
+        data.transactions[mk] = monthTxs;
+      } catch (e2) {
+        Logger.log('Bootstrap: Transactions fallback also failed — ' + e2.message);
+      }
+    }
   }
 
-  // ── Goals ────────────────────────────────────────────────────────────────────
-  try {
-    data.goals = (typeof getAllGoals === 'function') ? getAllGoals() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: goals failed — ' + e.message);
-  }
+  // Goals — load ALL months grouped by month_key (getAllGoals now returns object)
+  if (typeof getAllGoals === 'function') {
+      try {
+        data.goals = getAllGoals();
+        Logger.log('Bootstrap: Loaded goals for ' +
+          Object.keys(data.goals).length + ' month(s).');
+      } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
+    }
 
-  // ── Bills ────────────────────────────────────────────────────────────────────
-  try {
-    data.bills = (typeof getAllBills === 'function') ? getAllBills() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: bills failed — ' + e.message);
-  }
-
-  // ── Savings goals ────────────────────────────────────────────────────────────
-  try {
-    data.savingsGoals = (typeof getAllSavingsGoals === 'function') ? getAllSavingsGoals() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: savingsGoals failed — ' + e.message);
-  }
-
-  // ── Debts ────────────────────────────────────────────────────────────────────
-  try {
-    data.debts = (typeof getAllDebts === 'function') ? getAllDebts() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: debts failed — ' + e.message);
-  }
-
-  // ── Net worth items ──────────────────────────────────────────────────────────
-  try {
-    data.netWorthItems = (typeof getAllNetWorthItems === 'function') ? getAllNetWorthItems() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: netWorthItems failed — ' + e.message);
-  }
-
-  // ── Recurring templates ──────────────────────────────────────────────────────
-  try {
-    data.recurring = (typeof getAllRecurring === 'function') ? getAllRecurring() : [];
-  } catch (e) {
-    Logger.log('getBootstrapData: recurring failed — ' + e.message);
-  }
+  // All other domains
+  if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '      + e.message); } }
+  if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
+  if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
+  if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }
+  if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '  + e.message); } }
 
   return data;
+}
+
+
+// ─── AUTH HELPERS (client-callable) ──────────────────────────────────────────
+
+function getSessionUser() {
+  try { return getCurrentUserProfile(); }
+  catch (e) { return null; }
+}
+
+function getSignOutUrl() {
+  return ScriptApp.getService().getUrl() + '?page=landing';
 }

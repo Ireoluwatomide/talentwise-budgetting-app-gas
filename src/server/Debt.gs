@@ -28,7 +28,7 @@
  *   months_to_payoff = ceil(amount_owed / monthly_payment), or null if no payment set
  */
 function getAllDebts() {
-  return getAllRows(SHEET_NAMES.DEBTS).map(_castDebt);
+  return getUserAllRows('Debts').map(_castDebt);
 }
 
 /**
@@ -95,7 +95,7 @@ function addDebt(name, total, monthlyPayment, interestRate) {
     interest_rate:    parsedRate
   };
 
-  appendRow(SHEET_NAMES.DEBTS, debt);
+  getUserAppendRow('DEBTS', debt);
   return _castDebt(debt);
 }
 
@@ -113,7 +113,7 @@ function recordDebtPayment(debtId, paymentAmount) {
     throw new Error('Debt.gs: paymentAmount must be a positive number.');
   }
 
-  var rowIndex = findRowIndex(SHEET_NAMES.DEBTS, function(row) {
+  var rowIndex = getUserFindRowIndex('DEBTS', function(row) {
     return String(row.id) === String(debtId);
   });
 
@@ -138,7 +138,7 @@ function recordDebtPayment(debtId, paymentAmount) {
     interest_rate:   current.interest_rate
   };
 
-  updateRow(SHEET_NAMES.DEBTS, rowIndex, updated);
+  getUserUpdateRow('DEBTS', rowIndex, updated);
   return _castDebt(updated);
 }
 
@@ -149,7 +149,8 @@ function recordDebtPayment(debtId, paymentAmount) {
 function deleteDebt(debtId) {
   if (!debtId) throw new Error('Debt.gs: debtId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.DEBTS, function(row) {
+  // FIX: was findRowIndex(SHEET_NAMES.DEBTS, ...) — must use scoped version
+  var rowIndex = getUserFindRowIndex('DEBTS', function(row) {
     return String(row.id) === String(debtId);
   });
 
@@ -157,7 +158,7 @@ function deleteDebt(debtId) {
     throw new Error('Debt.gs: Debt "' + debtId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.DEBTS, rowIndex);
+  getUserDeleteRow('DEBTS', rowIndex);
   return { success: true };
 }
 

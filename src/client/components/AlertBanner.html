@@ -44,13 +44,14 @@
         var budgetEl = document.getElementById('alerts-budget');
         if (!budgetEl) return;
 
-        var goals = AppState.goals || [];
+        // CHANGED: goals are now keyed by month
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+
         if (goals.length === 0) {
             budgetEl.innerHTML = '';
             return;
         }
 
-        // Build a spending map for the current month: { category: totalSpent }
         var spendMap = _buildSpendMap();
         var html = '';
 

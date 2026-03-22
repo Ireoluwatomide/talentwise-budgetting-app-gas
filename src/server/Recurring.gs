@@ -30,7 +30,7 @@
  * amount is cast to a number — Sheets can return numeric strings.
  */
 function getAllRecurring() {
-  return getAllRows(SHEET_NAMES.RECURRING).map(function(row) {
+  return getUserAllRows('Recurring').map(function(row) {
     return {
       id:       String(row.id       || '').trim(),
       name:     String(row.name     || '').trim(),
@@ -73,7 +73,7 @@ function addRecurring(name, amount, type, category) {
     category: String(category || 'Other').trim()
   };
 
-  appendRow(SHEET_NAMES.RECURRING, recurring);
+  getUserAppendRow('RECURRING', recurring);
   return recurring;
 }
 
@@ -86,7 +86,7 @@ function addRecurring(name, amount, type, category) {
 function deleteRecurring(recurringId) {
   if (!recurringId) throw new Error('Recurring.gs: recurringId is required.');
 
-  var rowIndex = findRowIndex(SHEET_NAMES.RECURRING, function(row) {
+  var rowIndex = getUserFindRowIndex('RECURRING', function(row) {
     return String(row.id) === String(recurringId);
   });
 
@@ -94,7 +94,7 @@ function deleteRecurring(recurringId) {
     throw new Error('Recurring.gs: Recurring template "' + recurringId + '" not found.');
   }
 
-  deleteRow(SHEET_NAMES.RECURRING, rowIndex);
+  getUserDeleteRow('RECURRING', rowIndex);
   return { success: true };
 }
 

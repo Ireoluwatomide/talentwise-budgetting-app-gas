@@ -1,24 +1,19 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Templates.html — Budget Template Presets
-
-     TAB: Templates
-
-     SECTIONS:
-       1. Income input + template buttons
-       2. Result area (populated after apply)
-       3. Explainer cards for each rule
-
-     SERVER CALLS: applyBudgetTemplate(monthlyIncome, templateType)
+     Templates.html — FIXED
+     - Defensive field name normalisation on server response
+     - Debug console.log to confirm shape (remove after verified)
+     - Result box handles missing category / zero amount gracefully
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-templates">
 
-    <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;">
-        Apply a budget template based on your monthly income.
-        This will create or update spending goals for each category.
+    <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;line-height:1.6;">
+        Apply a budget template to set spending limits for
+        <span id="tpl-month-label" style="font-weight:600;color:var(--text);"></span>.
+        Templates only affect the <strong>currently viewed month</strong> —
+        navigate to another month and re-apply if your income changes.
     </div>
 
-    <!-- Income input + buttons -->
     <div style="display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap;">
         <input id="tpl-income" class="inp" placeholder="Monthly income" type="number" min="1"
                style="flex:1;min-width:140px;"/>
@@ -30,16 +25,14 @@
         </button>
     </div>
 
-    <!-- Result zone — populated by applyTemplate() -->
     <div id="tpl-result" style="margin-bottom:1.5rem;"></div>
 
-    <!-- Explainer cards -->
     <div class="sec">What These Mean</div>
 
     <div class="card">
         <div style="font-size:13px;font-weight:500;margin-bottom:6px;">50/30/20 Rule</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.6;">
-            <strong>50%</strong> Needs (housing, food, transport, utilities, health) ·
+            <strong>50%</strong> Needs (housing, groceries, transport, utilities, health) ·
             <strong>30%</strong> Wants (entertainment) ·
             <strong>20%</strong> Savings &amp; debt repayment
         </div>
@@ -48,7 +41,7 @@
     <div class="card">
         <div style="font-size:13px;font-weight:500;margin-bottom:6px;">70/20/10 Rule</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.6;">
-            <strong>70%</strong> Living expenses (housing, food, transport, utilities) ·
+            <strong>70%</strong> Living expenses (housing, groceries, transport, utilities) ·
             <strong>20%</strong> Savings ·
             <strong>10%</strong> Debt repayment &amp; giving
         </div>
@@ -58,21 +51,15 @@
 
 
 <script>
-    // =============================================================================
-    // Templates screen
-    // =============================================================================
+    function renderTemplates() {
+        var lbl = document.getElementById('tpl-month-label');
+        if (lbl) lbl.textContent = monthLabel(AppState.curYear, AppState.curMonth);
+    }
 
-    /**
-     * applyTemplate(templateType)
-     *
-     * Reads the monthly income input, calls the server to generate and save
-     * goals, then renders a confirmation breakdown in #tpl-result.
-     *
-     * templateType: '503020' | '702010'
-     */
     async function applyTemplate(templateType) {
         var incRaw = getVal('tpl-income');
         var income = parseFloat(incRaw);
+        var curLbl = monthLabel(AppState.curYear, AppState.curMonth);
 
         if (!incRaw || isNaN(income) || income <= 0) {
             showToast('Please enter your monthly income first.', 'error');
@@ -80,53 +67,83 @@
             return;
         }
 
-        try {
-            var applied = await callServer('applyBudgetTemplate', income, templateType);
-
-            // Replace AppState.goals with the returned set — server handles upserts.
-            AppState.goals = applied;
-
-            // ── Confirmation box ───────────────────────────────────────────────────
+        var existingGoals = (AppState.goals && AppState.goals[curKey()]) || [];
+        if (existingGoals.length > 0) {
             var ruleName = templateType === '503020' ? '50/30/20' : '70/20/10';
+            if (!window.confirm(
+                'Apply ' + ruleName + ' to ' + curLbl + ' based on ' + fmt(income) + ' income?\n\n' +
+                'This will update all ' + existingGoals.length + ' existing spending limit(s) for ' + curLbl + '.'
+            )) return;
+        }
+
+        try {
+            var raw = await callServer('applyBudgetTemplate', curKey(), income, templateType);
+
+            // Log raw response so we can see the exact shape coming back from Apps Script
+            console.log('[Templates] raw server response:', JSON.stringify(raw));
+
+            // Normalise — accept monthly_limit, limit, or computed_amount as the amount field
+            var applied = (Array.isArray(raw) ? raw : []).map(function(g) {
+                return {
+                    id:            String(g.id        || ''),
+                    month_key:     String(g.month_key || curKey()),
+                    category:      String(g.category  || g.cat || ''),
+                    monthly_limit: parseFloat(g.monthly_limit || g.limit || g.computed_amount || 0)
+                };
+            });
+
+            // Update AppState with normalised shape
+            if (!AppState.goals) AppState.goals = {};
+            AppState.goals[curKey()] = applied;
+
+            // Build result box
+            var ruleName = templateType === '503020' ? '50/30/20' : '70/20/10';
+
+            if (applied.length === 0) {
+                document.getElementById('tpl-result').innerHTML =
+                    '<div class="alert alert-warning">Template applied but returned 0 goals. Check the Apps Script execution log for errors.</div>';
+                showToast('No goals returned — check console.', 'error');
+                return;
+            }
+
             var rows = applied.map(function(goal) {
                 return (
-                    '<div style="display:flex;justify-content:space-between;font-size:12px;' +
-                    'padding:4px 0;border-bottom:0.5px solid var(--border);">' +
-                    '<span>' + _escTpl(goal.category) + '</span>' +
-                    '<span style="font-family:var(--mono);">' + fmt(goal.monthly_limit) + '</span>' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                    'font-size:13px;padding:6px 0;border-bottom:0.5px solid var(--border);">' +
+                    '<span style="display:flex;align-items:center;gap:8px;">' +
+                    '<span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;display:inline-block;' +
+                    'background:' + getCategoryColor(goal.category) + ';"></span>' +
+                    _escTpl(goal.category || '(unknown)') +
+                    '</span>' +
+                    '<span style="font-family:var(--mono);font-weight:600;">' +
+                    (goal.monthly_limit > 0 ? fmt(goal.monthly_limit) : '<span style="color:var(--red);">₦0</span>') +
+                    '</span>' +
                     '</div>'
                 );
             }).join('');
 
             document.getElementById('tpl-result').innerHTML = (
-                '<div style="background:var(--bg2);border:0.5px solid var(--border2);' +
-                'border-radius:var(--radius);padding:12px 14px;">' +
-                '<div style="font-size:13px;font-weight:500;margin-bottom:8px;">' +
-                ruleName + ' applied for ' + fmt(income) + '/month' +
+                '<div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:14px 16px;">' +
+                '<div style="font-size:14px;font-weight:600;margin-bottom:2px;">' + ruleName + ' applied</div>' +
+                '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">' +
+                curLbl + ' · based on ' + fmt(income) + '/month' +
                 '</div>' +
                 rows +
+                '<div style="font-size:11px;color:var(--text2);margin-top:10px;">' +
+                'Go to <strong>Spending Limits</strong> to fine-tune individual limits.' +
+                '</div>' +
                 '</div>'
             );
 
-            renderAll(); // Goals tab progress bars update immediately
-            showToast(ruleName + ' template applied — ' + applied.length + ' goals created!', 'success');
+            renderAll();
+            showToast(ruleName + ' applied to ' + curLbl + '!', 'success');
 
-        } catch (e) {
-            // Error toast shown by callServer's failure handler.
+        } catch(e) {
+            // callServer shows the error toast
         }
     }
 
-    /**
-     * renderTemplates()
-     * Called by renderAll() when Templates pane is active.
-     * The result area is managed by applyTemplate() — nothing extra needed here.
-     */
-    function renderTemplates() {
-        // No dynamic rendering needed on tab switch —
-        // the result zone persists from the last applyTemplate() call.
-    }
-
     function _escTpl(str) {
-        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 </script>

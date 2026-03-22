@@ -1,15 +1,9 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Goals.html — Month-Scoped Budget Goals Screen
 
-     GUARDRAILS (new):
-       1. No-income warning banner — shown when the user opens this tab and
-          no income has been recorded for the current month. Soft advisory
-          only; the user can still add goals. Banner auto-hides when income
-          is present. Has a "Dismiss" link for this session.
-
-       2. Budget Coverage Indicator — shows how much of budgetable income
-          is allocated. Still suppressed when income is zero (nothing to
-          show a meaningful %).
+     CHANGES:
+       - Added pagination to the goals list (same pattern as Overview.html)
+       - GOALS_PAGE_SIZE = 8 goals per page
 
      TAB: Goals (Spending Limits)
      STATE: AppState.goals, AppState.transactions
@@ -78,6 +72,9 @@
     <!-- ── Goals list ────────────────────────────────────────────────────────── -->
     <div id="goals-list"></div>
 
+    <!-- ── Pagination ────────────────────────────────────────────────────────── -->
+    <div id="goals-pagination"></div>
+
 </div>
 
 
@@ -124,8 +121,8 @@
                 <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
                                text-transform:uppercase;color:var(--text2);
                                display:block;margin-bottom:5px;">Monthly Limit</label>
-                <input id="goal-limit-modal" class="inp" type="number" min="1"
-                       placeholder="e.g. 30000"/>
+                <input id="goal-limit-modal" class="inp amt-input" type="text"
+                       inputmode="numeric" placeholder="e.g. 30,000"/>
                 <div style="font-size:11px;color:var(--text2);margin-top:4px;">
                     This limit applies only to
                     <span id="goal-modal-month-hint" style="font-weight:600;"></span>.
@@ -175,8 +172,8 @@
             <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
                            text-transform:uppercase;color:var(--text2);
                            display:block;margin-bottom:5px;">Monthly Limit</label>
-            <input id="goal-limit-sheet" class="inp" type="number" min="1"
-                   placeholder="e.g. 30000"/>
+            <input id="goal-limit-sheet" class="inp amt-input" type="text"
+                   inputmode="numeric" placeholder="e.g. 30,000"/>
         </div>
         <button id="btn-save-goal-sheet" onclick="saveGoalFromSheet()"
                 class="btn-primary" style="width:100%;">
@@ -419,6 +416,16 @@
         font-size: 15px;
     }
 
+    /* ── Goals pagination (same style as Overview) ───────────────────────── */
+    #goals-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 0 2px;
+    }
+    #goals-pagination:empty { display: none; }
+
     @media (max-width: 600px) {
         .budget-coverage-metrics { grid-template-columns: repeat(3, 1fr); gap: 6px; }
         .budget-coverage-metric-value { font-size: 12px; }
@@ -430,10 +437,15 @@
 <!-- ══ GOALS JAVASCRIPT ═══════════════════════════════════════════════════════ -->
 <script>
 
+    var GOALS_PAGE_SIZE = 8;
     var _goalEditId = null;
-
-    // Tracks whether the no-income banner has been dismissed this session.
     var _goalsNoIncomeDismissed = false;
+
+    // Pagination state
+    if (typeof AppState !== 'undefined') {
+        if (AppState.goalsPage   === undefined) AppState.goalsPage   = 1;
+        if (AppState._goalsPgKey === undefined) AppState._goalsPgKey = null;
+    }
 
 
     // ─── RENDER ──────────────────────────────────────────────────────────────────
@@ -453,16 +465,6 @@
 
     // ─── NO-INCOME BANNER ────────────────────────────────────────────────────────
 
-    /**
-     * _renderGoalsNoIncomeBanner()
-     *
-     * Shows a soft amber advisory when the user is on the Goals tab but has
-     * not yet recorded any income for the current month.
-     *
-     * This is purely advisory — the user can still create goals.
-     * The banner auto-hides once income is present.
-     * The user can dismiss it for the session.
-     */
     function _renderGoalsNoIncomeBanner() {
         var bannerEl = document.getElementById('goals-no-income-banner');
         if (!bannerEl) return;
@@ -478,7 +480,6 @@
             return;
         }
 
-        // Update month label inside the banner
         var monthSpans = bannerEl.querySelectorAll('.goals-no-income-month');
         monthSpans.forEach(function(el) {
             el.textContent = monthLabel(AppState.curYear, AppState.curMonth);
@@ -503,7 +504,6 @@
         var stats = getMonthStats(curKey());
         var budgetableIncome = stats.inc - stats.sav;
 
-        // Hide when no income or no goals
         if (budgetableIncome <= 0 || goals.length === 0) {
             wrapEl.style.display = 'none';
             return;
@@ -638,11 +638,19 @@
     }
 
 
-    // ─── GOALS LIST ───────────────────────────────────────────────────────────────
+    // ─── GOALS LIST WITH PAGINATION ───────────────────────────────────────────────
 
     function _renderGoalsList(goals) {
         var listEl = document.getElementById('goals-list');
+        var pgEl   = document.getElementById('goals-pagination');
         if (!listEl) return;
+
+        // Reset page if month changed
+        var key = curKey();
+        if (AppState._goalsPgKey !== key) {
+            AppState.goalsPage   = 1;
+            AppState._goalsPgKey = key;
+        }
 
         if (goals.length === 0) {
             listEl.innerHTML = (
@@ -651,13 +659,21 @@
                 'Add limits above to track your spending against a budget.' +
                 '</div>'
             );
+            if (pgEl) pgEl.innerHTML = '';
             return;
         }
+
+        var total = goals.length;
+        var pages = Math.max(1, Math.ceil(total / GOALS_PAGE_SIZE));
+        AppState.goalsPage = Math.max(1, Math.min(AppState.goalsPage, pages));
+        var page  = AppState.goalsPage;
+        var start = (page - 1) * GOALS_PAGE_SIZE;
+        var pageGoals = goals.slice(start, start + GOALS_PAGE_SIZE);
 
         var spendMap = _buildGoalSpendMap();
         var html = '';
 
-        goals.forEach(function(goal) {
+        pageGoals.forEach(function(goal) {
             var limit  = parseFloat(goal.monthly_limit) || 0;
             var spent  = spendMap[goal.category]        || 0;
             var p      = pct(spent, limit);
@@ -709,6 +725,29 @@
         });
 
         listEl.innerHTML = html;
+
+        // Render pagination
+        if (!pgEl) return;
+        if (pages <= 1) { pgEl.innerHTML = ''; return; }
+
+        pgEl.innerHTML = (
+            '<button class="pg-btn" onclick="goalsGoPage(' + (page-1) + ')"' +
+            (page <= 1 ? ' disabled' : '') + '>' +
+            '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Prev</button>' +
+            '<span class="pg-label">Page\u00a0' + page + '\u00a0of\u00a0' + pages + '</span>' +
+            '<button class="pg-btn" onclick="goalsGoPage(' + (page+1) + ')"' +
+            (page >= pages ? ' disabled' : '') + '>' +
+            'Next<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>'
+        );
+    }
+
+    function goalsGoPage(n) {
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+        var pages = Math.max(1, Math.ceil(goals.length / GOALS_PAGE_SIZE));
+        AppState.goalsPage = Math.max(1, Math.min(n, pages));
+        _renderGoalsList(goals);
+        var el = document.getElementById('goals-list');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
 
@@ -736,8 +775,9 @@
     }
 
     async function saveGoalFromModal() {
-        var btn = document.getElementById('btn-save-goal');
-        await _saveGoal(_goalEditId, getVal('goal-cat-modal'), getVal('goal-limit-modal'), btn, closeGoalModal);
+        var btn      = document.getElementById('btn-save-goal');
+        var rawLimit = getVal('goal-limit-modal').replace(/,/g, '');
+        await _saveGoal(_goalEditId, getVal('goal-cat-modal'), rawLimit, btn, closeGoalModal);
     }
 
 
@@ -765,8 +805,9 @@
     }
 
     async function saveGoalFromSheet() {
-        var btn = document.getElementById('btn-save-goal-sheet');
-        await _saveGoal(_goalEditId, getVal('goal-cat-sheet'), getVal('goal-limit-sheet'), btn, closeGoalSheet);
+        var btn      = document.getElementById('btn-save-goal-sheet');
+        var rawLimit = getVal('goal-limit-sheet').replace(/,/g, '');
+        await _saveGoal(_goalEditId, getVal('goal-cat-sheet'), rawLimit, btn, closeGoalSheet);
     }
 
     // Route to sheet on mobile
@@ -776,19 +817,11 @@
         else _originalOpenGoalModal(goalId);
     };
 
-    /**
-     * _syncGoalNoIncomeNotice()
-     *
-     * Shows/hides the compact no-income notice inside the add-goal modal/sheet.
-     * This is the inline version — less intrusive than the full banner.
-     */
     function _syncGoalNoIncomeNotice() {
         var s = getMonthStats(curKey());
         var hasIncome = s.inc > 0;
-
         var modalNotice = document.getElementById('goal-modal-no-income-notice');
         var sheetNotice = document.getElementById('goal-sheet-no-income-notice');
-
         if (modalNotice) modalNotice.style.display = hasIncome ? 'none' : 'block';
         if (sheetNotice) sheetNotice.style.display = hasIncome ? 'none' : 'block';
     }
@@ -830,7 +863,10 @@
                 catLocked.textContent = editing ? editing.category : '';
             }
             var limitEl = document.getElementById('goal-limit' + suffix);
-            if (limitEl && editing) limitEl.value = editing.monthly_limit;
+            if (limitEl && editing) {
+                // Show with commas for editing
+                limitEl.value = _formatNumberWithCommas(String(Math.round(editing.monthly_limit)));
+            }
         } else {
             if (catSelect) {
                 catSelect.style.display = 'block';
@@ -861,9 +897,11 @@
     // ─── SHARED SAVE ──────────────────────────────────────────────────────────────
 
     async function _saveGoal(goalId, category, limitRaw, btn, closeFn) {
-        var limit = parseFloat(limitRaw);
+        // Strip commas before parsing
+        var cleanLimit = String(limitRaw || '').replace(/,/g, '');
+        var limit = parseFloat(cleanLimit);
         if (!goalId && !category) { showToast('Please select a category.', 'error'); return; }
-        if (!limitRaw || isNaN(limit) || limit <= 0) {
+        if (!cleanLimit || isNaN(limit) || limit <= 0) {
             showToast('Please enter a valid limit greater than zero.', 'error'); return;
         }
 
@@ -912,6 +950,11 @@
                     return g.id !== goalId;
                 });
             }
+            // Adjust page if needed
+            var remaining = (AppState.goals[key] || []).length;
+            var pages = Math.max(1, Math.ceil(remaining / GOALS_PAGE_SIZE));
+            if (AppState.goalsPage > pages) AppState.goalsPage = pages;
+
             renderAll();
             showToast('Goal removed.', 'info');
         } catch(e) {
@@ -929,6 +972,7 @@
             var created = await callServer('copyGoalsFromMonth', fromKey, curKey());
             if (!AppState.goals) AppState.goals = {};
             AppState.goals[curKey()] = created;
+            AppState.goalsPage = 1;
             renderAll();
             showToast('Goals copied from ' + _keyToLabel(fromKey) + '!', 'success');
         } catch(e) {

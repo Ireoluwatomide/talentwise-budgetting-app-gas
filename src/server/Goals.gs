@@ -42,7 +42,7 @@ function getGoalsByMonth(monthKey) {
     .filter(function(row) {
       return _normGoalKey(String(row.month_key || '')) === norm;
     })
-    .map(_castGoal);
+    .map(_castGoalRow);
 }
 
 /**
@@ -55,7 +55,7 @@ function getGoalsByMonth(monthKey) {
  * goals on first load — same pattern as transactions.
  */
 function getAllGoals() {
-  var rows = getUserAllRows('Goals').map(_castGoal);
+  var rows = getUserAllRows('Goals').map(_castGoalRow);
   var grouped = {};
 
   rows.forEach(function(goal) {
@@ -151,7 +151,7 @@ function addGoal(monthKey, category, monthlyLimit) {
     };
 
     getUserUpdateRow('Goals', rowIndex, updated);
-    return _castGoal(updated);
+    return _castGoalRow(updated);
   }
 
   // New goal for this month.
@@ -163,7 +163,7 @@ function addGoal(monthKey, category, monthlyLimit) {
   };
 
   getUserAppendRow('Goals', goal);
-  return _castGoal(goal);
+  return _castGoalRow(goal);
 }
 
 /**
@@ -190,7 +190,7 @@ function updateGoal(goalId, monthlyLimit) {
   }
 
   // Re-read to get current values we are not changing.
-  var allRows = getUserAllRows('Goals').map(_castGoal);
+  var allRows = getUserAllRows('Goals').map(_castGoalRow);
   var current = allRows.find(function(g) { return g.id === goalId; });
   if (!current) throw new Error('Goals.gs: Goal "' + goalId + '" not found after index lookup.');
 
@@ -202,7 +202,7 @@ function updateGoal(goalId, monthlyLimit) {
   };
 
   getUserUpdateRow('Goals', rowIndex, updated);
-  return _castGoal(updated);
+  return _castGoalRow(updated);
 }
 
 /**
@@ -371,10 +371,10 @@ function checkBudgetAlerts(monthKey) {
 // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
 /**
- * _castGoal(row)
+ * _castGoalRow(row)
  * Normalises a raw sheet row into a typed goal object.
  */
-function _castGoal(row) {
+function _castGoalRow(row) {
   return {
     id:            String(row.id        || '').trim(),
     month_key:     _normGoalKey(String(row.month_key || '')),

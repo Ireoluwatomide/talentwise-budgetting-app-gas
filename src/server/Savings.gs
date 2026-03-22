@@ -30,7 +30,7 @@
  * All numeric fields cast to numbers — Sheets can return strings.
  */
 function getAllSavingsGoals() {
-  return getUserAllRows('SavingsGoals').map(_castGoal);
+  return getUserAllRows('SavingsGoals').map(_castSavingsGoal);
 }
 
 /**
@@ -73,7 +73,7 @@ function addSavingsGoal(name, targetAmount) {
 
   getUserAppendRow('SAVINGS_GOALS', goal);
 
-  return _castGoal(goal);
+  return _castSavingsGoal(goal);
 }
 
 /**
@@ -162,20 +162,20 @@ function updateSavingsGoalOnDeposit(category, depositAmount) {
     '" matched goal "' + current.name + '", new saved: ' + newSaved
   );
 
-  return _castGoal(updated);
+  return _castSavingsGoal(updated);
 }
 
 
 // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
 /**
- * _castGoal(row)
+ * _castSavingsGoal(row)
  *
  * Normalises a raw row into a typed savings goal object with computed
  * percent_complete. Called on every row returned by getAllSavingsGoals()
  * and on newly created/updated objects before returning to the client.
  */
-function _castGoal(row) {
+function _castSavingsGoal(row) {
   var target  = parseFloat(row.target_amount) || 0;
   var saved   = parseFloat(row.saved_amount)  || 0;
   var percent = target > 0

@@ -7,12 +7,15 @@
  *
  *   When a savings-type transaction is added, updateSavingsGoalOnDeposit()
  *   is called automatically by Transactions.gs — matched by CATEGORY rather
- *   than by transaction name. This is cleaner and more reliable: the user
- *   picks the savings category (e.g. "Emergency Fund") from the dropdown,
- *   and any deposit with that category auto-credits the matching goal.
+ *   than by transaction name.
  *
  * SHEET: SavingsGoals
  * COLUMNS: id | name | target_amount | saved_amount
+ *
+ * FIX: _castGoal renamed to _castSavingsGoal to avoid collision with the
+ *      _castGoalRow function in Goals.gs. Both files compile into the same
+ *      Apps Script global scope — duplicate names cause the last-loaded
+ *      version to silently override all earlier ones.
  *
  * CALLED BY:
  *   - Client via google.script.run
@@ -104,20 +107,9 @@ function deleteSavingsGoal(goalId) {
  *
  * MATCHING STRATEGY — category-match:
  *   Finds the savings goal whose name matches the transaction's category
- *   (case-insensitive). This is cleaner than name-matching because the
- *   user selects the savings category from the typed dropdown (e.g.
- *   "Emergency Fund", "Retirement Account") and the goal with that same
- *   name auto-receives the credit — regardless of what description the
- *   user typed for the transaction.
- *
- *   Example:
- *     Transaction: { name: 'Monthly top-up', category: 'Emergency Fund',
- *                    type: 'savings', amount: 25000 }
- *     → Finds goal named "Emergency Fund" and increments its saved_amount.
+ *   (case-insensitive).
  *
  * Returns the updated goal object, or null if no matching goal is found.
- * A null return is NOT an error — the user may add savings transactions to
- * categories that don't correspond to a named goal, which is perfectly valid.
  */
 function updateSavingsGoalOnDeposit(category, depositAmount) {
   if (!category) return null;
@@ -127,14 +119,12 @@ function updateSavingsGoalOnDeposit(category, depositAmount) {
 
   var trimmedCategory = String(category).trim().toLowerCase();
 
-  // Find the savings goal whose name matches the transaction category.
   var rowIndex = getUserFindRowIndex('SAVINGS_GOALS', function(row) {
     return String(row.name || '').trim().toLowerCase() === trimmedCategory;
   });
 
-  if (rowIndex === -1) return null; // No matching goal — silent, not an error.
+  if (rowIndex === -1) return null;
 
-  // Re-read the current goal to get the latest saved_amount before updating.
   var goals   = getAllSavingsGoals();
   var current = goals.find(function(g) {
     return g.name.toLowerCase() === trimmedCategory;
@@ -145,7 +135,6 @@ function updateSavingsGoalOnDeposit(category, depositAmount) {
   var newSaved = (parseFloat(current.saved_amount) || 0) + deposit;
   var target   = parseFloat(current.target_amount) || 0;
 
-  // Cap at target — you cannot oversave a goal in the tracker.
   if (target > 0) newSaved = Math.min(newSaved, target);
 
   var updated = {
@@ -172,8 +161,10 @@ function updateSavingsGoalOnDeposit(category, depositAmount) {
  * _castSavingsGoal(row)
  *
  * Normalises a raw row into a typed savings goal object with computed
- * percent_complete. Called on every row returned by getAllSavingsGoals()
- * and on newly created/updated objects before returning to the client.
+ * percent_complete.
+ *
+ * RENAMED from _castGoal to _castSavingsGoal to avoid collision with
+ * _castGoalRow in Goals.gs (same Apps Script global scope).
  */
 function _castSavingsGoal(row) {
   var target  = parseFloat(row.target_amount) || 0;

@@ -11,17 +11,21 @@
  * UNIQUENESS: month_key + category (enforced by addGoal upsert logic)
  *
  * KEY BEHAVIOURS:
- *   - getGoalsByMonth(monthKey)         → goals for one month
- *   - getAllGoals()                      → all goals grouped by month_key
- *   - addGoal(monthKey, cat, limit)      → upsert within that month only
- *   - copyGoalsFromMonth(from, to)       → carry-forward from previous month
- *   - getPreviousMonthWithGoals(key)     → walks back to find the nearest
- *                                          prior month that has goals
- *   - applyBudgetTemplate(key, inc, tpl) → month-scoped template apply
- *   - checkBudgetAlerts(monthKey)        → for Notifications.gs
+ *   - getGoalsByMonth(monthKey)              → goals for one month
+ *   - getAllGoals()                           → all goals grouped by month_key
+ *   - addGoal(monthKey, cat, limit)           → upsert within that month only
+ *   - copyGoalsFromMonth(from, to)            → carry-forward from previous month
+ *   - getPreviousMonthWithGoals(key)          → walks back to find nearest prior month
+ *   - applyBudgetTemplate(key, inc, tpl)      → month-scoped template apply across
+ *                                               ALL user expense categories
+ *   - checkBudgetAlerts(monthKey)             → for Notifications.gs
  *
  * CALLED BY:
  *   Client via google.script.run, Main.gs (bootstrap), Notifications.gs
+ *
+ * FIX: _castGoal renamed to _castGoalRow throughout to avoid collision with
+ *      the _castGoal function in Savings.gs (Apps Script global scope merges
+ *      all .gs files, so duplicate function names cause silent overrides).
  */
 
 
@@ -74,9 +78,6 @@ function getAllGoals() {
  * Walks backwards from monthKey (exclusive) looking for the most recent
  * prior month that has at least one goal row.
  *
- * If the user skipped months (e.g. no goals in Feb, but Jan has goals),
- * it keeps walking back until it finds one or exhausts 24 months.
- *
  * Returns the YYYY-MM key string, or null if nothing found.
  */
 function getPreviousMonthWithGoals(monthKey) {
@@ -86,15 +87,13 @@ function getPreviousMonthWithGoals(monthKey) {
   var year  = parseInt(parts[0], 10);
   var month = parseInt(parts[1], 10);
 
-  // Collect all month_keys that have at least one goal.
-  var rows     = getUserAllRows('Goals');
+  var rows = getUserAllRows('Goals');
   var keysWithGoals = {};
   rows.forEach(function(row) {
     var k = _normGoalKey(String(row.month_key || ''));
     if (k) keysWithGoals[k] = true;
   });
 
-  // Walk backwards up to 24 months.
   for (var i = 0; i < 24; i++) {
     month--;
     if (month < 1) { month = 12; year--; }
@@ -131,14 +130,12 @@ function addGoal(monthKey, category, monthlyLimit) {
   var norm        = _normGoalKey(monthKey);
   var trimmedCat  = String(category).trim();
 
-  // Check for an existing goal for this month + category.
   var rowIndex = getUserFindRowIndex('Goals', function(row) {
     return _normGoalKey(String(row.month_key || '')) === norm &&
            String(row.category || '').trim().toLowerCase() === trimmedCat.toLowerCase();
   });
 
   if (rowIndex !== -1) {
-    // Upsert — update the limit for this month's goal.
     var existing = getGoalsByMonth(norm).find(function(g) {
       return g.category.toLowerCase() === trimmedCat.toLowerCase();
     });
@@ -154,7 +151,6 @@ function addGoal(monthKey, category, monthlyLimit) {
     return _castGoalRow(updated);
   }
 
-  // New goal for this month.
   var goal = {
     id:            generateId(),
     month_key:     norm,
@@ -170,7 +166,6 @@ function addGoal(monthKey, category, monthlyLimit) {
  * updateGoal(goalId, monthlyLimit)
  *
  * Updates the monthly_limit for a specific goal by id.
- * Month and category remain unchanged.
  * Returns the updated goal object.
  */
 function updateGoal(goalId, monthlyLimit) {
@@ -189,7 +184,6 @@ function updateGoal(goalId, monthlyLimit) {
     throw new Error('Goals.gs: Goal "' + goalId + '" not found.');
   }
 
-  // Re-read to get current values we are not changing.
   var allRows = getUserAllRows('Goals').map(_castGoalRow);
   var current = allRows.find(function(g) { return g.id === goalId; });
   if (!current) throw new Error('Goals.gs: Goal "' + goalId + '" not found after index lookup.');
@@ -209,7 +203,6 @@ function updateGoal(goalId, monthlyLimit) {
  * deleteGoal(goalId)
  *
  * Deletes a single goal row by id.
- * Only affects the specific month that goal belongs to.
  */
 function deleteGoal(goalId) {
   if (!goalId) throw new Error('Goals.gs: goalId is required.');
@@ -230,13 +223,7 @@ function deleteGoal(goalId) {
  * copyGoalsFromMonth(fromMonthKey, toMonthKey)
  *
  * Copies all goals from fromMonthKey into toMonthKey.
- * Uses addGoal() for each entry so it upserts — safe to call even if
- * toMonthKey already has some goals (existing ones are updated, new ones added).
- *
  * Returns the array of newly created/updated goal objects for toMonthKey.
- *
- * Called by the client when the user clicks "Copy from [Month]" on the
- * carry-forward prompt.
  */
 function copyGoalsFromMonth(fromMonthKey, toMonthKey) {
   if (!fromMonthKey) throw new Error('Goals.gs: fromMonthKey is required.');
@@ -268,13 +255,36 @@ function copyGoalsFromMonth(fromMonthKey, toMonthKey) {
 /**
  * applyBudgetTemplate(monthKey, monthlyIncome, templateType)
  *
- * Generates and saves goals for a specific month from a percentage-based rule.
- * Now month-scoped — applying a template to April does not touch March's goals.
+ * Generates and saves goals for ALL of the user's expense categories,
+ * distributed according to the chosen percentage rule.
  *
- * templateType: '503020' | '702010'
+ * DESIGN — two-tier allocation:
  *
- * Uses addGoal() (upserts) so it is safe to re-apply on a month that already
- * has goals — existing limits are updated, not duplicated.
+ *   Each template splits income into percentage buckets (Needs / Wants /
+ *   Savings). Within the Needs and Wants buckets, the budget is divided
+ *   equally across the user's expense categories that belong to that bucket.
+ *   This means every expense category the user has gets a goal — not just
+ *   the 6-7 hardcoded ones from the original implementation.
+ *
+ *   50/30/20:
+ *     Needs  (50%) → Housing, Groceries, Transportation, Utilities,
+ *                    Insurance, Body Care & Medicine, Education
+ *     Wants  (30%) → Entertainment, Fun & Vacation, Media & Subscriptions,
+ *                    Dining Out, Clothing
+ *     Debt   (20%) → Debt Repayment (single category, gets the full 20%)
+ *     Any user-added expense categories not in either bucket list above
+ *     are placed into the Needs bucket by default.
+ *
+ *   70/20/10:
+ *     Needs  (70%) → same Needs list as above
+ *     Wants  (0%)  → Wants categories get a small equal share from Needs
+ *     Debt   (10%) → Debt Repayment
+ *     Savings(20%) → not an expense category, skipped
+ *
+ * NOTE: Savings categories are intentionally excluded — goals are for
+ * expense spending limits, not savings targets (those live in SavingsGoals).
+ *
+ * Uses addGoal() (upserts) so re-applying is safe and idempotent.
  *
  * Returns the full array of applied goal objects for the given month.
  */
@@ -286,43 +296,177 @@ function applyBudgetTemplate(monthKey, monthlyIncome, templateType) {
     throw new Error('Goals.gs: monthlyIncome must be a positive number.');
   }
 
-  var allocations;
-
-  if (templateType === '503020') {
-    allocations = [
-      { category: 'Housing',       pct: 0.30 },
-      { category: 'Groceries',     pct: 0.10 },
-      { category: 'Transportation',pct: 0.05 },
-      { category: 'Utilities',     pct: 0.05 },
-      { category: 'Entertainment', pct: 0.10 },
-      { category: 'Body Care & Medicine', pct: 0.10 },
-      { category: 'Emergency Fund',pct: 0.20 }
-    ];
-  } else if (templateType === '702010') {
-    allocations = [
-      { category: 'Housing',       pct: 0.35 },
-      { category: 'Groceries',     pct: 0.15 },
-      { category: 'Transportation',pct: 0.10 },
-      { category: 'Utilities',     pct: 0.10 },
-      { category: 'Emergency Fund',pct: 0.20 },
-      { category: 'Entertainment', pct: 0.05 },
-      { category: 'Body Care & Medicine', pct: 0.05 }
-    ];
-  } else {
+  if (templateType !== '503020' && templateType !== '702010') {
     throw new Error('Goals.gs: Unknown templateType "' + templateType + '". Use "503020" or "702010".');
   }
 
+  // ── 1. Fetch ALL user expense categories ──────────────────────────────────
+  // getCategories() is defined in Preferences.gs and returns the full list
+  // including any user-added ones. We only want expense-type categories.
+  var allCats = [];
+  try {
+    allCats = getCategories(); // from Preferences.gs
+  } catch(e) {
+    Logger.log('Goals.gs: applyBudgetTemplate — could not fetch categories: ' + e.message);
+    allCats = [];
+  }
+
+  var expenseCats = allCats
+    .filter(function(c) { return (c.type || 'expense') === 'expense'; })
+    .map(function(c) { return c.name; });
+
+  // ── 2. Define the canonical bucket membership ──────────────────────────────
+  // These are the DEFAULT_CATEGORIES from Preferences.gs split by role.
+  // "Debt Repayment" is handled separately as the debt allocation bucket.
+  var NEEDS_CATS = [
+    'Housing', 'Utilities', 'Groceries', 'Transportation', 'Insurance',
+    'Body Care & Medicine', 'Education'
+  ];
+
+  var WANTS_CATS = [
+    'Entertainment', 'Fun & Vacation', 'Media & Subscriptions',
+    'Dining Out', 'Clothing'
+  ];
+
+  var DEBT_CAT = 'Debt Repayment';
+
+  // ── 3. Partition user's expense categories into buckets ───────────────────
+  var needsCats  = [];
+  var wantsCats  = [];
+  var debtCats   = [];
+  var otherCats  = []; // user-added categories not in any default bucket
+
+  expenseCats.forEach(function(name) {
+    var lc = name.toLowerCase();
+
+    if (lc === DEBT_CAT.toLowerCase()) {
+      debtCats.push(name);
+    } else if (NEEDS_CATS.some(function(n) { return n.toLowerCase() === lc; })) {
+      needsCats.push(name);
+    } else if (WANTS_CATS.some(function(w) { return w.toLowerCase() === lc; })) {
+      wantsCats.push(name);
+    } else {
+      // Any user-added expense category not in the default lists goes into Needs.
+      otherCats.push(name);
+    }
+  });
+
+  // Merge user-added categories into Needs (conservative default).
+  needsCats = needsCats.concat(otherCats);
+
+  // ── 4. Calculate per-category limits based on template ───────────────────
+  var allocations = []; // [{ category, monthly_limit }]
+
+  if (templateType === '503020') {
+    // 50% Needs, 30% Wants, 20% Debt
+    var needsBudget = income * 0.50;
+    var wantsBudget = income * 0.30;
+    var debtBudget  = income * 0.20;
+
+    // Divide Needs budget equally across all Needs categories
+    if (needsCats.length > 0) {
+      var needsPerCat = Math.round(needsBudget / needsCats.length);
+      needsCats.forEach(function(cat) {
+        allocations.push({ category: cat, monthly_limit: needsPerCat });
+      });
+    }
+
+    // Divide Wants budget equally across all Wants categories
+    if (wantsCats.length > 0) {
+      var wantsPerCat = Math.round(wantsBudget / wantsCats.length);
+      wantsCats.forEach(function(cat) {
+        allocations.push({ category: cat, monthly_limit: wantsPerCat });
+      });
+    }
+
+    // Debt Repayment gets the full 20% (single category)
+    if (debtCats.length > 0) {
+      var debtPerCat = Math.round(debtBudget / debtCats.length);
+      debtCats.forEach(function(cat) {
+        allocations.push({ category: cat, monthly_limit: debtPerCat });
+      });
+    }
+
+  } else if (templateType === '702010') {
+    // 70% Living (Needs + Wants combined), 10% Debt, 20% Savings (excluded)
+    // Split the 70% living budget: 85% to Needs, 15% to Wants (within the 70%)
+    // This gives Needs ~59.5% and Wants ~10.5% of income — a reasonable split.
+    var livingBudget = income * 0.70;
+    var debtBudget70 = income * 0.10;
+
+    var totalLivingCats = needsCats.length + wantsCats.length;
+
+    if (totalLivingCats > 0) {
+      // Weight: Needs categories get 3x the allocation of Wants categories
+      // to reflect the 70/20/10 philosophy of prioritising essentials.
+      var needsWeight = 3;
+      var wantsWeight = 1;
+      var totalWeight = (needsCats.length * needsWeight) + (wantsCats.length * wantsWeight);
+      var unitValue   = totalWeight > 0 ? livingBudget / totalWeight : 0;
+
+      needsCats.forEach(function(cat) {
+        var limit = Math.round(unitValue * needsWeight);
+        if (limit > 0) allocations.push({ category: cat, monthly_limit: limit });
+      });
+
+      wantsCats.forEach(function(cat) {
+        var limit = Math.round(unitValue * wantsWeight);
+        if (limit > 0) allocations.push({ category: cat, monthly_limit: limit });
+      });
+    }
+
+    if (debtCats.length > 0) {
+      var debtPerCat70 = Math.round(debtBudget70 / debtCats.length);
+      debtCats.forEach(function(cat) {
+        allocations.push({ category: cat, monthly_limit: debtPerCat70 });
+      });
+    }
+  }
+
+  // ── 5. Fallback — if user has no categories yet use hardcoded defaults ────
+  // This handles fresh accounts before the user has set up any categories.
+  if (allocations.length === 0) {
+    Logger.log('Goals.gs: applyBudgetTemplate — no expense categories found, using hardcoded defaults.');
+
+    if (templateType === '503020') {
+      allocations = [
+        { category: 'Housing',              monthly_limit: Math.round(income * 0.30) },
+        { category: 'Groceries',            monthly_limit: Math.round(income * 0.10) },
+        { category: 'Transportation',       monthly_limit: Math.round(income * 0.05) },
+        { category: 'Utilities',            monthly_limit: Math.round(income * 0.05) },
+        { category: 'Entertainment',        monthly_limit: Math.round(income * 0.15) },
+        { category: 'Body Care & Medicine', monthly_limit: Math.round(income * 0.15) },
+        { category: 'Debt Repayment',       monthly_limit: Math.round(income * 0.20) }
+      ];
+    } else {
+      allocations = [
+        { category: 'Housing',              monthly_limit: Math.round(income * 0.35) },
+        { category: 'Groceries',            monthly_limit: Math.round(income * 0.15) },
+        { category: 'Transportation',       monthly_limit: Math.round(income * 0.10) },
+        { category: 'Utilities',            monthly_limit: Math.round(income * 0.10) },
+        { category: 'Entertainment',        monthly_limit: Math.round(income * 0.05) },
+        { category: 'Body Care & Medicine', monthly_limit: Math.round(income * 0.05) },
+        { category: 'Debt Repayment',       monthly_limit: Math.round(income * 0.10) }
+      ];
+    }
+  }
+
+  // ── 6. Upsert all allocations as goals ────────────────────────────────────
   var applied = [];
 
   allocations.forEach(function(alloc) {
-    var limit = Math.round(income * alloc.pct);
-    var goal  = addGoal(monthKey, alloc.category, limit);
-    applied.push(goal);
+    if (!alloc.category || alloc.monthly_limit <= 0) return;
+    try {
+      var goal = addGoal(monthKey, alloc.category, alloc.monthly_limit);
+      applied.push(goal);
+    } catch(e) {
+      Logger.log('Goals.gs: applyBudgetTemplate — skipping "' + alloc.category + '": ' + e.message);
+    }
   });
 
   Logger.log(
     'Goals.gs: applyBudgetTemplate(' + monthKey + ', ' + templateType + ') — ' +
-    'applied: ' + applied.length + ' goals'
+    'applied: ' + applied.length + ' goals across ' + expenseCats.length + ' expense categories'
   );
 
   return applied;
@@ -372,7 +516,15 @@ function checkBudgetAlerts(monthKey) {
 
 /**
  * _castGoalRow(row)
+ *
  * Normalises a raw sheet row into a typed goal object.
+ *
+ * RENAMED from _castGoal to _castGoalRow to avoid collision with the
+ * _castGoal function in Savings.gs. Both files compile into the same
+ * Apps Script global scope — duplicate names cause the last-loaded
+ * version to silently override all earlier ones, which was causing
+ * applyBudgetTemplate() to return savings-shaped objects instead of
+ * goal-shaped ones.
  */
 function _castGoalRow(row) {
   return {
@@ -386,7 +538,6 @@ function _castGoalRow(row) {
 /**
  * _normGoalKey(raw)
  * Normalises any month_key representation to 'YYYY-MM'.
- * Reuses the same logic pattern as _normaliseMonthKey in Transactions.gs.
  */
 function _normGoalKey(raw) {
   if (!raw) return '';

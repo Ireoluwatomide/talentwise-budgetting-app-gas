@@ -107,7 +107,7 @@ function getBootstrapData() {
     darkMode:     false,
     categories:   [],
     transactions: {},   // { 'YYYY-MM': [tx, ...] } — all months, not just current
-    goals:        [],
+    goals:        {},
     bills:        [],
     savingsGoals: [],
     debts:        [],
@@ -157,8 +157,16 @@ function getBootstrapData() {
     }
   }
 
+  // Goals — load ALL months grouped by month_key (getAllGoals now returns object)
+  if (typeof getAllGoals === 'function') {
+      try {
+        data.goals = getAllGoals();
+        Logger.log('Bootstrap: Loaded goals for ' +
+          Object.keys(data.goals).length + ' month(s).');
+      } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
+    }
+
   // All other domains
-  if (typeof getAllGoals         === 'function') { try { data.goals         = getAllGoals();         } catch(e) { Logger.log('Bootstrap: Goals — '      + e.message); } }
   if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '      + e.message); } }
   if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
   if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }

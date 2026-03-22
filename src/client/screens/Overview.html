@@ -1,17 +1,14 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Overview.html — Main Dashboard Screen
 
-     GUARDRAIL FLOW (new):
-       When a user tries to add an EXPENSE transaction for a category that
-       has no spending limit set for the current month, the transaction is
-       NOT saved. Instead, an interruption modal/sheet appears that:
-         1. Explains why (no limit = no budget = flying blind)
-         2. Shows a pre-filled "Set Limit" mini-form (category locked)
-         3. On "Add Limit & Continue" — saves the goal, then asks the user
-            to confirm they still want to add the original transaction
-         4. On "Skip & Save Anyway" (de-emphasised) — saves the transaction
-            without a limit (escape hatch for edge cases)
-         5. On "Cancel" — drops everything, no goal, no transaction
+     CHANGES v2:
+       - All amount inputs use class="amt-input" type="text" inputmode="numeric"
+         so the shared comma-formatter (utils.js) auto-formats as you type.
+       - Before parsing, all amount values are stripped of commas.
+       - Mobile: after setting a spending limit in the no-goal interrupt sheet,
+         a CONFIRM-TRANSACTION BOTTOM SHEET now opens (matching desktop behaviour)
+         asking the user whether to also save the pending transaction.
+         Previously this step was silently skipped on mobile.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane active" id="pane-overview">
@@ -36,7 +33,7 @@
         </div>
     </div>
 
-    <!-- ── No-income banner (shown when no income recorded this month) ──────── -->
+    <!-- ── No-income banner ─────────────────────────────────────────────────── -->
     <div id="ov-no-income-banner" style="display:none;margin-bottom:1rem;">
         <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
                     border-radius:var(--radius);padding:10px 14px;font-size:13px;line-height:1.5;
@@ -53,7 +50,7 @@
         </div>
     </div>
 
-    <!-- ── 2. Section header: "Transactions" + Add button ────────────────────── -->
+    <!-- ── 2. Section header ────────────────────────────────────────────────── -->
     <div class="ov-section-hdr">
         <span class="sec" style="margin:0;">Transactions</span>
         <button id="btn-open-add-tx"
@@ -95,8 +92,9 @@
         <div class="atx-modal-body">
             <div class="row2" style="margin-bottom:8px;">
                 <input  id="tx-name-d" placeholder="Description"    class="inp"/>
-                <input  id="tx-amt-d"  placeholder="Amount"         class="inp"
-                        type="number" min="0" step="any"/>
+                <!-- amt-input: type=text so we can add commas dynamically -->
+                <input  id="tx-amt-d"  placeholder="Amount"         class="inp amt-input"
+                        type="text" inputmode="numeric"/>
                 <select id="tx-type-d" class="inp"
                         onchange="syncCategoryToType('tx-cat-d','tx-type-d')">
                     <option value="expense">Expense</option>
@@ -149,8 +147,8 @@
 
         <div class="row2" style="margin-bottom:8px;">
             <input  id="tx-name-m" placeholder="Description"    class="inp"/>
-            <input  id="tx-amt-m"  placeholder="Amount"         class="inp"
-                    type="number" min="0" step="any"/>
+            <input  id="tx-amt-m"  placeholder="Amount"         class="inp amt-input"
+                    type="text" inputmode="numeric"/>
             <select id="tx-type-m" class="inp"
                     onchange="syncCategoryToType('tx-cat-m','tx-type-m')">
                 <option value="expense">Expense</option>
@@ -178,17 +176,10 @@
 </div>
 
 
-<!-- ══ NO-GOAL INTERRUPTION MODAL (desktop) ══════════════════════════════ -->
-<!--
-  Shown when user tries to add an expense with no spending limit for
-  the selected category. Transaction is held pending, not saved.
-  User must either set a limit first or explicitly skip.
--->
+<!-- ══ NO-GOAL INTERRUPTION MODAL (desktop ≥ 601px) ══════════════════════ -->
 <div id="no-goal-modal" role="dialog" aria-modal="true" aria-label="Set Spending Limit">
     <div id="no-goal-modal-backdrop" onclick="_noGoalCancel()"></div>
     <div id="no-goal-modal-panel">
-
-        <!-- Header -->
         <div class="atx-modal-header" style="border-bottom:0.5px solid var(--border);">
             <div>
                 <div class="atx-modal-title">No Spending Limit Set</div>
@@ -203,18 +194,11 @@
                 </svg>
             </button>
         </div>
-
         <div class="atx-modal-body">
-
-            <!-- Context: what was the pending transaction? -->
             <div id="ng-pending-summary" style="
                 background:var(--bg2);border:0.5px solid var(--border);
                 border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;
-                font-size:13px;line-height:1.5;">
-                <!-- populated by _openNoGoalInterrupt() -->
-            </div>
-
-            <!-- Explanation -->
+                font-size:13px;line-height:1.5;"></div>
             <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px;">
                 You're about to record an expense under
                 <strong id="ng-cat-display" style="color:var(--text);"></strong>,
@@ -222,15 +206,12 @@
                 <strong id="ng-month-display" style="color:var(--text);"></strong>.
                 A limit lets you track how much of your budget you've used.
             </div>
-
-            <!-- Set limit form -->
             <div style="margin-bottom:6px;">
                 <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
                                text-transform:uppercase;color:var(--text2);
                                display:block;margin-bottom:5px;">Monthly Limit for
                     <span id="ng-cat-label"></span>
                 </label>
-                <!-- Category is locked — shown as read-only pill -->
                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
                     <div style="flex:1;background:var(--bg2);border:0.5px solid var(--border);
                                 border-radius:var(--radius);padding:9px 11px;font-size:13px;
@@ -243,65 +224,54 @@
                                      padding:1px 5px;color:var(--text2);">locked</span>
                     </div>
                 </div>
-                <input id="ng-limit-input" class="inp" type="number" min="1"
-                       placeholder="Enter monthly limit (e.g. 50000)"
+                <!-- amt-input with comma formatting -->
+                <input id="ng-limit-input" class="inp amt-input" type="text"
+                       inputmode="numeric" placeholder="Enter monthly limit (e.g. 50,000)"
                        style="margin-bottom:4px;"/>
                 <div style="font-size:11px;color:var(--text2);">
                     This limit applies only to <span id="ng-month-hint"></span>.
                 </div>
             </div>
-
-            <!-- Primary action -->
             <button id="btn-ng-save" onclick="_noGoalSaveAndContinue()"
                     class="btn-primary" style="width:100%;margin-top:14px;margin-bottom:10px;">
                 <span class="btn-label">Add Limit &amp; Continue</span>
                 <span class="btn-spinner"></span>
             </button>
-
-            <!-- Secondary actions row -->
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <button onclick="_noGoalCancel()"
                         style="background:none;border:none;cursor:pointer;
                                font-size:12px;color:var(--text2);font-family:var(--font);
-                               padding:4px 0;">
-                    Cancel
-                </button>
+                               padding:4px 0;">Cancel</button>
                 <button onclick="_noGoalSkipAndSave()"
                         style="background:none;border:none;cursor:pointer;
                                font-size:12px;color:var(--text2);font-family:var(--font);
                                padding:4px 0;text-decoration:underline;"
                         title="Save the transaction without setting a spending limit">
-                    Skip &amp; save anyway
-                </button>
+                    Skip &amp; save anyway</button>
             </div>
-
         </div>
     </div>
 </div>
 
 
-<!-- ══ NO-GOAL INTERRUPTION SHEET (mobile) ═══════════════════════════════ -->
+<!-- ══ NO-GOAL INTERRUPTION SHEET (mobile ≤ 600px) ═══════════════════════ -->
 <div id="no-goal-sheet">
     <div id="no-goal-sheet-backdrop" onclick="_noGoalCancel()"></div>
     <div id="no-goal-sheet-panel">
         <div id="no-goal-sheet-handle"></div>
-
         <div class="atx-modal-title" style="margin-bottom:3px;">No Spending Limit Set</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">
             Set one first, then continue with your transaction.
         </div>
-
         <div id="ng-pending-summary-m" style="
             background:var(--bg2);border:0.5px solid var(--border);
             border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;
             font-size:13px;line-height:1.5;"></div>
-
         <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
             No spending limit for
             <strong id="ng-cat-display-m" style="color:var(--text);"></strong>
             in <strong id="ng-month-display-m" style="color:var(--text);"></strong>.
         </div>
-
         <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
                        text-transform:uppercase;color:var(--text2);
                        display:block;margin-bottom:5px;">Monthly Limit for
@@ -318,47 +288,37 @@
                              border-radius:3px;padding:1px 5px;color:var(--text2);">locked</span>
             </div>
         </div>
-        <input id="ng-limit-input-m" class="inp" type="number" min="1"
-               placeholder="Enter monthly limit (e.g. 50000)"
+        <!-- amt-input with comma formatting -->
+        <input id="ng-limit-input-m" class="inp amt-input" type="text"
+               inputmode="numeric" placeholder="Enter monthly limit (e.g. 50,000)"
                style="margin-bottom:4px;"/>
         <div style="font-size:11px;color:var(--text2);margin-bottom:14px;">
             Applies only to <span id="ng-month-hint-m"></span>.
         </div>
-
         <button id="btn-ng-save-m" onclick="_noGoalSaveAndContinue()"
                 class="btn-primary" style="width:100%;margin-bottom:10px;">
             <span class="btn-label">Add Limit &amp; Continue</span>
             <span class="btn-spinner"></span>
         </button>
-
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <button onclick="_noGoalCancel()"
                     style="background:none;border:none;cursor:pointer;
                            font-size:12px;color:var(--text2);font-family:var(--font);
-                           padding:4px 0;">
-                Cancel
-            </button>
+                           padding:4px 0;">Cancel</button>
             <button onclick="_noGoalSkipAndSave()"
                     style="background:none;border:none;cursor:pointer;
                            font-size:12px;color:var(--text2);font-family:var(--font);
                            padding:4px 0;text-decoration:underline;">
-                Skip &amp; save anyway
-            </button>
+                Skip &amp; save anyway</button>
         </div>
     </div>
 </div>
 
 
-<!-- ══ CONFIRM-TRANSACTION MODAL (shown after limit is set) ══════════════ -->
-<!--
-  After the spending limit is saved, this confirmation asks: do you still
-  want to add the original transaction?
--->
+<!-- ══ CONFIRM-TRANSACTION MODAL (desktop ≥ 601px) ═══════════════════════ -->
 <div id="confirm-tx-modal" role="dialog" aria-modal="true" aria-label="Confirm Transaction">
     <div id="confirm-tx-modal-backdrop" onclick="_confirmTxDecline()"></div>
     <div id="confirm-tx-modal-panel">
-
-        <!-- Success indicator -->
         <div style="text-align:center;padding:20px 20px 0;">
             <div style="width:48px;height:48px;border-radius:50%;background:rgba(29,158,117,0.12);
                         display:flex;align-items:center;justify-content:center;
@@ -375,8 +335,6 @@
             <div id="ctm-limit-confirmation" style="font-size:13px;color:var(--text2);
                  line-height:1.5;margin-bottom:20px;"></div>
         </div>
-
-        <!-- Pending transaction recap -->
         <div style="margin:0 20px 16px;">
             <div style="font-size:11px;font-weight:600;letter-spacing:.06em;
                         text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
@@ -387,8 +345,6 @@
                 border-radius:var(--radius);padding:12px 14px;font-size:13px;
                 line-height:1.6;"></div>
         </div>
-
-        <!-- Actions -->
         <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;">
             <button id="btn-ctm-yes" onclick="_confirmTxProceed()"
                     class="btn-primary" style="width:100%;">
@@ -400,7 +356,60 @@
                 No, cancel the transaction
             </button>
         </div>
+    </div>
+</div>
 
+
+<!-- ══ CONFIRM-TRANSACTION SHEET (mobile ≤ 600px) ════════════════════════ -->
+<!--
+  FIX: This sheet was previously missing on mobile.
+  After saving the spending limit in the no-goal sheet, this bottom sheet
+  now opens to ask the user if they still want to save their transaction.
+-->
+<div id="confirm-tx-sheet">
+    <div id="confirm-tx-sheet-backdrop" onclick="_confirmTxDecline()"></div>
+    <div id="confirm-tx-sheet-panel">
+        <div id="confirm-tx-sheet-handle"></div>
+
+        <!-- Success indicator -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+            <div style="width:40px;height:40px;border-radius:50%;background:rgba(29,158,117,0.12);
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="var(--acc)" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div>
+                <div style="font-size:14px;font-weight:600;color:var(--text);">
+                    Spending limit saved!
+                </div>
+                <div id="ctm-limit-confirmation-m" style="font-size:12px;color:var(--text2);
+                     line-height:1.4;margin-top:2px;"></div>
+            </div>
+        </div>
+
+        <!-- Pending transaction recap -->
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                    text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
+            Your pending transaction
+        </div>
+        <div id="ctm-tx-recap-m" style="
+            background:var(--bg2);border:0.5px solid var(--border);
+            border-radius:var(--radius);padding:12px 14px;font-size:13px;
+            line-height:1.6;margin-bottom:16px;"></div>
+
+        <!-- Actions -->
+        <button id="btn-ctm-yes-m" onclick="_confirmTxProceed()"
+                class="btn-primary" style="width:100%;margin-bottom:10px;">
+            <span class="btn-label">Yes, Add Transaction</span>
+            <span class="btn-spinner"></span>
+        </button>
+        <button onclick="_confirmTxDecline()"
+                class="btn-sm" style="width:100%;text-align:center;">
+            No, cancel the transaction
+        </button>
     </div>
 </div>
 
@@ -482,7 +491,7 @@
     }
 
 
-    /* ── Desktop modal (shared with Goals modal) ─────────────────────────── */
+    /* ── Desktop modals ──────────────────────────────────────────────────── */
     #add-tx-modal, #no-goal-modal, #confirm-tx-modal {
         display: none;
         position: fixed;
@@ -552,6 +561,7 @@
 
     .atx-modal-body { padding: 16px 18px 20px; }
 
+    /* Desktop modals hidden on mobile */
     @media (max-width: 600px) {
         #add-tx-modal, #no-goal-modal, #confirm-tx-modal { display: none !important; }
     }
@@ -592,21 +602,21 @@
 
 
     /* ── Mobile bottom sheets ────────────────────────────────────────────── */
-    #add-tx-sheet, #no-goal-sheet {
+    #add-tx-sheet, #no-goal-sheet, #confirm-tx-sheet {
         display: none;
         position: fixed;
         inset: 0;
         z-index: 350;
     }
-    #add-tx-sheet.open, #no-goal-sheet.open { display: block; }
+    #add-tx-sheet.open, #no-goal-sheet.open, #confirm-tx-sheet.open { display: block; }
 
-    #add-tx-sheet-backdrop, #no-goal-sheet-backdrop {
+    #add-tx-sheet-backdrop, #no-goal-sheet-backdrop, #confirm-tx-sheet-backdrop {
         position: absolute;
         inset: 0;
         background: rgba(0,0,0,0.4);
     }
 
-    #add-tx-sheet-panel, #no-goal-sheet-panel {
+    #add-tx-sheet-panel, #no-goal-sheet-panel, #confirm-tx-sheet-panel {
         position: absolute;
         bottom: 0; left: 0; right: 0;
         background: var(--bg);
@@ -622,7 +632,7 @@
         to   { transform: translateY(0); }
     }
 
-    #add-tx-sheet-handle, #no-goal-sheet-handle {
+    #add-tx-sheet-handle, #no-goal-sheet-handle, #confirm-tx-sheet-handle {
         width: 36px; height: 4px;
         background: var(--border2);
         border-radius: 2px;
@@ -630,10 +640,17 @@
     }
 
     .app.dark #add-tx-sheet-panel,
-    .app.dark #no-goal-sheet-panel { background: var(--bg); }
+    .app.dark #no-goal-sheet-panel,
+    .app.dark #confirm-tx-sheet-panel { background: var(--bg); }
 
-    /* No-goal sheet appears above add-tx-sheet z-index */
-    #no-goal-sheet { z-index: 360; }
+    /* Stacking: no-goal sheet above add-tx, confirm above no-goal */
+    #no-goal-sheet    { z-index: 360; }
+    #confirm-tx-sheet { z-index: 370; }
+
+    /* Mobile sheets hidden on desktop */
+    @media (min-width: 601px) {
+        #add-tx-sheet, #no-goal-sheet, #confirm-tx-sheet { display: none !important; }
+    }
 
 </style>
 
@@ -648,7 +665,6 @@
         if (AppState._txPgKey === undefined) AppState._txPgKey = null;
     }
 
-    // Tracks whether the no-income banner has been dismissed this session.
     var _noIncomeBannerDismissed = false;
 
 
@@ -675,24 +691,11 @@
         upd('ov-rem', fmt(s.bal), s.bal >= 0 ? 'var(--acc)' : 'var(--red)');
     }
 
-    /**
-     * _checkNoIncomeBanner()
-     *
-     * Shows a soft amber banner when no income has been recorded for the
-     * current month AND the user hasn't dismissed it this session.
-     * Only shown on the Overview pane — it disappears as soon as income exists.
-     */
     function _checkNoIncomeBanner() {
         var bannerEl = document.getElementById('ov-no-income-banner');
         if (!bannerEl) return;
-
-        if (_noIncomeBannerDismissed) {
-            bannerEl.style.display = 'none';
-            return;
-        }
-
+        if (_noIncomeBannerDismissed) { bannerEl.style.display = 'none'; return; }
         var s = getMonthStats(curKey());
-        // Show banner only when there's genuinely zero income this month.
         bannerEl.style.display = s.inc === 0 ? 'block' : 'none';
     }
 
@@ -809,13 +812,6 @@
 
     // ─── GUARD: check if expense category has a spending limit ───────────────────
 
-    /**
-     * _expenseNeedsGoalCheck(type, category)
-     *
-     * Returns true if we should interrupt and ask the user to set a limit.
-     * Conditions: type is 'expense' AND no goal exists for this category
-     * in the current month.
-     */
     function _expenseNeedsGoalCheck(type, category) {
         if (type !== 'expense') return false;
         var goals = (AppState.goals && AppState.goals[curKey()]) || [];
@@ -830,8 +826,12 @@
 
     function _validateTx(name, amtRaw, type) {
         if (!name) { showToast('Please enter a description.', 'error'); return false; }
-        var a = parseFloat(amtRaw);
-        if (!amtRaw || isNaN(a) || a <= 0) { showToast('Please enter a valid amount greater than zero.', 'error'); return false; }
+        // Strip commas before parsing
+        var cleaned = String(amtRaw || '').replace(/,/g, '');
+        var a = parseFloat(cleaned);
+        if (!cleaned || isNaN(a) || a <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error'); return false;
+        }
         if (!type) { showToast('Please select a transaction type.', 'error'); return false; }
         return true;
     }
@@ -880,22 +880,23 @@
     async function addTxFromModal() {
         var btn  = document.getElementById('btn-add-tx-d');
         var name = getVal('tx-name-d');
-        var amt  = getVal('tx-amt-d');
+        var amt  = getVal('tx-amt-d'); // may contain commas
         var type = getVal('tx-type-d');
         var cat  = getVal('tx-cat-d');
         var note = getVal('tx-note-d');
         if (!_validateTx(name, amt, type)) return;
 
-        // ── GUARDRAIL: check for missing spending limit ────────────────────────
+        var amtClean = parseFloat(String(amt).replace(/,/g, ''));
+
         if (_expenseNeedsGoalCheck(type, cat)) {
             closeAddTxModal();
-            _openNoGoalInterrupt(name, parseFloat(amt), type, cat, note);
-            return; // do NOT save yet
+            _openNoGoalInterrupt(name, amtClean, type, cat, note);
+            return;
         }
 
         await withButtonLoading(btn, async function() {
             try {
-                await _submitTx(name, parseFloat(amt), type, cat, note);
+                await _submitTx(name, amtClean, type, cat, note);
                 clearInputs('tx-name-d', 'tx-amt-d', 'tx-note-d');
                 closeAddTxModal();
             } catch(e) {}
@@ -925,22 +926,23 @@
     async function addTxFromSheet() {
         var btn  = document.getElementById('btn-add-tx-m');
         var name = getVal('tx-name-m');
-        var amt  = getVal('tx-amt-m');
+        var amt  = getVal('tx-amt-m'); // may contain commas
         var type = getVal('tx-type-m');
         var cat  = getVal('tx-cat-m');
         var note = getVal('tx-note-m');
         if (!_validateTx(name, amt, type)) return;
 
-        // ── GUARDRAIL: check for missing spending limit ────────────────────────
+        var amtClean = parseFloat(String(amt).replace(/,/g, ''));
+
         if (_expenseNeedsGoalCheck(type, cat)) {
             closeAddTxSheet();
-            _openNoGoalInterrupt(name, parseFloat(amt), type, cat, note);
-            return; // do NOT save yet
+            _openNoGoalInterrupt(name, amtClean, type, cat, note);
+            return;
         }
 
         await withButtonLoading(btn, async function() {
             try {
-                await _submitTx(name, parseFloat(amt), type, cat, note);
+                await _submitTx(name, amtClean, type, cat, note);
                 clearInputs('tx-name-m', 'tx-amt-m', 'tx-note-m');
                 closeAddTxSheet();
             } catch(e) {}
@@ -953,6 +955,7 @@
             closeAddTxSheet();
             _closeNoGoalInterrupt();
             _closeConfirmTxModal();
+            _closeConfirmTxSheet();
         }
     });
 
@@ -969,20 +972,13 @@
     // NO-GOAL INTERRUPTION FLOW
     // ═══════════════════════════════════════════════════════════════════════════════
 
-    // Holds the pending transaction details while the user sets a limit.
     var _pendingTx = null;
 
-    /**
-     * _openNoGoalInterrupt(name, amount, type, category, note)
-     *
-     * Stashes the pending transaction and opens the interruption UI.
-     * On desktop: modal. On mobile: bottom sheet.
-     */
     function _openNoGoalInterrupt(name, amount, type, category, note) {
         _pendingTx = { name: name, amount: amount, type: type, category: category, note: note };
 
-        var curLabel  = monthLabel(AppState.curYear, AppState.curMonth);
-        var catColor  = getCategoryColor(category);
+        var curLabel     = monthLabel(AppState.curYear, AppState.curMonth);
+        var catColor     = getCategoryColor(category);
         var amtFormatted = fmt(amount);
 
         var summaryHtml = (
@@ -1002,7 +998,6 @@
         var isMobile = window.innerWidth <= 600;
 
         if (isMobile) {
-            // Populate sheet
             var el = function(id) { return document.getElementById(id); };
             if (el('ng-pending-summary-m'))   el('ng-pending-summary-m').innerHTML   = summaryHtml;
             if (el('ng-cat-display-m'))       el('ng-cat-display-m').textContent     = category;
@@ -1020,7 +1015,6 @@
                 setTimeout(function() { if (el('ng-limit-input-m')) el('ng-limit-input-m').focus(); }, 300);
             }
         } else {
-            // Populate modal
             var el = function(id) { return document.getElementById(id); };
             if (el('ng-pending-summary'))   el('ng-pending-summary').innerHTML  = summaryHtml;
             if (el('ng-cat-display'))       el('ng-cat-display').textContent    = category;
@@ -1048,20 +1042,14 @@
         document.body.style.overflow = '';
     }
 
-    /**
-     * _noGoalSaveAndContinue()
-     *
-     * Called when the user clicks "Add Limit & Continue".
-     * 1. Validates the limit input.
-     * 2. Saves the goal via server.
-     * 3. Closes the interruption UI.
-     * 4. Opens the confirm-transaction modal.
-     */
     async function _noGoalSaveAndContinue() {
         if (!_pendingTx) return;
 
         var isMobile  = window.innerWidth <= 600;
-        var limitRaw  = isMobile ? getVal('ng-limit-input-m') : getVal('ng-limit-input');
+        // Strip commas before parsing
+        var limitRaw  = isMobile
+            ? String(getVal('ng-limit-input-m')).replace(/,/g, '')
+            : String(getVal('ng-limit-input')).replace(/,/g, '');
         var limitVal  = parseFloat(limitRaw);
 
         if (!limitRaw || isNaN(limitVal) || limitVal <= 0) {
@@ -1075,10 +1063,8 @@
 
         await withButtonLoading(btn, async function() {
             try {
-                // Save the goal
                 var newGoal = await callServer('addGoal', curKey(), _pendingTx.category, limitVal);
 
-                // Update AppState.goals
                 if (!AppState.goals) AppState.goals = {};
                 if (!AppState.goals[curKey()]) AppState.goals[curKey()] = [];
                 var alreadyExists = false;
@@ -1092,21 +1078,17 @@
 
                 _closeNoGoalInterrupt();
 
-                // Open confirmation modal
-                _openConfirmTxModal(limitVal);
+                // Open confirm step — mobile gets a sheet, desktop gets a modal
+                if (isMobile) {
+                    _openConfirmTxSheet(limitVal);
+                } else {
+                    _openConfirmTxModal(limitVal);
+                }
 
-            } catch(e) {
-                // callServer shows the toast
-            }
+            } catch(e) {}
         });
     }
 
-    /**
-     * _noGoalSkipAndSave()
-     *
-     * Escape hatch — save the transaction without setting a limit.
-     * De-emphasised in the UI but always available.
-     */
     async function _noGoalSkipAndSave() {
         if (!_pendingTx) return;
         _closeNoGoalInterrupt();
@@ -1121,11 +1103,6 @@
         _pendingTx = null;
     }
 
-    /**
-     * _noGoalCancel()
-     *
-     * User backs out entirely — no goal, no transaction.
-     */
     function _noGoalCancel() {
         _closeNoGoalInterrupt();
         _pendingTx = null;
@@ -1134,25 +1111,55 @@
 
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // CONFIRM-TRANSACTION MODAL
+    // CONFIRM-TRANSACTION (desktop modal)
     // ═══════════════════════════════════════════════════════════════════════════════
 
-    /**
-     * _openConfirmTxModal(savedLimit)
-     *
-     * Opens after the spending limit has been successfully saved.
-     * Shows a success checkmark, the saved limit details, and the pending
-     * transaction recap. User confirms or cancels.
-     */
     function _openConfirmTxModal(savedLimit) {
         if (!_pendingTx) return;
+        _populateConfirmContent(savedLimit, 'ctm-limit-confirmation', 'ctm-tx-recap');
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) {
+            modal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
 
+    function _closeConfirmTxModal() {
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CONFIRM-TRANSACTION (mobile sheet) — FIX: was missing on mobile
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    function _openConfirmTxSheet(savedLimit) {
+        if (!_pendingTx) return;
+        _populateConfirmContent(savedLimit, 'ctm-limit-confirmation-m', 'ctm-tx-recap-m');
+        var sheet = document.getElementById('confirm-tx-sheet');
+        if (sheet) {
+            sheet.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    function _closeConfirmTxSheet() {
+        var sheet = document.getElementById('confirm-tx-sheet');
+        if (sheet) { sheet.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    /**
+     * _populateConfirmContent(savedLimit, limitElId, recapElId)
+     * Shared content builder for both desktop modal and mobile sheet.
+     */
+    function _populateConfirmContent(savedLimit, limitElId, recapElId) {
         var curLabel    = monthLabel(AppState.curYear, AppState.curMonth);
         var catColor    = getCategoryColor(_pendingTx.category);
         var limitFmt    = fmt(savedLimit);
         var amtFmt      = fmt(_pendingTx.amount);
 
-        var limitConfEl = document.getElementById('ctm-limit-confirmation');
+        var limitConfEl = document.getElementById(limitElId);
         if (limitConfEl) {
             limitConfEl.innerHTML = (
                 'Spending limit of <strong style="color:var(--acc);">' + limitFmt +
@@ -1161,7 +1168,7 @@
             );
         }
 
-        var recapEl = document.getElementById('ctm-tx-recap');
+        var recapEl = document.getElementById(recapElId);
         if (recapEl) {
             recapEl.innerHTML = (
                 '<div style="display:flex;align-items:center;gap:8px;">' +
@@ -1176,27 +1183,21 @@
                 '</div>'
             );
         }
-
-        var modal = document.getElementById('confirm-tx-modal');
-        if (modal) {
-            modal.classList.add('open');
-            document.body.style.overflow = 'hidden';
-        }
     }
 
-    function _closeConfirmTxModal() {
-        var modal = document.getElementById('confirm-tx-modal');
-        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
-    }
 
-    /**
-     * _confirmTxProceed()
-     * User says "Yes, Add Transaction" — save the stashed transaction.
-     */
+    // ── Shared proceed / decline (works for both modal and sheet) ─────────────────
+
     async function _confirmTxProceed() {
-        if (!_pendingTx) { _closeConfirmTxModal(); return; }
+        if (!_pendingTx) {
+            _closeConfirmTxModal();
+            _closeConfirmTxSheet();
+            return;
+        }
 
-        var btn = document.getElementById('btn-ctm-yes');
+        // Pick the right button based on which surface is open
+        var isMobile = window.innerWidth <= 600;
+        var btn = document.getElementById(isMobile ? 'btn-ctm-yes-m' : 'btn-ctm-yes');
         var tx  = _pendingTx;
         _pendingTx = null;
 
@@ -1204,19 +1205,17 @@
             try {
                 await _submitTx(tx.name, tx.amount, tx.type, tx.category, tx.note);
                 _closeConfirmTxModal();
+                _closeConfirmTxSheet();
             } catch(e) {}
         });
     }
 
-    /**
-     * _confirmTxDecline()
-     * User says "No, cancel" — limit was saved, transaction is dropped.
-     */
     function _confirmTxDecline() {
         _pendingTx = null;
         _closeConfirmTxModal();
+        _closeConfirmTxSheet();
         showToast('Transaction cancelled. Spending limit was saved.', 'info');
-        renderAll(); // refresh to show the new goal
+        renderAll();
     }
 
 

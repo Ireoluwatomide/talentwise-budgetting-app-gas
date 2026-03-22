@@ -1,21 +1,19 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Goals.html — Month-Scoped Budget Goals Screen
 
+     GUARDRAILS (new):
+       1. No-income warning banner — shown when the user opens this tab and
+          no income has been recorded for the current month. Soft advisory
+          only; the user can still add goals. Banner auto-hides when income
+          is present. Has a "Dismiss" link for this session.
+
+       2. Budget Coverage Indicator — shows how much of budgetable income
+          is allocated. Still suppressed when income is zero (nothing to
+          show a meaningful %).
+
      TAB: Goals (Spending Limits)
-
-     NEW: Budget Coverage Indicator
-       Shows how much of the month's budgetable income is assigned to goals.
-       Budgetable Income = Total Income − Total Savings for the month.
-       Updates live as goals are added, edited, or deleted — no server calls.
-
-       States:
-         Under-budgeted  → amber bar + "₦X unbudgeted" nudge
-         Fully budgeted  → green bar + "Fully budgeted" label
-         Over-budgeted   → red bar + "₦X over budget" warning
-
-     STATE: AppState.goals (object keyed by YYYY-MM), AppState.transactions
-     SERVER CALLS: addGoal, updateGoal, deleteGoal,
-                   copyGoalsFromMonth, getPreviousMonthWithGoals
+     STATE: AppState.goals, AppState.transactions
+     SERVER CALLS: addGoal, updateGoal, deleteGoal, copyGoalsFromMonth
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-goals">
@@ -28,12 +26,38 @@
         without affecting past months.
     </div>
 
+    <!-- ── No-income warning (soft advisory) ─────────────────────────────────── -->
+    <div id="goals-no-income-banner" style="display:none;margin-bottom:1rem;">
+        <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
+                    border-radius:var(--radius);padding:12px 14px;font-size:13px;line-height:1.6;
+                    display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:16px;flex-shrink:0;line-height:1.3;">⚠️</span>
+            <div style="flex:1;">
+                <strong style="color:var(--amber);display:block;margin-bottom:3px;">
+                    No income recorded for <span class="goals-no-income-month"></span>.
+                </strong>
+                You can still create spending limits, but they won't reflect your actual
+                budget until you add income. For the most meaningful limits, record your
+                salary or income on the
+                <button onclick="switchTabSidebar('overview')"
+                        style="background:none;border:none;cursor:pointer;color:var(--acc);
+                               font-size:13px;font-family:var(--font);padding:0;
+                               text-decoration:underline;">Overview</button>
+                tab first.
+                <button onclick="_dismissGoalsNoIncomeBanner()"
+                        style="background:none;border:none;cursor:pointer;color:var(--text2);
+                               font-size:11px;margin-left:8px;text-decoration:underline;
+                               padding:0;font-family:var(--font);">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Budget Coverage Indicator ─────────────────────────────────────────── -->
     <div id="budget-coverage-wrap" style="margin-bottom:1.25rem;display:none;">
         <!-- populated by _renderBudgetCoverage() -->
     </div>
 
-    <!-- ── Section header: "Spending Limits" label + Add pill button ──────────── -->
+    <!-- ── Section header ────────────────────────────────────────────────────── -->
     <div class="ov-section-hdr">
         <span class="sec" style="margin:0;">Spending Limits</span>
         <button id="btn-open-add-goal"
@@ -71,6 +95,15 @@
             </button>
         </div>
         <div class="atx-modal-body">
+            <!-- No-income notice inside the modal too (compact version) -->
+            <div id="goal-modal-no-income-notice" style="display:none;
+                 background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.25);
+                 border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;
+                 font-size:12px;color:var(--text2);line-height:1.5;">
+                💡 No income recorded this month — your limit won't have a budget baseline
+                yet. You can still save it and add income later.
+            </div>
+
             <input type="hidden" id="goal-modal-id" value=""/>
             <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
                 Setting limit for:
@@ -114,6 +147,15 @@
     <div id="add-goal-sheet-panel">
         <div id="add-goal-sheet-handle"></div>
         <div class="atx-modal-title" style="margin-bottom:4px;" id="goal-sheet-title">Add Spending Limit</div>
+
+        <!-- Compact no-income notice for the sheet -->
+        <div id="goal-sheet-no-income-notice" style="display:none;
+             background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.25);
+             border-radius:var(--radius);padding:9px 12px;margin-bottom:12px;
+             font-size:12px;color:var(--text2);line-height:1.5;">
+            💡 No income recorded this month yet.
+        </div>
+
         <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">
             Setting limit for: <strong id="goal-sheet-month" style="color:var(--text);"></strong>
         </div>
@@ -200,9 +242,7 @@
         gap: 8px;
     }
 
-    .budget-coverage-metric {
-        text-align: center;
-    }
+    .budget-coverage-metric { text-align: center; }
 
     .budget-coverage-metric-label {
         font-size: 10px;
@@ -230,13 +270,9 @@
         gap: 8px;
     }
 
-    .budget-coverage-nudge-icon {
-        flex-shrink: 0;
-        font-size: 14px;
-        line-height: 1.4;
-    }
+    .budget-coverage-nudge-icon { flex-shrink: 0; font-size: 14px; line-height: 1.4; }
 
-    /* ── Goal modal — reuse Overview modal styles ────────────────────────── */
+    /* ── Goal modal ─────────────────────────────────────────────────────── */
     #add-goal-modal {
         display: none;
         position: fixed;
@@ -279,11 +315,7 @@
     }
     #add-goal-sheet.open { display: block; }
 
-    #add-goal-sheet-backdrop {
-        position: absolute;
-        inset: 0;
-        background: rgba(0,0,0,0.4);
-    }
+    #add-goal-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
 
     #add-goal-sheet-panel {
         position: absolute;
@@ -328,11 +360,7 @@
 
     .carry-prompt-text strong { color: var(--text); }
 
-    .carry-prompt-actions {
-        display: flex;
-        gap: 8px;
-        flex-shrink: 0;
-    }
+    .carry-prompt-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
     /* ── Goal rows ──────────────────────────────────────────────────────── */
     .goal-row { margin-bottom: 1.25rem; }
@@ -352,11 +380,7 @@
         gap: 6px;
     }
 
-    .goal-row-right {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
+    .goal-row-right { display: flex; align-items: center; gap: 8px; }
 
     .goal-amounts {
         font-family: var(--mono);
@@ -378,11 +402,7 @@
     .goal-edit-btn:hover { color: var(--text); background: var(--border); }
     .goal-edit-btn svg { width: 13px; height: 13px; }
 
-    .goal-sublabel {
-        font-size: 11px;
-        color: var(--text2);
-        margin-top: 3px;
-    }
+    .goal-sublabel { font-size: 11px; color: var(--text2); margin-top: 3px; }
 
     .goals-empty {
         text-align: center;
@@ -412,6 +432,9 @@
 
     var _goalEditId = null;
 
+    // Tracks whether the no-income banner has been dismissed this session.
+    var _goalsNoIncomeDismissed = false;
+
 
     // ─── RENDER ──────────────────────────────────────────────────────────────────
 
@@ -421,59 +444,86 @@
 
         var goals = (AppState.goals && AppState.goals[curKey()]) || [];
 
+        _renderGoalsNoIncomeBanner();
         _renderBudgetCoverage(goals);
         _renderCarryPrompt(goals);
         _renderGoalsList(goals);
     }
 
 
-    // ─── BUDGET COVERAGE INDICATOR ───────────────────────────────────────────────
+    // ─── NO-INCOME BANNER ────────────────────────────────────────────────────────
 
     /**
-     * _renderBudgetCoverage(goals)
+     * _renderGoalsNoIncomeBanner()
      *
-     * Computes and renders the budget coverage card.
+     * Shows a soft amber advisory when the user is on the Goals tab but has
+     * not yet recorded any income for the current month.
      *
-     * Budgetable Income = income − savings (money available to spend on expenses)
-     * Total Budgeted    = sum of all goal monthly_limit values
-     * Coverage %        = Total Budgeted / Budgetable Income × 100
-     *
-     * The card is hidden when there is no income for the month (nothing to
-     * budget against) or no goals set yet.
+     * This is purely advisory — the user can still create goals.
+     * The banner auto-hides once income is present.
+     * The user can dismiss it for the session.
      */
+    function _renderGoalsNoIncomeBanner() {
+        var bannerEl = document.getElementById('goals-no-income-banner');
+        if (!bannerEl) return;
+
+        if (_goalsNoIncomeDismissed) {
+            bannerEl.style.display = 'none';
+            return;
+        }
+
+        var s = getMonthStats(curKey());
+        if (s.inc > 0) {
+            bannerEl.style.display = 'none';
+            return;
+        }
+
+        // Update month label inside the banner
+        var monthSpans = bannerEl.querySelectorAll('.goals-no-income-month');
+        monthSpans.forEach(function(el) {
+            el.textContent = monthLabel(AppState.curYear, AppState.curMonth);
+        });
+
+        bannerEl.style.display = 'block';
+    }
+
+    function _dismissGoalsNoIncomeBanner() {
+        _goalsNoIncomeDismissed = true;
+        var bannerEl = document.getElementById('goals-no-income-banner');
+        if (bannerEl) bannerEl.style.display = 'none';
+    }
+
+
+    // ─── BUDGET COVERAGE INDICATOR ───────────────────────────────────────────────
+
     function _renderBudgetCoverage(goals) {
         var wrapEl = document.getElementById('budget-coverage-wrap');
         if (!wrapEl) return;
 
-        // Get the current month's income and savings from transactions.
         var stats = getMonthStats(curKey());
         var budgetableIncome = stats.inc - stats.sav;
 
-        // Hide the indicator if there's no income or no goals yet.
+        // Hide when no income or no goals
         if (budgetableIncome <= 0 || goals.length === 0) {
             wrapEl.style.display = 'none';
             return;
         }
 
-        // Sum all spending limits.
         var totalBudgeted = goals.reduce(function(sum, g) {
             return sum + (parseFloat(g.monthly_limit) || 0);
         }, 0);
 
         var unbudgeted  = budgetableIncome - totalBudgeted;
         var coveragePct = Math.round((totalBudgeted / budgetableIncome) * 100);
-        var barPct      = Math.min(100, coveragePct); // cap bar at 100%
+        var barPct      = Math.min(100, coveragePct);
         var isOver      = totalBudgeted > budgetableIncome;
-        var isComplete  = !isOver && Math.abs(unbudgeted) < 1; // within ₦1 rounding
+        var isComplete  = !isOver && Math.abs(unbudgeted) < 1;
 
-        // Bar colour communicates health.
         var barColor = isOver      ? 'var(--red)'
             : isComplete  ? 'var(--acc)'
                 : coveragePct >= 80 ? 'var(--acc)'
-                    : coveragePct >= 50 ? 'var(--amber)'
-                        : 'var(--amber)';
+                    :                       'var(--amber)';
 
-        // Status label.
         var statusText  = isOver     ? coveragePct + '% — over income'
             : isComplete ? '100% — fully budgeted'
                 :              coveragePct + '% budgeted';
@@ -482,16 +532,15 @@
             : isComplete ? 'var(--acc)'
                 :              'var(--amber)';
 
-        // Nudge message.
         var nudgeHtml = '';
         if (isOver) {
             nudgeHtml = (
                 '<div class="budget-coverage-nudge" ' +
                 'style="background:rgba(216,90,48,0.08);border:0.5px solid rgba(216,90,48,0.25);">' +
                 '<span class="budget-coverage-nudge-icon">⚠️</span>' +
-                '<span>Your spending limits exceed your budgetable income by ' +
+                '<span>Your limits exceed budgetable income by ' +
                 '<strong style="color:var(--red);">' + fmt(Math.abs(unbudgeted)) + '</strong>. ' +
-                'Consider reducing some limits or deleting goals you no longer need.</span>' +
+                'Consider reducing some limits.</span>' +
                 '</div>'
             );
         } else if (!isComplete) {
@@ -500,8 +549,7 @@
                 'style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.25);">' +
                 '<span class="budget-coverage-nudge-icon">💡</span>' +
                 '<span><strong style="color:var(--amber);">' + fmt(unbudgeted) + '</strong> ' +
-                'is unbudgeted this month. Add spending limits for remaining categories, ' +
-                'or adjust existing ones to allocate it.</span>' +
+                'is unbudgeted. Add limits for remaining categories to allocate it.</span>' +
                 '</div>'
             );
         } else {
@@ -509,8 +557,7 @@
                 '<div class="budget-coverage-nudge" ' +
                 'style="background:rgba(29,158,117,0.08);border:0.5px solid rgba(29,158,117,0.25);">' +
                 '<span class="budget-coverage-nudge-icon">✅</span>' +
-                '<span>Your entire budgetable income is assigned to spending limits. ' +
-                'Every naira has a job.</span>' +
+                '<span>Your entire budgetable income is assigned. Every naira has a job.</span>' +
                 '</div>'
             );
         }
@@ -518,51 +565,32 @@
         wrapEl.style.display = 'block';
         wrapEl.innerHTML = (
             '<div class="budget-coverage-card">' +
-
-            // Header: title + status label
             '<div class="budget-coverage-header">' +
             '<span class="budget-coverage-title">Budget Coverage</span>' +
             '<span class="budget-coverage-status" style="color:' + statusColor + ';">' +
-            statusText +
-            '</span>' +
+            statusText + '</span>' +
             '</div>' +
-
-            // Progress bar
             '<div class="budget-coverage-bar-track">' +
-            '<div class="budget-coverage-bar-fill" ' +
-            'style="width:' + barPct + '%;background:' + barColor + ';"></div>' +
+            '<div class="budget-coverage-bar-fill" style="width:' + barPct + '%;background:' + barColor + ';"></div>' +
             '</div>' +
-
-            // Three metric cells
             '<div class="budget-coverage-metrics">' +
-
             '<div class="budget-coverage-metric">' +
             '<div class="budget-coverage-metric-label">Budgetable</div>' +
             '<div class="budget-coverage-metric-value">' + fmt(budgetableIncome) + '</div>' +
             '</div>' +
-
             '<div class="budget-coverage-metric">' +
             '<div class="budget-coverage-metric-label">Budgeted</div>' +
             '<div class="budget-coverage-metric-value" style="color:' + barColor + ';">' +
-            fmt(totalBudgeted) +
+            fmt(totalBudgeted) + '</div>' +
             '</div>' +
-            '</div>' +
-
             '<div class="budget-coverage-metric">' +
-            '<div class="budget-coverage-metric-label">' +
-            (isOver ? 'Over by' : 'Unbudgeted') +
-            '</div>' +
+            '<div class="budget-coverage-metric-label">' + (isOver ? 'Over by' : 'Unbudgeted') + '</div>' +
             '<div class="budget-coverage-metric-value" style="color:' +
             (isOver ? 'var(--red)' : unbudgeted > 0 ? 'var(--amber)' : 'var(--acc)') + ';">' +
-            fmt(Math.abs(unbudgeted)) +
+            fmt(Math.abs(unbudgeted)) + '</div>' +
             '</div>' +
             '</div>' +
-
-            '</div>' +
-
-            // Nudge
             nudgeHtml +
-
             '</div>'
         );
     }
@@ -639,12 +667,11 @@
                 : p > 70 ? 'var(--amber)'
                     :           'var(--acc)';
 
-            var amtColor = isOver ? 'var(--red)' : 'var(--text2)';
+            var amtColor  = isOver ? 'var(--red)' : 'var(--text2)';
             var overBadge = isOver
                 ? ' <span class="badge badge-red">Over limit</span>'
                 : '';
-
-            var subLabel = p + '% used' + (isOver ? ' — over budget!' : '');
+            var subLabel  = p + '% used' + (isOver ? ' — over budget!' : '');
 
             html += (
                 '<div class="goal-row">' +
@@ -660,14 +687,12 @@
                 fmt(spent) + ' / ' + fmt(limit) +
                 '</span>' +
                 '<button class="goal-edit-btn" ' +
-                'onclick="openGoalModal(\'' + goal.id + '\')" ' +
-                'title="Edit limit">' +
+                'onclick="openGoalModal(\'' + goal.id + '\')" title="Edit limit">' +
                 '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
                 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
                 '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>' +
                 '<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>' +
-                '</svg>' +
-                '</button>' +
+                '</svg></button>' +
                 '<button class="tx-delete" ' +
                 'onclick="deleteGoalRow(\'' + goal.id + '\', this)" ' +
                 'title="Remove goal">\xd7</button>' +
@@ -692,6 +717,7 @@
     function openGoalModal(goalId) {
         _goalEditId = goalId || null;
         _populateGoalForm('modal', goalId);
+        _syncGoalNoIncomeNotice();
         var modal = document.getElementById('add-goal-modal');
         if (modal) {
             modal.classList.add('open');
@@ -720,6 +746,7 @@
     function openGoalSheet(goalId) {
         _goalEditId = goalId || null;
         _populateGoalForm('sheet', goalId);
+        _syncGoalNoIncomeNotice();
         var sheet = document.getElementById('add-goal-sheet');
         if (sheet) {
             sheet.classList.add('open');
@@ -742,12 +769,29 @@
         await _saveGoal(_goalEditId, getVal('goal-cat-sheet'), getVal('goal-limit-sheet'), btn, closeGoalSheet);
     }
 
-    // Route to sheet on mobile.
+    // Route to sheet on mobile
     var _originalOpenGoalModal = openGoalModal;
     openGoalModal = function(goalId) {
         if (window.innerWidth <= 600) openGoalSheet(goalId);
         else _originalOpenGoalModal(goalId);
     };
+
+    /**
+     * _syncGoalNoIncomeNotice()
+     *
+     * Shows/hides the compact no-income notice inside the add-goal modal/sheet.
+     * This is the inline version — less intrusive than the full banner.
+     */
+    function _syncGoalNoIncomeNotice() {
+        var s = getMonthStats(curKey());
+        var hasIncome = s.inc > 0;
+
+        var modalNotice = document.getElementById('goal-modal-no-income-notice');
+        var sheetNotice = document.getElementById('goal-sheet-no-income-notice');
+
+        if (modalNotice) modalNotice.style.display = hasIncome ? 'none' : 'block';
+        if (sheetNotice) sheetNotice.style.display = hasIncome ? 'none' : 'block';
+    }
 
 
     // ─── SHARED FORM POPULATION ───────────────────────────────────────────────────

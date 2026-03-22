@@ -62,7 +62,7 @@
         darkMode:     false,
         categories:   [],
         transactions: {},                      // { 'YYYY-MM': [tx, ...] }
-        goals:        [],
+        goals:        {},
         bills:        [],
         savingsGoals: [],
         debts:        [],
@@ -1123,6 +1123,7 @@
         // ── Shared chrome ──────────────────────────────────────────────────────────
         if (typeof updateHeader            === 'function') updateHeader();
         if (typeof updateAlertBanners      === 'function') updateAlertBanners();
+        if (typeof updateNotificationBell  === 'function') updateNotificationBell();
         if (typeof populateCategorySelects === 'function') populateCategorySelects();
 
         // ── Active pane ────────────────────────────────────────────────────────────

@@ -48,6 +48,23 @@
                 <option value="GBP">&#xA3; GBP</option>
             </select>
 
+            <!-- Notification bell (desktop) — populated by NotificationBell.html -->
+            <div style="position:relative;" id="bell-desktop-wrap">
+                <button id="bell-btn"
+                        class="header-icon-btn"
+                        onclick="toggleBellDropdown(event)"
+                        aria-label="Notifications"
+                        title="Notifications">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 01-3.46 0"/>
+                    </svg>
+                    <span id="bell-badge" style="display:none;"></span>
+                </button>
+            </div>
+
             <button id="dark-toggle-btn" onclick="toggleDark()" class="header-icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
                 <svg id="dark-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                 <svg id="dark-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
@@ -64,6 +81,8 @@
                 <div class="label-caps" style="margin-bottom:2px;">Balance</div>
                 <div id="hd-bal" class="header-mobile-bal-val"></div>
             </div>
+            <!-- Bell slot (mobile) -->
+            <div id="bell-mobile-wrap"></div>
             <div id="hdr-avatar-wrap-mobile"></div>
         </div>
 
@@ -268,7 +287,7 @@
 
     var SCREEN_META = {
         overview:   function(y,m){ return { title:'Overview',    sub:monthLabel(y,m)+' \u00b7 Track income, expenses and savings' }; },
-        goals:      function(y,m){ return { title:'Goals',       sub:monthLabel(y,m)+' \u00b7 Monthly spending limits' }; },
+        goals:      function(y,m){ return { title:'Spending Limits',       sub:monthLabel(y,m)+' \u00b7 Monthly spending limits' }; },
         bills:      function(y,m){ return { title:'Bills',       sub:'Recurring bills and due-date alerts' }; },
         savings:    function(y,m){ return { title:'Savings',     sub:'Track your savings goals' }; },
         debt:       function(y,m){ return { title:'Debt',        sub:'Loans, credit cards and payoff tracker' }; },

@@ -52,6 +52,7 @@
 
 <!-- ── 5. Shared Utilities ───────────────────────────────────────────────── -->
 <?!= include('src/client/utils/utils.js') ?>
+<?!= include('src/client/utils/utils_amt_addon') ?>
 
 <!-- ══ LAYOUT ROOT ═══════════════════════════════════════════════════════ -->
 <!--
@@ -131,6 +132,11 @@
     // 4. Ensure all .btn-primary buttons have label+spinner structure
     if (typeof initAllBtnStructures === 'function') {
       initAllBtnStructures();
+    }
+
+    // 4b. Wire comma formatting on all amount inputs
+    if (typeof initAmountInputs === 'function') {
+      initAmountInputs();
     }
 
     // 5. Set initial active state on mobile bottom nav

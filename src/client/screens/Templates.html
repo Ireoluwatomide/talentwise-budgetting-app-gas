@@ -1,10 +1,29 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Templates.html — FIXED
-     - renderTemplates() now shows existing goals for the current month
-       so the result persists when navigating away and back
-     - applyTemplate() correctly maps server response using goals schema
-       (category + monthly_limit), not savings schema
-     - Defensive normalisation handles any field-name variation
+     Templates.html — Budget Template Application
+
+     GUARDRAIL (new):
+       Applying a 50/30/20 or 70/20/10 template makes no mathematical sense
+       when no income is recorded for the current month. The template
+       percentages are applied to income — if income is zero, every limit
+       will be ₦0.
+
+       Flow:
+         - If income IS recorded: normal behaviour, apply template directly.
+         - If income is NOT recorded:
+             1. The income input is highlighted with a warning.
+             2. A prominent amber notice appears above the buttons explaining
+                why income is needed first.
+             3. If the user has typed a number into the income field AND
+                clicks Apply, we warn them that no income is recorded in the
+                app and ask: "Use this income figure for the template only,
+                or record it as a transaction first?"
+                 → "Record income first" → switches to Overview, prefills
+                    the add-tx form with their income figure.
+                 → "Apply template only" → applies the template using the
+                    typed figure (does NOT save a transaction).
+
+     STATE: AppState.goals, AppState.transactions
+     SERVER CALLS: applyBudgetTemplate
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-templates">
@@ -12,13 +31,34 @@
     <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;line-height:1.6;">
         Apply a budget template to set spending limits for
         <span id="tpl-month-label" style="font-weight:600;color:var(--text);"></span>.
-        Templates only affect the <strong>currently viewed month</strong> —
-        navigate to another month and re-apply if your income changes.
+        Templates only affect the <strong>currently viewed month</strong>.
     </div>
 
+    <!-- ── No-income notice (shown when no income recorded) ───────────────────── -->
+    <div id="tpl-no-income-notice" style="display:none;margin-bottom:1rem;">
+        <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
+                    border-radius:var(--radius);padding:12px 14px;font-size:13px;line-height:1.6;
+                    display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:18px;flex-shrink:0;line-height:1.2;">⚠️</span>
+            <div>
+                <strong style="color:var(--amber);display:block;margin-bottom:4px;">
+                    No income recorded for <span id="tpl-no-income-month"></span>.
+                </strong>
+                Budget templates calculate limits as percentages of your income.
+                Without income, every limit will be set to zero — which isn't useful.
+                <br/>
+                Enter your monthly income below, then click Apply. We'll ask you
+                whether you also want to record it as a transaction.
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Template form ──────────────────────────────────────────────────────── -->
     <div style="display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap;">
-        <input id="tpl-income" class="inp" placeholder="Monthly income" type="number" min="1"
-               style="flex:1;min-width:140px;"/>
+        <div style="flex:1;min-width:140px;position:relative;">
+            <input id="tpl-income" class="inp" placeholder="Monthly income" type="number" min="1"/>
+            <!-- Warning ring added by JS when no income recorded -->
+        </div>
         <button onclick="applyTemplate('503020')" class="btn-primary" style="white-space:nowrap;">
             50/30/20
         </button>
@@ -27,7 +67,7 @@
         </button>
     </div>
 
-    <!-- Result box — populated by applyTemplate() and re-rendered by renderTemplates() -->
+    <!-- Result box -->
     <div id="tpl-result" style="margin-bottom:1.5rem;"></div>
 
     <div class="sec">What These Mean</div>
@@ -36,7 +76,7 @@
         <div style="font-size:13px;font-weight:500;margin-bottom:6px;">50/30/20 Rule</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.6;">
             <strong>50%</strong> Needs (housing, groceries, transport, utilities, health) ·
-            <strong>30%</strong> Wants (entertainment) ·
+            <strong>30%</strong> Wants (entertainment, dining, subscriptions) ·
             <strong>20%</strong> Savings &amp; debt repayment
         </div>
     </div>
@@ -53,49 +93,380 @@
 </div>
 
 
-<script>
-    // Track the last applied template type so renderTemplates() can show the label
-    var _lastAppliedTemplate = null;
+<!-- ══ RECORD-INCOME PROMPT MODAL ════════════════════════════════════════ -->
+<!--
+  Shown when the user wants to apply a template but no income is in the
+  app. Asks: record it first, or apply the template with the typed figure only?
+-->
+<div id="tpl-income-prompt-modal" role="dialog" aria-modal="true"
+     aria-label="Record income before applying template">
+    <div id="tpl-income-prompt-backdrop" onclick="_tplIncomePromptDismiss()"></div>
+    <div id="tpl-income-prompt-panel">
 
-    /**
-     * renderTemplates()
-     *
-     * Called by switchTab('templates') and renderAll() when pane is active.
-     * Updates the month label and re-renders any existing goals for the
-     * current month so the result box persists after navigating away and back.
-     */
+        <div class="atx-modal-header">
+            <div>
+                <div class="atx-modal-title">Record Income First?</div>
+                <div style="font-size:12px;color:var(--text2);margin-top:2px;">
+                    Your income isn't in the app for this month.
+                </div>
+            </div>
+            <button class="atx-modal-close" onclick="_tplIncomePromptDismiss()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="atx-modal-body">
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px;">
+                You've entered
+                <strong id="tpl-income-prompt-amt" style="color:var(--text);"></strong>
+                as your income. This is only in the template field —
+                it won't appear in your transaction history unless you record it.
+            </div>
+
+            <div style="background:var(--bg2);border:0.5px solid var(--border);
+                        border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;
+                        font-size:13px;color:var(--text2);line-height:1.5;">
+                📊 Recording income first gives you more accurate budget coverage tracking,
+                forecasts, and the Insights tab savings rate calculation.
+            </div>
+
+            <!-- Primary: record income then apply -->
+            <button id="btn-tpl-record-first" onclick="_tplRecordIncomeThenApply()"
+                    class="btn-primary" style="width:100%;margin-bottom:8px;">
+                <span class="btn-label">Record Income &amp; Apply Template</span>
+                <span class="btn-spinner"></span>
+            </button>
+
+            <!-- Secondary: apply template only -->
+            <button id="btn-tpl-apply-only" onclick="_tplApplyTemplateOnly()"
+                    class="btn-sm" style="width:100%;text-align:center;">
+                Apply template only (don't record income)
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Record-income prompt modal ──────────────────────────────────────── */
+    #tpl-income-prompt-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    #tpl-income-prompt-modal.open { display: flex; }
+
+    #tpl-income-prompt-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+    }
+
+    #tpl-income-prompt-panel {
+        position: relative;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius-lg);
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+        overflow: hidden;
+    }
+
+    /* Income input warning ring (applied by JS) */
+    #tpl-income.inp-warn {
+        border-color: var(--amber) !important;
+        box-shadow: 0 0 0 2px rgba(186,117,23,0.15);
+    }
+
+</style>
+
+
+<!-- ══ TEMPLATES JAVASCRIPT ══════════════════════════════════════════════ -->
+<script>
+
+    var _lastAppliedTemplate = null;
+    // Stashes the template type while the income-prompt modal is open.
+    var _pendingTemplateType  = null;
+
+
+    // ─── RENDER ──────────────────────────────────────────────────────────────────
+
     function renderTemplates() {
         var lbl = document.getElementById('tpl-month-label');
         if (lbl) lbl.textContent = monthLabel(AppState.curYear, AppState.curMonth);
 
-        // Re-render the result box from AppState.goals if goals exist for this month.
-        // This is the key fix: previously renderTemplates() did nothing with existing
-        // goals, so the result vanished on every tab switch.
+        _syncTplNoIncomeNotice();
         _renderGoalsResult();
     }
 
     /**
-     * _renderGoalsResult()
+     * _syncTplNoIncomeNotice()
      *
-     * Reads AppState.goals[curKey()] and renders the result box.
-     * Shows a neutral "goals set" summary (without a template label) when
-     * the goals were loaded from bootstrap rather than just applied.
-     * Shows the template name when _lastAppliedTemplate is set.
+     * Shows or hides the amber warning notice and highlights the income input.
+     * Called on every render and whenever the month changes.
      */
+    function _syncTplNoIncomeNotice() {
+        var s          = getMonthStats(curKey());
+        var hasIncome  = s.inc > 0;
+
+        var noticeEl   = document.getElementById('tpl-no-income-notice');
+        var monthSpan  = document.getElementById('tpl-no-income-month');
+        var incInput   = document.getElementById('tpl-income');
+
+        if (noticeEl) noticeEl.style.display   = hasIncome ? 'none'    : 'block';
+        if (monthSpan) monthSpan.textContent    = monthLabel(AppState.curYear, AppState.curMonth);
+        if (incInput)  {
+            if (hasIncome) {
+                incInput.classList.remove('inp-warn');
+            } else {
+                incInput.classList.add('inp-warn');
+            }
+        }
+    }
+
+
+    // ─── APPLY TEMPLATE ───────────────────────────────────────────────────────────
+
+    /**
+     * applyTemplate(templateType)
+     *
+     * Entry point — called by the 50/30/20 and 70/20/10 buttons.
+     *
+     * If income IS recorded:  apply the template directly using the app's
+     *                         income figure (pre-fills the input too).
+     * If income is NOT recorded AND the user has entered a figure:
+     *                         open the "record income first?" prompt.
+     * If income is NOT recorded AND the input is empty:
+     *                         focus the input and show a toast.
+     */
+    async function applyTemplate(templateType) {
+        var s           = getMonthStats(curKey());
+        var hasIncome   = s.inc > 0;
+        var incInputRaw = getVal('tpl-income');
+        var curLbl      = monthLabel(AppState.curYear, AppState.curMonth);
+
+        // ── Case 1: income exists in the app ────────────────────────────────────
+        if (hasIncome) {
+            // Auto-fill the income field with the recorded income (convenient).
+            var incInput = document.getElementById('tpl-income');
+            if (incInput && !incInputRaw) {
+                incInput.value = String(Math.round(s.inc));
+                incInputRaw = incInput.value;
+            }
+            await _doApplyTemplate(templateType, parseFloat(incInputRaw) || s.inc, curLbl);
+            return;
+        }
+
+        // ── Case 2: no income, but user typed a figure ───────────────────────────
+        if (incInputRaw && parseFloat(incInputRaw) > 0) {
+            _pendingTemplateType = templateType;
+            _openTplIncomePrompt(parseFloat(incInputRaw));
+            return;
+        }
+
+        // ── Case 3: no income, input empty → nudge ───────────────────────────────
+        var incInput = document.getElementById('tpl-income');
+        if (incInput) {
+            incInput.classList.add('inp-warn');
+            incInput.focus();
+        }
+        showToast(
+            'Enter your monthly income above first — the template calculates limits as percentages of income.',
+            'error'
+        );
+    }
+
+
+    /**
+     * _doApplyTemplate(templateType, income, curLbl)
+     *
+     * Actually calls the server and updates AppState.
+     * Shared by both the direct path and the "apply template only" modal path.
+     */
+    async function _doApplyTemplate(templateType, income, curLbl) {
+        if (!income || income <= 0) {
+            showToast('Please enter a valid income amount.', 'error');
+            return;
+        }
+
+        var existingGoals = (AppState.goals && AppState.goals[curKey()]) || [];
+        if (existingGoals.length > 0) {
+            var ruleName = templateType === '503020' ? '50/30/20' : '70/20/10';
+            if (!window.confirm(
+                'Apply ' + ruleName + ' to ' + curLbl + ' based on ' + fmt(income) + ' income?\n\n' +
+                'This will update all ' + existingGoals.length + ' existing spending limit(s) for ' + curLbl + '.'
+            )) return;
+        }
+
+        try {
+            var raw = await callServer('applyBudgetTemplate', curKey(), income, templateType);
+
+            var applied = (Array.isArray(raw) ? raw : []).map(function(g) {
+                return {
+                    id:            String(g.id || ''),
+                    month_key:     String(g.month_key || curKey()),
+                    category:      String(g.category || g.cat || '').trim(),
+                    monthly_limit: parseFloat(g.monthly_limit || g.limit || 0)
+                };
+            });
+
+            var validApplied = applied.filter(function(g) {
+                return g.category !== '' && g.monthly_limit > 0;
+            });
+
+            if (validApplied.length === 0) {
+                showToast('Goals saved but response shape was unexpected. Please refresh.', 'error');
+                console.warn('[Templates] Unexpected response shape:', JSON.stringify(raw));
+                return;
+            }
+
+            if (!AppState.goals) AppState.goals = {};
+            AppState.goals[curKey()] = validApplied;
+            _lastAppliedTemplate = templateType;
+
+            renderAll();
+            showToast(
+                (templateType === '503020' ? '50/30/20' : '70/20/10') +
+                ' applied to ' + curLbl + '!',
+                'success'
+            );
+
+        } catch(e) {
+            // callServer shows the toast automatically.
+        }
+    }
+
+
+    // ─── INCOME PROMPT MODAL ──────────────────────────────────────────────────────
+
+    function _openTplIncomePrompt(incomeAmount) {
+        var amtEl = document.getElementById('tpl-income-prompt-amt');
+        if (amtEl) amtEl.textContent = fmt(incomeAmount);
+
+        var modal = document.getElementById('tpl-income-prompt-modal');
+        if (modal) {
+            modal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    function _closeTplIncomePrompt() {
+        var modal = document.getElementById('tpl-income-prompt-modal');
+        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    function _tplIncomePromptDismiss() {
+        _pendingTemplateType = null;
+        _closeTplIncomePrompt();
+    }
+
+    /**
+     * _tplRecordIncomeThenApply()
+     *
+     * User chose "Record Income & Apply Template".
+     * 1. Save the income transaction first.
+     * 2. Then apply the template using that income figure.
+     * 3. Switch to Overview after so the user can see their recorded income.
+     */
+    async function _tplRecordIncomeThenApply() {
+        var incomeAmount = parseFloat(getVal('tpl-income'));
+        var tplType      = _pendingTemplateType;
+        var curLbl       = monthLabel(AppState.curYear, AppState.curMonth);
+
+        if (!incomeAmount || incomeAmount <= 0 || !tplType) {
+            _closeTplIncomePrompt();
+            return;
+        }
+
+        var btn = document.getElementById('btn-tpl-record-first');
+        await withButtonLoading(btn, async function() {
+            try {
+                // 1. Record the income transaction — use "Salary" as a sensible default
+                //    category if Employment/Salary is available, otherwise Other Income.
+                var incCats    = getCategoriesByType('income');
+                var salaryCat  = incCats.find(function(c) {
+                    return c.name.toLowerCase().indexOf('salary') !== -1 ||
+                        c.name.toLowerCase().indexOf('employment') !== -1;
+                });
+                var incomeCat  = salaryCat ? salaryCat.name : (incCats[0] ? incCats[0].name : 'Other Income');
+
+                var newTx = await callServer(
+                    'addTransaction',
+                    curKey(),
+                    'Monthly Income',
+                    incomeAmount,
+                    'income',
+                    incomeCat,
+                    'recorded from budget template'
+                );
+
+                if (!AppState.transactions[curKey()]) AppState.transactions[curKey()] = [];
+                AppState.transactions[curKey()].push(newTx);
+
+                _closeTplIncomePrompt();
+                _pendingTemplateType = null;
+
+                // 2. Apply the template now that income is recorded
+                await _doApplyTemplate(tplType, incomeAmount, curLbl);
+
+                // 3. Switch to Overview so the user sees their income transaction
+                if (typeof switchTabSidebar === 'function') {
+                    setTimeout(function() { switchTabSidebar('overview'); }, 600);
+                }
+
+            } catch(e) {
+                // callServer shows toast
+            }
+        });
+    }
+
+    /**
+     * _tplApplyTemplateOnly()
+     *
+     * User chose to apply the template without recording income.
+     * Just applies the template using the typed figure.
+     */
+    async function _tplApplyTemplateOnly() {
+        var incomeAmount = parseFloat(getVal('tpl-income'));
+        var tplType      = _pendingTemplateType;
+        var curLbl       = monthLabel(AppState.curYear, AppState.curMonth);
+
+        _closeTplIncomePrompt();
+        _pendingTemplateType = null;
+
+        if (!incomeAmount || incomeAmount <= 0 || !tplType) return;
+
+        var btn = document.getElementById('btn-tpl-apply-only');
+        await _doApplyTemplate(tplType, incomeAmount, curLbl);
+    }
+
+
+    // ─── RESULT RENDERING ────────────────────────────────────────────────────────
+
     function _renderGoalsResult() {
         var resultEl = document.getElementById('tpl-result');
         if (!resultEl) return;
 
         var goals = (AppState.goals && AppState.goals[curKey()]) || [];
 
-        // Filter to only goals that have a valid category and limit — guards against
-        // any stale savings-shaped objects that crept in before the _castGoal fix.
         var validGoals = goals.filter(function(g) {
             return g.category && String(g.category).trim() !== '' && parseFloat(g.monthly_limit) > 0;
         });
 
         if (validGoals.length === 0) {
-            // No goals for this month — clear the result box (don't show stale data).
             resultEl.innerHTML = '';
             return;
         }
@@ -138,91 +509,15 @@
         );
     }
 
-    /**
-     * applyTemplate(templateType)
-     *
-     * Calls the server to generate and save budget goals for the current month,
-     * then updates AppState and re-renders.
-     */
-    async function applyTemplate(templateType) {
-        var incRaw = getVal('tpl-income');
-        var income = parseFloat(incRaw);
-        var curLbl = monthLabel(AppState.curYear, AppState.curMonth);
 
-        if (!incRaw || isNaN(income) || income <= 0) {
-            showToast('Please enter your monthly income first.', 'error');
-            document.getElementById('tpl-income').focus();
-            return;
-        }
-
-        var existingGoals = (AppState.goals && AppState.goals[curKey()]) || [];
-        if (existingGoals.length > 0) {
-            var ruleName = templateType === '503020' ? '50/30/20' : '70/20/10';
-            if (!window.confirm(
-                'Apply ' + ruleName + ' to ' + curLbl + ' based on ' + fmt(income) + ' income?\n\n' +
-                'This will update all ' + existingGoals.length + ' existing spending limit(s) for ' + curLbl + '.'
-            )) return;
-        }
-
-        try {
-            var raw = await callServer('applyBudgetTemplate', curKey(), income, templateType);
-
-            // Normalise the server response to the Goals schema shape.
-            // The server returns _castGoalRow objects: { id, month_key, category, monthly_limit }
-            // Guard against the old _castGoal collision that returned savings-shaped objects.
-            var applied = (Array.isArray(raw) ? raw : []).map(function(g) {
-                return {
-                    id:            String(g.id || ''),
-                    month_key:     String(g.month_key || curKey()),
-                    // 'category' is the correct field name from Goals schema.
-                    // Fall back to 'cat' or empty string if the collision occurred.
-                    category:      String(g.category || g.cat || '').trim(),
-                    // 'monthly_limit' is the correct field from Goals schema.
-                    monthly_limit: parseFloat(g.monthly_limit || g.limit || 0)
-                };
-            });
-
-            // Check whether we got valid goal-shaped data back.
-            var validApplied = applied.filter(function(g) {
-                return g.category !== '' && g.monthly_limit > 0;
-            });
-
-            if (validApplied.length === 0) {
-                // The _castGoal collision is still happening — data was saved to the
-                // sheet but returned in savings shape. Show a helpful error.
-                showToast(
-                    'Goals saved to sheet but response shape was wrong. ' +
-                    'Please fix the _castGoal collision in Goals.gs and Savings.gs, ' +
-                    'then try again.',
-                    'error'
-                );
-                // Still update AppState from the sheet by re-fetching goals,
-                // so Spending Limits tab at least works after the page is refreshed.
-                console.warn('[Templates] _castGoal collision detected. Raw:', JSON.stringify(raw));
-                return;
-            }
-
-            // Update AppState.goals for the current month.
-            if (!AppState.goals) AppState.goals = {};
-            AppState.goals[curKey()] = validApplied;
-
-            // Remember which template was applied so renderTemplates() can label it.
-            _lastAppliedTemplate = templateType;
-
-            // Re-render everything — Spending Limits tab will also update.
-            renderAll();
-            showToast(
-                (templateType === '503020' ? '50/30/20' : '70/20/10') +
-                ' applied to ' + curLbl + '!',
-                'success'
-            );
-
-        } catch(e) {
-            // callServer shows the error toast automatically.
-        }
-    }
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
     function _escTpl(str) {
         return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { _tplIncomePromptDismiss(); }
+    });
+
 </script>

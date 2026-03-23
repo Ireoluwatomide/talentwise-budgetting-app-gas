@@ -32,10 +32,10 @@
  */
 function sendDailyAlerts() {
   try {
-    var upcomingBills = getUpcomingBills(5); // from Bills.gs
+    var upcomingBills = getUpcomingBills(); // threshold read from preferences inside Bills.gs
     var today         = new Date();
     var monthKey      = _buildMonthKey(today);
-    var budgetAlerts  = checkBudgetAlerts(monthKey); // from Goals.gs
+    var budgetAlerts  = checkBudgetAlerts(monthKey);
 
     // Only include budget alerts that are actionable (over or warning).
     var actionableAlerts = budgetAlerts.filter(function(a) {
@@ -91,7 +91,7 @@ function sendConsolidatedAlert(upcomingBills, budgetAlerts) {
     });
   } catch (e) {
     Logger.log('Notifications.gs: MailApp.sendEmail() failed — ' + e.message);
-    throw e; // Re-throw so sendDailyAlerts() can log the outer failure.
+    throw e;
   }
 }
 
@@ -140,7 +140,7 @@ function _buildPlainBody(bills, alerts) {
       var dueText = bill.daysUntilDue === 0 ? 'Due TODAY'
                   : 'Due in ' + bill.daysUntilDue + ' day' + (bill.daysUntilDue > 1 ? 's' : '');
       lines.push(
-        bill.name + ': ₦' + _numFmt(bill.amount) +
+        bill.name + ' [' + (bill.category || 'Utilities') + ']: ₦' + _numFmt(bill.amount) +
         ' — ' + dueText + ' (day ' + bill.due_day + ' monthly)'
       );
     });
@@ -192,10 +192,6 @@ function _buildHtmlBody(bills, alerts) {
              'padding:8px 0;border-bottom:1px solid #f0f0f0;',
     name:    'font-size:13px;font-weight:500;color:#1a1a1a;',
     sub:     'font-size:11px;color:#888;margin-top:2px;',
-    badge_r: 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;' +
-             'background:#FCEBEB;color:#791F1F;',
-    badge_a: 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;' +
-             'background:#FAEEDA;color:#412402;',
     footer:  'background:#f5f5f3;padding:14px 24px;font-size:11px;color:#888;text-align:center;'
   };
 
@@ -209,7 +205,9 @@ function _buildHtmlBody(bills, alerts) {
       '<div style="' + styles.row + '">' +
         '<div>' +
           '<div style="' + styles.name + '">' + _escHtml(bill.name) + '</div>' +
-          '<div style="' + styles.sub  + '">Day ' + bill.due_day + ' monthly</div>' +
+          '<div style="' + styles.sub  + '">' +
+            (bill.category || 'Utilities') + ' · Day ' + bill.due_day + ' monthly' +
+          '</div>' +
         '</div>' +
         '<div style="text-align:right;">' +
           '<div style="font-size:13px;font-family:monospace;">₦' + _numFmt(bill.amount) + '</div>' +
@@ -314,8 +312,8 @@ function getUserEmail() {
  */
 function sendTestEmail() {
   var dummyBills = [
-    { id: 'test-1', name: 'Internet',     amount: 15000, due_day: 15, paid: false, daysUntilDue: 3 },
-    { id: 'test-2', name: 'Electricity',  amount: 8000,  due_day: 18, paid: false, daysUntilDue: 0 }
+    { id: 'test-1', name: 'Internet',    amount: 15000, due_day: 15, paid: false, daysUntilDue: 3, category: 'Utilities' },
+    { id: 'test-2', name: 'Electricity', amount: 8000,  due_day: 18, paid: false, daysUntilDue: 0, category: 'Utilities' }
   ];
   var dummyAlerts = [
     { category: 'Food',          limit: 30000,  spent: 32500,  status: 'over'    },

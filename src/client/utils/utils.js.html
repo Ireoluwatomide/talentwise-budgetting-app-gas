@@ -28,14 +28,11 @@
         'July','August','September','October','November','December'
     ];
 
-    // Exchange rates relative to NGN (base currency).
-    // These are approximate fixed rates — in Phase 2 these can be replaced
-    // with a live FX API call on bootstrap.
     var FX_RATES = {
         NGN: 1,
-        USD: 0.00062,   // ~1 USD = 1,610 NGN
-        EUR: 0.00058,   // ~1 EUR = 1,724 NGN
-        GBP: 0.00049    // ~1 GBP = 2,041 NGN
+        USD: 0.00062,
+        EUR: 0.00058,
+        GBP: 0.00049
     };
 
     var FX_SYMBOLS = {
@@ -45,38 +42,39 @@
         GBP: '£'
     };
 
-    // Valid category types — used for filtering category <select> elements.
     var CATEGORY_TYPES = ['income', 'expense', 'savings'];
 
 
     // ─── 2. APP STATE ─────────────────────────────────────────────────────────────
 
-    // Build default state first, then merge in bootstrap data from the server.
-    // This ensures every key always exists even if __BOOTSTRAP__ is partial.
     var _now = new Date();
 
     var _DEFAULT_STATE = {
-        curYear:      _now.getFullYear(),
-        curMonth:     _now.getMonth() + 1,   // 1-indexed (1 = January)
-        currency:     'NGN',
-        darkMode:     false,
-        categories:   [],
-        transactions: {},                      // { 'YYYY-MM': [tx, ...] }
-        goals:        {},
-        bills:        [],
-        savingsGoals: [],
-        debts:        [],
-        netWorthItems:[],
-        recurring:    [],
-        isLoading:    false,
-        activeTab:    'overview'
+        curYear:       _now.getFullYear(),
+        curMonth:      _now.getMonth() + 1,
+        currency:      'NGN',
+        darkMode:      false,
+        categories:    [],
+        transactions:  {},
+        goals:         {},
+        bills:         [],
+        billHistory:   [],      // BillHistory rows loaded on bootstrap
+        billAlertDays: 5,       // Configurable alert threshold (days before due)
+        savingsGoals:  [],
+        debts:         [],
+        netWorthItems: [],
+        recurring:     [],
+        isLoading:     false,
+        activeTab:     'overview'
     };
 
-    // Merge bootstrap data into defaults.
-    // __BOOTSTRAP__ is injected by doGet() in Main.gs before this script loads.
     var _boot = (typeof window !== 'undefined' && window.__BOOTSTRAP__) ? window.__BOOTSTRAP__ : {};
 
     var AppState = Object.assign({}, _DEFAULT_STATE, _boot);
+
+    // Bills overhaul: pick up new bootstrap fields
+    if (_boot.billHistory   !== undefined) AppState.billHistory   = _boot.billHistory;
+    if (_boot.billAlertDays !== undefined) AppState.billAlertDays = _boot.billAlertDays;
 
     // currentMonthKey from bootstrap may need to be split into curYear/curMonth.
     if (_boot.currentMonthKey) {
@@ -87,9 +85,10 @@
 
     // Normalise dark_mode key from server (snake_case) to camelCase.
     if (_boot.preferences) {
-        AppState.currency   = _boot.preferences.currency   || 'NGN';
-        AppState.darkMode   = _boot.preferences.dark_mode  || false;
-        AppState.categories = _boot.preferences.categories || [];
+        AppState.currency      = _boot.preferences.currency      || 'NGN';
+        AppState.darkMode      = _boot.preferences.dark_mode     || false;
+        AppState.categories    = _boot.preferences.categories    || [];
+        AppState.billAlertDays = _boot.preferences.bills_alert_days || 5;
     }
 
 
@@ -121,17 +120,10 @@
                     reject(err);
                 });
 
-            // Dynamically call the named server function with spread args.
             runner[fnName].apply(runner, args);
         });
     }
 
-    /**
-     * callServerSilent(fnName, ...args)
-     *
-     * Same as callServer but does NOT set isLoading or show error toasts.
-     * Used for background preference saves where UI blocking would feel wrong.
-     */
     function callServerSilent(fnName) {
         var args = Array.prototype.slice.call(arguments, 1);
 
@@ -139,7 +131,6 @@
             var runner = google.script.run
                 .withSuccessHandler(resolve)
                 .withFailureHandler(function(err) {
-                    // Log silently — don't surface background errors to the user.
                     console.warn('callServerSilent error (' + fnName + '):', err);
                     reject(err);
                 });
@@ -235,7 +226,6 @@
      */
     function initAllBtnStructures() {
         document.querySelectorAll('.btn-primary').forEach(function(btn) {
-            // Skip buttons that have already been structured
             if (btn.querySelector('.btn-label')) return;
 
             var text = btn.textContent.trim();
@@ -365,6 +355,7 @@
         var style           = styles[type] || styles.info;
         toast.style.background = style.bg;
         toast.style.color      = style.color;
+        toast.style.pointerEvents = 'none'; // reset in case bills overrode it
         toast.textContent      = message;
         toast.style.opacity    = '1';
 
@@ -424,7 +415,6 @@
         tabs.forEach(function(t)  { t.classList.remove('active'); });
         panes.forEach(function(p) { p.classList.remove('active'); });
 
-        // Activate the selected tab button and pane.
         var tabBtn  = document.getElementById('tab-'  + tabId);
         var tabPane = document.getElementById('pane-' + tabId);
 
@@ -454,7 +444,10 @@
         var renderOnSwitch = {
             'overview':   function() { if (typeof renderOverview    === 'function') renderOverview();    },
             'goals':      function() { if (typeof renderGoals       === 'function') renderGoals();       },
-            'bills':      function() { if (typeof renderBills       === 'function') renderBills();       },
+            'bills':      function() {
+                if (typeof renderBills             === 'function') renderBills();
+                if (typeof _updateBillFabVisibility === 'function') _updateBillFabVisibility();
+            },
             'savings':    function() { if (typeof renderSavings     === 'function') renderSavings();     },
             'debt':       function() { if (typeof renderDebt        === 'function') renderDebt();        },
             'networth':   function() { if (typeof renderNetWorth    === 'function') renderNetWorth();    },
@@ -470,9 +463,8 @@
             renderOnSwitch[tabId]();
         }
 
-        if (typeof _updateFabVisibility === 'function') {
-            _updateFabVisibility();
-        }
+        if (typeof _updateFabVisibility     === 'function') _updateFabVisibility();
+        if (typeof _updateBillFabVisibility === 'function') _updateBillFabVisibility();
     }
 
 
@@ -617,7 +609,7 @@
                     renderAll();
                 }
                 console.warn('Month fetch failed for', key, e);
-                return; // Don't attempt recurring if the fetch itself failed.
+                return;
             }
         }
 
@@ -695,7 +687,7 @@
             if (hdMonth && hdMonth.parentElement) {
                 hdMonth.parentElement.appendChild(dot);
             } else {
-                document.body.appendChild(dot); // fallback
+                document.body.appendChild(dot);
             }
         }
 
@@ -770,7 +762,7 @@
             { catId: 'tx-cat',   typeId: 'tx-type'   },
             { catId: 'tx-cat-d', typeId: 'tx-type-d'  },
             { catId: 'tx-cat-m', typeId: 'tx-type-m'  },
-            { catId: 'g-cat',    typeId: null          },  // fixed: expense
+            { catId: 'g-cat',    typeId: null          },
             { catId: 'r-cat',    typeId: 'r-type'      }
         ];
 
@@ -908,7 +900,6 @@
 
     // ─── 12. CHART HELPERS ────────────────────────────────────────────────────────
 
-    // Registry maps canvasId → Chart.js instance so we can destroy before recreate.
     var chartRegistry = {};
 
     /**
@@ -1043,9 +1034,7 @@
 
             showToast('Exported ' + filename, 'success');
 
-        } catch (e) {
-            // Error toast shown by callServer.
-        }
+        } catch (e) {}
     }
 
 
@@ -1136,7 +1125,10 @@
             'debt':       function() { if (typeof renderDebt        === 'function') renderDebt();        },
             'networth':   function() { if (typeof renderNetWorth    === 'function') renderNetWorth();    },
             'recurring':  function() { if (typeof renderRecurring   === 'function') renderRecurring();   },
-            'bills':      function() { if (typeof renderBills       === 'function') renderBills();       },
+            'bills':      function() {
+                if (typeof renderBills              === 'function') renderBills();
+                if (typeof _updateBillFabVisibility === 'function') _updateBillFabVisibility();
+            },
             'settings':   function() { if (typeof renderSettings    === 'function') renderSettings();    },
             'categories': function() { if (typeof renderCategories  === 'function') renderCategories();  },
             'report':     function() { if (typeof renderReport      === 'function') renderReport();      },

@@ -94,34 +94,35 @@ function include(filename) {
  * getBootstrapData()
  *
  * Loads all data needed for first render in a single server execution.
- * FIXED: now loads ALL transactions (grouped by month) rather than only
- * the current month, so Savings totals, multi-month charts, forecasts
- * and the report tab all work correctly on first page load.
+ * NOW INCLUDES: billHistory and billAlertDays.
  */
 function getBootstrapData() {
   var now = new Date();
   var data = {
-    curYear:      now.getFullYear(),
-    curMonth:     now.getMonth() + 1,
-    currency:     'NGN',
-    darkMode:     false,
-    categories:   [],
-    transactions: {},   // { 'YYYY-MM': [tx, ...] } — all months, not just current
-    goals:        {},
-    bills:        [],
-    savingsGoals: [],
-    debts:        [],
-    netWorthItems:[],
-    recurring:    []
+    curYear:       now.getFullYear(),
+    curMonth:      now.getMonth() + 1,
+    currency:      'NGN',
+    darkMode:      false,
+    categories:    [],
+    transactions:  {},
+    goals:         {},
+    bills:         [],
+    billHistory:   [],      // NEW: payment history rows
+    billAlertDays: 5,       // NEW: configurable alert threshold
+    savingsGoals:  [],
+    debts:         [],
+    netWorthItems: [],
+    recurring:     []
   };
 
   // Preferences
   if (typeof getAllPreferences === 'function') {
     try {
       var prefs = getAllPreferences();
-      data.currency   = prefs.currency   || 'NGN';
-      data.darkMode   = prefs.dark_mode  || false;
-      data.categories = prefs.categories || [];
+      data.currency      = prefs.currency   || 'NGN';
+      data.darkMode      = prefs.dark_mode  || false;
+      data.categories    = prefs.categories || [];
+      data.billAlertDays = prefs.bills_alert_days || 5;
     } catch (e) { Logger.log('Bootstrap: Preferences — ' + e.message); }
   }
 
@@ -141,7 +142,6 @@ function getBootstrapData() {
         if (!data.transactions[key]) data.transactions[key] = [];
         data.transactions[key].push(tx);
       });
-
       Logger.log('Bootstrap: Loaded transactions for ' +
         Object.keys(data.transactions).length + ' month(s).');
     } catch (e) {
@@ -159,15 +159,25 @@ function getBootstrapData() {
 
   // Goals — load ALL months grouped by month_key (getAllGoals now returns object)
   if (typeof getAllGoals === 'function') {
-      try {
-        data.goals = getAllGoals();
-        Logger.log('Bootstrap: Loaded goals for ' +
-          Object.keys(data.goals).length + ' month(s).');
-      } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
-    }
+    try {
+      data.goals = getAllGoals();
+    } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
+  }
 
-  // All other domains
-  if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '      + e.message); } }
+  // Bills
+  if (typeof getAllBills === 'function') {
+    try { data.bills = getAllBills(); } catch(e) { Logger.log('Bootstrap: Bills — ' + e.message); }
+  }
+
+  // Bill History — NEW
+  if (typeof getAllBillHistory === 'function') {
+    try { data.billHistory = getAllBillHistory(); } catch(e) {
+      Logger.log('Bootstrap: BillHistory — ' + e.message + ' (sheet may not exist yet — run initBillHistorySheet())');
+      data.billHistory = [];
+    }
+  }
+
+  // Other domains
   if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
   if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
   if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }

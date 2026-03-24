@@ -20,6 +20,7 @@ var _LOGICAL_NAME_MAP = {
   'TRANSACTIONS':  'Transactions',
   'GOALS':         'Goals',
   'BILLS':         'Bills',
+  'BILL_HISTORY':  'BillHistory',
   'SAVINGS_GOALS': 'SavingsGoals',
   'DEBTS':         'Debts',
   'NET_WORTH':     'NetWorth',
@@ -28,6 +29,7 @@ var _LOGICAL_NAME_MAP = {
   'Transactions':  'Transactions',
   'Goals':         'Goals',
   'Bills':         'Bills',
+  'BillHistory':   'BillHistory',
   'SavingsGoals':  'SavingsGoals',
   'Debts':         'Debts',
   'NetWorth':      'NetWorth',
@@ -102,13 +104,8 @@ function getOrCreateUser(email) {
 /**
  * _provisionUserSheets(userKey)
  *
- * Creates all 8 data sheets for a new user.
- *
- * FIX: After creating each sheet and writing its headers, calls
- * _applyStringFormats() to set @STRING@ on month_key and other
- * string-typed columns. Without this, Sheets auto-converts "2026-03"
- * to a Date cell on every write, causing the month-shift bug where
- * transactions appear in the wrong month after a page refresh.
+ * Creates all data sheets for a new user (all keys in SHEET_HEADERS).
+ * Applies @STRING@ format to string columns immediately after creation.
  */
 function _provisionUserSheets(userKey) {
   var ss = getSpreadsheet();
@@ -121,21 +118,14 @@ function _provisionUserSheets(userKey) {
       var sheet   = ss.insertSheet(sheetName);
       var headers = SHEET_HEADERS[logicalName];
 
-      // Write header row.
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
 
-      // KEY FIX: Apply @STRING@ format to string columns (month_key, key)
-      // immediately after creating the sheet — before any data is written.
-      // This ensures appendRow() writes into pre-formatted cells and Sheets
-      // cannot auto-convert the values.
       _applyStringFormats(sheet, headers);
 
       SpreadsheetApp.flush();
       Logger.log('UserManager.gs: Created sheet "' + sheetName + '" with string formats applied.');
     } else {
-      // Sheet already exists — re-apply string formats in case they were
-      // missing (e.g. sheets created before this fix was deployed).
       var headers = SHEET_HEADERS[logicalName];
       _applyStringFormats(existing, headers);
     }
@@ -144,7 +134,8 @@ function _provisionUserSheets(userKey) {
 
 /**
  * _seedDefaultPreferences(userKey)
- * Writes the three default preference rows into the new user's Preferences sheet.
+ * Writes the default preference rows into the new user's Preferences sheet.
+ * Includes bills_alert_days default of 5.
  */
 function _seedDefaultPreferences(userKey) {
   var prefsSheetName = userKey + ':Preferences';
@@ -157,12 +148,12 @@ function _seedDefaultPreferences(userKey) {
   }
 
   var defaultRows = [
-    ['currency',   'NGN'],
-    ['dark_mode',  'false'],
-    ['categories', JSON.stringify(DEFAULT_CATEGORIES)]
+    ['currency',         'NGN'],
+    ['dark_mode',        'false'],
+    ['bills_alert_days', '5'],
+    ['categories',       JSON.stringify(DEFAULT_CATEGORIES)]
   ];
 
-  // Apply @STRING@ to the key column (col 1) before writing.
   var lastRow = Math.max(sheet.getLastRow(), 1);
   sheet.getRange(lastRow + 1, 1, defaultRows.length, 1).setNumberFormat('@STRING@');
 
@@ -253,15 +244,8 @@ function initMultiUser() {
 
 /**
  * fixExistingUserSheets()
- *
- * One-time migration helper. Run this ONCE from the Apps Script editor
- * after deploying the SheetHelper fix.
- *
- * Iterates over every existing user's sheets and applies @STRING@ format
- * to all string columns (month_key, key). This fixes the month-shift bug
- * for users whose sheets were created before this fix was deployed.
- *
- * Safe to run multiple times — setting a format that is already set is a no-op.
+ * One-time migration — applies @STRING@ format to all string columns
+ * for every existing user's sheets.
  */
 function fixExistingUserSheets() {
   var ss      = getSpreadsheet();

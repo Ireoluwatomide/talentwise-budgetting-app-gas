@@ -17,24 +17,28 @@ var USERS_SHEET_NAME = 'Users';
 var USERS_HEADERS    = ['user_key', 'email', 'display_name', 'created_at', 'last_login'];
 
 var _LOGICAL_NAME_MAP = {
-  'TRANSACTIONS':  'Transactions',
-  'GOALS':         'Goals',
-  'BILLS':         'Bills',
-  'BILL_HISTORY':  'BillHistory',
-  'SAVINGS_GOALS': 'SavingsGoals',
-  'DEBTS':         'Debts',
-  'NET_WORTH':     'NetWorth',
-  'RECURRING':     'Recurring',
-  'PREFERENCES':   'Preferences',
-  'Transactions':  'Transactions',
-  'Goals':         'Goals',
-  'Bills':         'Bills',
-  'BillHistory':   'BillHistory',
-  'SavingsGoals':  'SavingsGoals',
-  'Debts':         'Debts',
-  'NetWorth':      'NetWorth',
-  'Recurring':     'Recurring',
-  'Preferences':   'Preferences'
+  // Uppercase logical names (used by .gs files)
+  'TRANSACTIONS':    'Transactions',
+  'GOALS':           'Goals',
+  'BILLS':           'Bills',
+  'BILL_HISTORY':    'BillHistory',
+  'SAVINGS_GOALS':   'SavingsGoals',
+  'SAVINGS_HISTORY': 'SavingsHistory',
+  'DEBTS':           'Debts',
+  'NET_WORTH':       'NetWorth',
+  'RECURRING':       'Recurring',
+  'PREFERENCES':     'Preferences',
+  // PascalCase (for getUserSheetName direct calls)
+  'Transactions':    'Transactions',
+  'Goals':           'Goals',
+  'Bills':           'Bills',
+  'BillHistory':     'BillHistory',
+  'SavingsGoals':    'SavingsGoals',
+  'SavingsHistory':  'SavingsHistory',
+  'Debts':           'Debts',
+  'NetWorth':        'NetWorth',
+  'Recurring':       'Recurring',
+  'Preferences':     'Preferences'
 };
 
 
@@ -106,6 +110,7 @@ function getOrCreateUser(email) {
  *
  * Creates all data sheets for a new user (all keys in SHEET_HEADERS).
  * Applies @STRING@ format to string columns immediately after creation.
+ * Now includes SavingsHistory automatically.
  */
 function _provisionUserSheets(userKey) {
   var ss = getSpreadsheet();

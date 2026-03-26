@@ -94,25 +94,26 @@ function include(filename) {
  * getBootstrapData()
  *
  * Loads all data needed for first render in a single server execution.
- * NOW INCLUDES: billHistory and billAlertDays.
+ * ADDED: savingsHistory loaded from getAllSavingsHistory()
  */
 function getBootstrapData() {
   var now = new Date();
   var data = {
-    curYear:       now.getFullYear(),
-    curMonth:      now.getMonth() + 1,
-    currency:      'NGN',
-    darkMode:      false,
-    categories:    [],
-    transactions:  {},
-    goals:         {},
-    bills:         [],
-    billHistory:   [],      // NEW: payment history rows
-    billAlertDays: 5,       // NEW: configurable alert threshold
-    savingsGoals:  [],
-    debts:         [],
-    netWorthItems: [],
-    recurring:     []
+    curYear:        now.getFullYear(),
+    curMonth:       now.getMonth() + 1,
+    currency:       'NGN',
+    darkMode:       false,
+    categories:     [],
+    transactions:   {},
+    goals:          {},
+    bills:          [],
+    billHistory:    [],
+    billAlertDays:  5,
+    savingsGoals:   [],
+    savingsHistory: [],      // NEW: contribution history rows
+    debts:          [],
+    netWorthItems:  [],
+    recurring:      []
   };
 
   // Preferences
@@ -169,16 +170,29 @@ function getBootstrapData() {
     try { data.bills = getAllBills(); } catch(e) { Logger.log('Bootstrap: Bills — ' + e.message); }
   }
 
-  // Bill History — NEW
+  // Bill History
   if (typeof getAllBillHistory === 'function') {
     try { data.billHistory = getAllBillHistory(); } catch(e) {
-      Logger.log('Bootstrap: BillHistory — ' + e.message + ' (sheet may not exist yet — run initBillHistorySheet())');
+      Logger.log('Bootstrap: BillHistory — ' + e.message);
       data.billHistory = [];
     }
   }
 
-  // Other domains
-  if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
+  // Savings Goals
+  if (typeof getAllSavingsGoals === 'function') {
+    try { data.savingsGoals = getAllSavingsGoals(); } catch(e) {
+      Logger.log('Bootstrap: SavingsGoals — ' + e.message);
+    }
+  }
+
+  // Savings History — NEW
+  if (typeof getAllSavingsHistory === 'function') {
+    try { data.savingsHistory = getAllSavingsHistory(); } catch(e) {
+      Logger.log('Bootstrap: SavingsHistory — ' + e.message + ' (run initSavingsEnhancements() if sheet is missing)');
+      data.savingsHistory = [];
+    }
+  }
+
   if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
   if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }
   if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '  + e.message); } }

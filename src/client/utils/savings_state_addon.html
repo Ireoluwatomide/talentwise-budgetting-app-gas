@@ -1,0 +1,20 @@
+<script>
+    // =============================================================================
+    // savings_state_addon.html — Patches AppState with savingsHistory from bootstrap
+    //
+    // Include this immediately AFTER utils.js in Index.html.
+    // It extends AppState._DEFAULT_STATE and picks up savingsHistory from
+    // window.__BOOTSTRAP__ without requiring a rewrite of the full utils.js file.
+    // =============================================================================
+
+    // Ensure savingsHistory is present in AppState (utils.js may not define it yet)
+    if (typeof AppState !== 'undefined') {
+        if (AppState.savingsHistory === undefined) {
+            AppState.savingsHistory = [];
+        }
+        // Pick up from bootstrap if available
+        if (typeof window !== 'undefined' && window.__BOOTSTRAP__ && window.__BOOTSTRAP__.savingsHistory) {
+            AppState.savingsHistory = window.__BOOTSTRAP__.savingsHistory;
+        }
+    }
+</script>

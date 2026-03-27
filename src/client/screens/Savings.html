@@ -1,14 +1,22 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Savings.html — Enhanced Savings Goals Screen
+     Savings.html — Savings Goals Screen (Redesigned)
 
-     ENHANCEMENTS:
-       1. Drag-and-drop goal reordering (HTML5 + touch events for mobile)
-       2. Target date field on each goal → monthly-needed + ETA badge
-       3. Milestone celebrations at 25/50/75/100% (toast + badge, once per session)
-       4. Contribution history per goal — collapsible panel from AppState.savingsHistory
+     CHANGES FROM PREVIOUS VERSION:
+       - Add goal form now includes a category selector (savings categories only)
+       - Goal name is now free-text, fully decoupled from category name
+       - "Top Up" button on each goal card opens a modal/sheet with:
+           · Amount input capped at remaining balance (enforced client + server)
+           · Optional note field
+           · Submits to topUpSavingsGoal() server function
+       - Drag-and-drop reordering removed entirely
+       - Goals are displayed in urgency order (computed server-side via
+         getAllSavingsGoals() which sorts by urgency score)
+       - Milestone celebrations retained (session-only toasts)
+       - Contribution history panel retained (collapsible per goal)
+       - Target date picker retained
 
      STATE: AppState.savingsGoals, AppState.savingsHistory, AppState.transactions
-     SERVER CALLS: addSavingsGoal, deleteSavingsGoal, updateSavingsGoalOrderBatch,
+     SERVER CALLS: addSavingsGoal, topUpSavingsGoal, deleteSavingsGoal,
                    updateSavingsGoalTarget
      ───────────────────────────────────────────────────────────────────────── -->
 
@@ -16,14 +24,13 @@
 
   <!-- ── Subtitle ──────────────────────────────────────────────────────────── -->
   <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;line-height:1.6;">
-    Track your savings targets. To auto-credit a goal, add a
-    <strong>Savings deposit</strong> transaction and select the matching
-    savings category (e.g. "Emergency Fund") — the goal balance updates automatically.
-    <br/>
-    <span style="color:var(--text2);">Drag goals to reorder by priority.</span>
+    Track your savings targets. Use the <strong>Top Up</strong> button on each
+    goal to add a deposit — it logs the transaction automatically and updates
+    your goal balance. Goals are ordered by urgency: nearest deadline with the
+    most ground to cover comes first.
   </div>
 
-  <!-- ── 1. Total Saved All-Time ──────────────────────────────────────────── -->
+  <!-- ── 1. Summary Metrics ───────────────────────────────────────────────── -->
   <div class="row2" style="margin-bottom:1.25rem;">
     <div class="metric">
       <div class="lbl">Total Saved (All Time)</div>
@@ -35,7 +42,7 @@
     </div>
   </div>
 
-  <!-- ── 2. Savings Goals List (drag-and-drop) ────────────────────────────── -->
+  <!-- ── 2. Section header ─────────────────────────────────────────────────── -->
   <div class="ov-section-hdr" style="margin-bottom:10px;">
     <span class="sec" style="margin:0;">Goals</span>
     <button id="btn-open-add-sav"
@@ -50,7 +57,8 @@
     </button>
   </div>
 
-  <div id="sav-list" class="sav-drag-container">
+  <!-- ── 3. Goals list ─────────────────────────────────────────────────────── -->
+  <div id="sav-list">
     <!-- populated by renderSavings() -->
   </div>
 
@@ -71,29 +79,46 @@
       </button>
     </div>
     <div class="atx-modal-body">
+
       <div style="margin-bottom:10px;">
         <label class="sav-field-label">Goal name</label>
-        <input id="sv-name-d" class="inp" placeholder="e.g. Emergency Fund"/>
+        <input id="sv-name-d" class="inp" placeholder="e.g. Holiday to Bali, New Car, School Fees"/>
         <div style="font-size:11px;color:var(--text2);margin-top:4px;">
-          Use a savings category name to auto-credit this goal on deposits.
+          Give it any name you like — this is just a label for you.
         </div>
       </div>
-      <div class="row2" style="margin-bottom:10px;">
+
+      <div style="margin-bottom:10px;">
+        <label class="sav-field-label">Category</label>
+        <select id="sv-cat-d" class="inp">
+          <!-- populated by _populateSavCategorySelect() -->
+        </select>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">
+          Used to organise this goal. Top-ups are logged under this category.
+        </div>
+      </div>
+
+      <div class="row2" style="margin-bottom:14px;">
         <div>
           <label class="sav-field-label">Target amount</label>
           <input id="sv-target-d" class="inp amt-input" type="text"
                  inputmode="numeric" placeholder="e.g. 500,000"/>
         </div>
         <div>
-          <label class="sav-field-label">Target date <span style="color:var(--text2);font-weight:400;">(optional)</span></label>
+          <label class="sav-field-label">
+            Target date
+            <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span>
+          </label>
           <input id="sv-date-d" class="inp" type="date"/>
         </div>
       </div>
+
       <button id="btn-add-sav-d" onclick="addSavGoalFromModal()"
               class="btn-primary" style="width:100%;">
         <span class="btn-label">Add Goal</span>
         <span class="btn-spinner"></span>
       </button>
+
     </div>
   </div>
 </div>
@@ -105,9 +130,16 @@
   <div id="add-sav-sheet-panel">
     <div id="add-sav-sheet-handle"></div>
     <div class="atx-modal-title" style="margin-bottom:1.25rem;">New Savings Goal</div>
+
     <div style="margin-bottom:10px;">
       <label class="sav-field-label">Goal name</label>
-      <input id="sv-name-m" class="inp" placeholder="e.g. Emergency Fund"/>
+      <input id="sv-name-m" class="inp" placeholder="e.g. Holiday to Bali"/>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label class="sav-field-label">Category</label>
+      <select id="sv-cat-m" class="inp">
+        <!-- populated by _populateSavCategorySelect() -->
+      </select>
     </div>
     <div style="margin-bottom:10px;">
       <label class="sav-field-label">Target amount</label>
@@ -115,12 +147,113 @@
              inputmode="numeric" placeholder="e.g. 500,000"/>
     </div>
     <div style="margin-bottom:14px;">
-      <label class="sav-field-label">Target date <span style="color:var(--text2);font-weight:400;">(optional)</span></label>
+      <label class="sav-field-label">
+        Target date
+        <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span>
+      </label>
       <input id="sv-date-m" class="inp" type="date"/>
     </div>
+
     <button id="btn-add-sav-m" onclick="addSavGoalFromSheet()"
             class="btn-primary" style="width:100%;">
       <span class="btn-label">Add Goal</span>
+      <span class="btn-spinner"></span>
+    </button>
+  </div>
+</div>
+
+
+<!-- ══ TOP UP MODAL (desktop ≥ 601px) ════════════════════════════════════ -->
+<div id="topup-modal" role="dialog" aria-modal="true" aria-label="Top Up Goal">
+  <div id="topup-modal-backdrop" onclick="closeTopUpModal()"></div>
+  <div id="topup-modal-panel">
+
+    <div class="atx-modal-header">
+      <div>
+        <div class="atx-modal-title">Top Up</div>
+        <div id="topup-modal-subtitle"
+             style="font-size:12px;color:var(--text2);margin-top:2px;"></div>
+      </div>
+      <button class="atx-modal-close" onclick="closeTopUpModal()" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="atx-modal-body">
+
+      <!-- Goal progress recap -->
+      <div id="topup-goal-recap" style="
+          background:var(--bg2);border:0.5px solid var(--border);
+          border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;">
+        <!-- populated by _populateTopUpForm() -->
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <label class="sav-field-label">
+          Amount
+          <span id="topup-max-label-d"
+                style="color:var(--text2);font-weight:400;text-transform:none;
+                       letter-spacing:0;margin-left:4px;"></span>
+        </label>
+        <input id="topup-amt-d" class="inp amt-input" type="text"
+               inputmode="numeric" placeholder="Enter amount"/>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label class="sav-field-label">Note <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <input id="topup-note-d" class="inp" placeholder="e.g. monthly contribution, bonus"/>
+      </div>
+
+      <button id="btn-topup-d" onclick="submitTopUp()"
+              class="btn-primary" style="width:100%;">
+        <span class="btn-label">Add Deposit</span>
+        <span class="btn-spinner"></span>
+      </button>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ TOP UP SHEET (mobile ≤ 600px) ═════════════════════════════════════ -->
+<div id="topup-sheet">
+  <div id="topup-sheet-backdrop" onclick="closeTopUpSheet()"></div>
+  <div id="topup-sheet-panel">
+    <div id="topup-sheet-handle"></div>
+
+    <div class="atx-modal-title" style="margin-bottom:3px;">Top Up</div>
+    <div id="topup-sheet-subtitle"
+         style="font-size:12px;color:var(--text2);margin-bottom:14px;"></div>
+
+    <!-- Goal progress recap -->
+    <div id="topup-goal-recap-m" style="
+        background:var(--bg2);border:0.5px solid var(--border);
+        border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;">
+      <!-- populated by _populateTopUpForm() -->
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <label class="sav-field-label">
+        Amount
+        <span id="topup-max-label-m"
+              style="color:var(--text2);font-weight:400;text-transform:none;
+                     letter-spacing:0;margin-left:4px;"></span>
+      </label>
+      <input id="topup-amt-m" class="inp amt-input" type="text"
+             inputmode="numeric" placeholder="Enter amount"/>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <label class="sav-field-label">Note <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+      <input id="topup-note-m" class="inp" placeholder="e.g. monthly contribution"/>
+    </div>
+
+    <button id="btn-topup-m" onclick="submitTopUp()"
+            class="btn-primary" style="width:100%;">
+      <span class="btn-label">Add Deposit</span>
       <span class="btn-spinner"></span>
     </button>
   </div>
@@ -148,36 +281,8 @@
     border-radius: var(--radius-lg);
     padding: 14px 16px;
     margin-bottom: 10px;
-    transition: box-shadow 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
-    cursor: grab;
     position: relative;
   }
-
-  .sav-goal-card:active { cursor: grabbing; }
-
-  .sav-goal-card.drag-over {
-    box-shadow: 0 0 0 2px var(--acc);
-    transform: translateY(-1px);
-  }
-
-  .sav-goal-card.dragging {
-    opacity: 0.45;
-    transform: scale(0.98);
-  }
-
-  /* Drag handle icon */
-  .sav-drag-handle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    color: var(--border2);
-    cursor: grab;
-    flex-shrink: 0;
-    transition: color 0.12s;
-  }
-  .sav-goal-card:hover .sav-drag-handle { color: var(--text2); }
 
   /* ── Goal card header ────────────────────────────────────────────────── */
   .sav-goal-header {
@@ -205,7 +310,42 @@
     text-overflow: ellipsis;
   }
 
-  .sav-goal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .sav-goal-category {
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sav-goal-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Top Up button on card ───────────────────────────────────────────── */
+  .btn-topup {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--acc);
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-topup:hover { opacity: 0.82; }
+  .btn-topup:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* ── Milestone badge ─────────────────────────────────────────────────── */
   .sav-milestone-badge {
@@ -219,11 +359,10 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
-
-  .milestone-25  { background: rgba(186,117,23,0.12); color: var(--amber); }
-  .milestone-50  { background: rgba(24,95,165,0.12);  color: var(--blue);  }
-  .milestone-75  { background: rgba(127,119,221,0.12);color: var(--purple);}
-  .milestone-100 { background: rgba(29,158,117,0.12); color: var(--acc);   }
+  .milestone-25  { background: rgba(186,117,23,0.12);  color: var(--amber);  }
+  .milestone-50  { background: rgba(24,95,165,0.12);   color: var(--blue);   }
+  .milestone-75  { background: rgba(127,119,221,0.12); color: var(--purple); }
+  .milestone-100 { background: rgba(29,158,117,0.12);  color: var(--acc);    }
 
   /* ── Target date badge ───────────────────────────────────────────────── */
   .sav-date-badge {
@@ -245,17 +384,14 @@
   .sav-date-badge:hover { border-color: var(--acc); color: var(--acc); }
   .sav-date-badge svg   { width: 11px; height: 11px; }
 
-  /* ── Progress bar + pace line ────────────────────────────────────────── */
-  .sav-progress-wrap { margin: 10px 0 6px; }
-
+  /* ── Progress bar ────────────────────────────────────────────────────── */
   .sav-prog-track {
     height: 8px;
     background: var(--border);
     border-radius: 4px;
     overflow: hidden;
-    margin-bottom: 6px;
+    margin: 10px 0 6px;
   }
-
   .sav-prog-fill {
     height: 100%;
     border-radius: 4px;
@@ -268,14 +404,14 @@
     align-items: center;
     font-size: 11px;
     color: var(--text2);
-    gap: 8px;
+    margin-bottom: 6px;
   }
 
   .sav-amount-row {
     font-family: var(--mono);
     font-size: 12px;
     color: var(--text2);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -287,8 +423,8 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    margin-bottom: 4px;
   }
-
   .sav-monthly-needed strong { color: var(--text); font-size: 12px; }
 
   /* ── History toggle ──────────────────────────────────────────────────── */
@@ -319,7 +455,7 @@
     max-height: 0;
     transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .sav-history-panel.open { max-height: 800px; }
+  .sav-history-panel.open { max-height: 600px; }
 
   .sav-history-row {
     display: flex;
@@ -334,7 +470,18 @@
   .sav-history-date { color: var(--text2); font-size: 11px; margin-top: 1px; }
   .sav-history-amt  { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--blue); }
 
-  /* ── Add modal & sheet ───────────────────────────────────────────────── */
+  /* ── Urgency dividers ────────────────────────────────────────────────── */
+  .sav-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin: 1.25rem 0 8px;
+  }
+  .sav-group-label:first-child { margin-top: 0; }
+
+  /* ── Add goal modal ──────────────────────────────────────────────────── */
   #add-sav-modal {
     display: none;
     position: fixed;
@@ -345,54 +492,102 @@
     padding: 1rem;
   }
   #add-sav-modal.open { display: flex; }
-
   #add-sav-modal-backdrop {
-    position: absolute;
-    inset: 0;
+    position: absolute; inset: 0;
     background: rgba(0,0,0,0.45);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
   }
-
   #add-sav-modal-panel {
     position: relative;
     background: var(--bg);
     border: 0.5px solid var(--border2);
     border-radius: var(--radius-lg);
-    width: 100%;
-    max-width: 440px;
+    width: 100%; max-width: 440px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.18);
     animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
     overflow: hidden;
   }
-
   @media (max-width: 600px) { #add-sav-modal { display: none !important; } }
 
+  /* ── Add goal sheet ──────────────────────────────────────────────────── */
   #add-sav-sheet { display: none; position: fixed; inset: 0; z-index: 350; }
   #add-sav-sheet.open { display: block; }
   #add-sav-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
   #add-sav-sheet-panel {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
+    position: absolute; bottom: 0; left: 0; right: 0;
     background: var(--bg);
     border-radius: 20px 20px 0 0;
     padding: 12px 20px max(28px, env(safe-area-inset-bottom));
-    max-height: 90vh;
-    overflow-y: auto;
+    max-height: 92vh; overflow-y: auto;
     animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   }
   #add-sav-sheet-handle {
     width: 36px; height: 4px;
-    background: var(--border2);
-    border-radius: 2px;
+    background: var(--border2); border-radius: 2px;
     margin: 0 auto 16px;
   }
   @media (min-width: 601px) { #add-sav-sheet { display: none !important; } }
 
+  /* ── Top up modal ────────────────────────────────────────────────────── */
+  #topup-modal {
+    display: none;
+    position: fixed; inset: 0;
+    z-index: 400;
+    align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  #topup-modal.open { display: flex; }
+  #topup-modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  #topup-modal-panel {
+    position: relative;
+    background: var(--bg);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    width: 100%; max-width: 440px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    overflow: hidden;
+  }
+  @media (max-width: 600px) { #topup-modal { display: none !important; } }
+
+  /* ── Top up sheet ────────────────────────────────────────────────────── */
+  #topup-sheet { display: none; position: fixed; inset: 0; z-index: 360; }
+  #topup-sheet.open { display: block; }
+  #topup-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+  #topup-sheet-panel {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: var(--bg);
+    border-radius: 20px 20px 0 0;
+    padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+    max-height: 88vh; overflow-y: auto;
+    animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #topup-sheet-handle {
+    width: 36px; height: 4px;
+    background: var(--border2); border-radius: 2px;
+    margin: 0 auto 16px;
+  }
+  @media (min-width: 601px) { #topup-sheet { display: none !important; } }
+
+  /* ── Completed goal card styling ─────────────────────────────────────── */
+  .sav-goal-card.is-complete {
+    opacity: 0.72;
+  }
+  .sav-goal-card.is-complete .sav-goal-name {
+    text-decoration: line-through;
+    text-decoration-color: var(--acc);
+  }
+
   /* ── Mobile: hide desktop add trigger ───────────────────────────────── */
   @media (max-width: 600px) { #btn-open-add-sav { display: none; } }
 
-  /* Mobile FAB for savings */
+  /* ── Mobile FAB ──────────────────────────────────────────────────────── */
   #fab-add-sav {
     display: none;
     position: fixed;
@@ -401,32 +596,24 @@
     z-index: 190;
     width: 52px; height: 52px;
     border-radius: 50%;
-    background: var(--text);
-    color: var(--bg);
-    border: none;
-    cursor: pointer;
+    background: var(--text); color: var(--bg);
+    border: none; cursor: pointer;
     box-shadow: 0 4px 16px rgba(0,0,0,0.22);
-    align-items: center;
-    justify-content: center;
+    align-items: center; justify-content: center;
     transition: transform 0.15s, box-shadow 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
   #fab-add-sav svg { width: 22px; height: 22px; }
   #fab-add-sav:active { transform: scale(0.93); }
-
-  @media (max-width: 600px) {
-    #fab-add-sav.fab-visible { display: flex; }
-  }
-  @media (min-width: 601px) {
-    #fab-add-sav { display: none !important; }
-  }
+  @media (max-width: 600px) { #fab-add-sav.fab-visible { display: flex; } }
+  @media (min-width: 601px) { #fab-add-sav { display: none !important; } }
 
   /* ── Dark mode ───────────────────────────────────────────────────────── */
+  .app.dark .milestone-25  { background: rgba(186,117,23,0.18); }
+  .app.dark .milestone-50  { background: rgba(24,95,165,0.18); }
+  .app.dark .milestone-75  { background: rgba(127,119,221,0.18); }
+  .app.dark .milestone-100 { background: rgba(29,158,117,0.18); }
   .app.dark .sav-date-badge { background: rgba(255,255,255,0.06); }
-  .app.dark .milestone-25   { background: rgba(186,117,23,0.18); }
-  .app.dark .milestone-50   { background: rgba(24,95,165,0.18); }
-  .app.dark .milestone-75   { background: rgba(127,119,221,0.18); }
-  .app.dark .milestone-100  { background: rgba(29,158,117,0.18); }
 
 </style>
 
@@ -434,18 +621,17 @@
 <!-- ══ SAVINGS JAVASCRIPT ════════════════════════════════════════════════ -->
 <script>
 
-  // ─── MILESTONE TRACKING (session-only, not persisted) ────────────────────────
-  // Tracks which goal+milestone combos have already fired a toast this session
-  // so we never repeat a celebration on renderAll() calls.
-  var _milestonesShown = {};   // key: goalId + '_' + pct (e.g. 'abc123_50')
+  // ─── STATE ───────────────────────────────────────────────────────────────────
 
-  // ─── DRAG STATE ──────────────────────────────────────────────────────────────
-  var _dragSrcIndex  = null;   // index of card being dragged in AppState.savingsGoals
-  var _dragOverIndex = null;
-  var _pendingReorder = false; // prevent concurrent reorder server calls
+  // Milestone toasts fire once per session per goal+milestone combination
+  var _milestonesShown = {};
 
-  // ─── HISTORY OPEN STATE (session) ────────────────────────────────────────────
-  var _historyOpen = {};       // key: goalId → boolean
+  // History panel open state (session-only, not persisted)
+  var _historyOpen = {};
+
+  // Tracks which goal is being topped up
+  var _topUpGoalId  = null;
+  var _topUpIsMobile = false;
 
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
@@ -457,17 +643,15 @@
   }
 
   function _syncSavingsSummary() {
-    // All-time total from transactions (always accurate)
-    var totalSaved = _computeAllTimeSaved();
-    var totalEl    = document.getElementById('sav-total');
-    if (totalEl) totalEl.textContent = fmt(totalSaved);
-
-    // Active count (goals not yet complete)
-    var goals      = AppState.savingsGoals || [];
+    var totalSaved  = _computeAllTimeSaved();
+    var goals       = AppState.savingsGoals || [];
     var activeCount = goals.filter(function(g) {
       return (parseFloat(g.percent_complete) || 0) < 100;
     }).length;
+
+    var totalEl = document.getElementById('sav-total');
     var countEl = document.getElementById('sav-active-count');
+    if (totalEl) totalEl.textContent = fmt(totalSaved);
     if (countEl) countEl.textContent = activeCount + ' / ' + goals.length;
   }
 
@@ -479,72 +663,83 @@
 
     if (goals.length === 0) {
       listEl.innerHTML = (
-              '<div style="text-align:center;color:var(--text2);padding:2.5rem 1rem;font-size:13px;line-height:1.6;">' +
+              '<div style="text-align:center;color:var(--text2);padding:2.5rem 1rem;' +
+              'font-size:13px;line-height:1.6;">' +
               '<div style="font-size:22px;margin-bottom:8px;">🎯</div>' +
-              '<strong style="color:var(--text);display:block;margin-bottom:4px;">No savings goals yet</strong>' +
-              'Add your first goal below to start tracking your savings journey.' +
+              '<strong style="color:var(--text);display:block;margin-bottom:4px;">' +
+              'No savings goals yet</strong>' +
+              'Tap <strong>Add Goal</strong> to create your first savings target.' +
               '</div>'
       );
       return;
     }
 
+    // Split into groups for visual separation
+    var withDate    = goals.filter(function(g) { return g.percent_complete < 100 && g.target_date && g.months_to_goal !== null && g.months_to_goal > 0; });
+    var withoutDate = goals.filter(function(g) { return g.percent_complete < 100 && !(g.target_date && g.months_to_goal !== null && g.months_to_goal > 0); });
+    var complete    = goals.filter(function(g) { return g.percent_complete >= 100; });
+
     var html = '';
-    goals.forEach(function(goal, idx) {
-      html += _buildGoalCard(goal, idx);
-    });
+
+    if (withDate.length > 0) {
+      html += '<div class="sav-group-label">Active · By deadline</div>';
+      withDate.forEach(function(g) { html += _buildGoalCard(g); });
+    }
+
+    if (withoutDate.length > 0) {
+      if (withDate.length > 0) {
+        html += '<div class="sav-group-label">Active · No deadline</div>';
+      }
+      withoutDate.forEach(function(g) { html += _buildGoalCard(g); });
+    }
+
+    if (complete.length > 0) {
+      html += '<div class="sav-group-label">Completed</div>';
+      complete.forEach(function(g) { html += _buildGoalCard(g); });
+    }
+
     listEl.innerHTML = html;
 
-    // Wire drag events on each card
-    listEl.querySelectorAll('.sav-goal-card').forEach(function(card, idx) {
-      _wireDragEvents(card, idx);
-    });
-
-    // Check milestones after render
-    goals.forEach(function(goal) {
-      _checkMilestone(goal);
-    });
+    // Fire milestone toasts
+    goals.forEach(function(g) { _checkMilestone(g); });
   }
 
-  function _buildGoalCard(goal, idx) {
-    var saved   = parseFloat(goal.saved_amount)  || 0;
-    var target  = parseFloat(goal.target_amount) || 0;
-    var p       = parseFloat(goal.percent_complete) || 0;
-    var reached = p >= 100;
-    var toGo    = Math.max(0, target - saved);
+
+  // ─── GOAL CARD BUILDER ───────────────────────────────────────────────────────
+
+  function _buildGoalCard(goal) {
+    var saved    = parseFloat(goal.saved_amount)     || 0;
+    var target   = parseFloat(goal.target_amount)    || 0;
+    var p        = parseFloat(goal.percent_complete)  || 0;
+    var reached  = p >= 100;
+    var toGo     = Math.max(0, target - saved);
+    var catColor = getCategoryColor(goal.category);
 
     // Progress bar colour by milestone tier
-    var barColor = reached    ? 'var(--acc)'
-            : p >= 75   ? 'var(--purple)'
-                    : p >= 50   ? 'var(--blue)'
-                            : p >= 25   ? 'var(--amber)'
-                                    :              'var(--blue)';
+    var barColor = reached  ? 'var(--acc)'
+            : p >= 75 ? 'var(--purple)'
+                    : p >= 50 ? 'var(--blue)'
+                            : p >= 25 ? 'var(--amber)'
+                                    :           'var(--blue)';
 
     // Milestone badge
     var milestoneBadge = '';
-    if (reached) {
-      milestoneBadge = '<span class="sav-milestone-badge milestone-100">🏆 Goal reached!</span>';
-    } else if (p >= 75) {
-      milestoneBadge = '<span class="sav-milestone-badge milestone-75">⚡ 75%</span>';
-    } else if (p >= 50) {
-      milestoneBadge = '<span class="sav-milestone-badge milestone-50">🔵 50%</span>';
-    } else if (p >= 25) {
-      milestoneBadge = '<span class="sav-milestone-badge milestone-25">✨ 25%</span>';
-    }
+    if (reached)    milestoneBadge = '<span class="sav-milestone-badge milestone-100">🏆 Complete!</span>';
+    else if (p >= 75) milestoneBadge = '<span class="sav-milestone-badge milestone-75">⚡ 75%</span>';
+    else if (p >= 50) milestoneBadge = '<span class="sav-milestone-badge milestone-50">🔵 50%</span>';
+    else if (p >= 25) milestoneBadge = '<span class="sav-milestone-badge milestone-25">✨ 25%</span>';
 
     // Target date badge
-    var dateBadge  = '';
-    var paceHtml   = '';
+    var dateBadge = '';
     if (goal.target_date) {
-      var parts      = goal.target_date.split('-');
-      var dateLabel  = MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
-      var mNeeded    = goal.monthly_needed;
-      var mToGoal    = goal.months_to_goal;
+      var parts     = goal.target_date.split('-');
+      var dateLabel = MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+      var mToGoal   = goal.months_to_goal;
+      var dateColor = (mToGoal !== null && mToGoal <= 0)  ? 'var(--red)'
+              : (mToGoal !== null && mToGoal <= 1) ? 'var(--amber)'
+                      :                                       'var(--text2)';
 
-      var dateColor  = (mToGoal !== null && mToGoal <= 0) ? 'var(--red)'
-              : (mToGoal !== null && mNeeded !== null && mNeeded > 0) ? 'var(--text2)'
-                      : 'var(--acc)';
-
-      var dateLabel2 = (mToGoal !== null && mToGoal <= 0)
+      var displayLabel = (mToGoal !== null && mToGoal <= 0)
               ? '⚠ Deadline passed'
               : dateLabel;
 
@@ -556,63 +751,66 @@
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
               '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>' +
               '</svg>' +
-              _escS(dateLabel2) +
+              _escS(displayLabel) +
               '</button>'
       );
-
-      if (!reached && mNeeded !== null && mNeeded > 0 && mToGoal > 0) {
-        paceHtml = (
-                '<div class="sav-monthly-needed">' +
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-                '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>' +
-                '</svg>' +
-                '<span>Need <strong>' + fmt(mNeeded) + '/mo</strong> to reach goal by ' + dateLabel + '</span>' +
-                '</div>'
-        );
-      } else if (!reached && mToGoal !== null && mToGoal <= 0) {
-        paceHtml = (
-                '<div class="sav-monthly-needed" style="color:var(--red);">' +
-                '⚠ Target date has passed — consider updating it.' +
-                '</div>'
-        );
-      }
-    } else {
-      // No target date — show "Set a deadline" nudge
+    } else if (!reached) {
       dateBadge = (
               '<button class="sav-date-badge" ' +
               'onclick="_openDatePicker(\'' + goal.id + '\')" ' +
               'title="Set a target date">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-              '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M12 13v4M10 15h4"/>' +
+              '<rect x="3" y="4" width="18" height="18" rx="2"/>' +
+              '<path d="M3 9h18M8 2v4M16 2v4M12 13v4M10 15h4"/>' +
               '</svg>' +
               'Set deadline' +
               '</button>'
       );
     }
 
-    // Category hint (which savings category auto-credits this goal)
-    var categoryHint = _getCategoryHintForGoal(goal.name);
-    var hintHtml     = categoryHint
-            ? '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">' +
-            'Auto-credits from: <strong>' + _escS(categoryHint) + '</strong>' +
-            '</div>'
-            : '';
+    // Pace line
+    var paceHtml = '';
+    if (!reached && goal.monthly_needed && goal.monthly_needed > 0 && goal.months_to_goal > 0) {
+      var parts2    = goal.target_date.split('-');
+      var dateLabel2 = MONTHS[parseInt(parts2[1], 10) - 1] + ' ' + parts2[0];
+      paceHtml = (
+              '<div class="sav-monthly-needed">' +
+              '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+              '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>' +
+              '</svg>' +
+              'Need <strong>' + fmt(goal.monthly_needed) + '/mo</strong> to reach goal by ' + dateLabel2 +
+              '</div>'
+      );
+    } else if (!reached && goal.target_date && goal.months_to_goal !== null && goal.months_to_goal <= 0) {
+      paceHtml = (
+              '<div class="sav-monthly-needed" style="color:var(--red);">' +
+              '⚠ Target date has passed — consider updating it.' +
+              '</div>'
+      );
+    }
 
-    // Footer: percent + to-go or reached
-    var footerRight = reached
-            ? '<span style="color:var(--acc);font-weight:600;">Goal complete 🎉</span>'
-            : '<span>' + fmt(toGo) + ' to go</span>';
+    // Top Up button (disabled if complete)
+    var topUpBtn = reached
+            ? '<span style="font-size:11px;color:var(--acc);font-weight:600;">Goal reached 🎉</span>'
+            : (
+                    '<button class="btn-topup" ' +
+                    'onclick="openTopUpModal(\'' + goal.id + '\')" ' +
+                    'title="Add a deposit to this goal">' +
+                    '+ Top Up' +
+                    '</button>'
+            );
 
     // History section
-    var historyRows = _getHistoryForGoal(goal.id);
-    var isHistOpen  = !!_historyOpen[goal.id];
-    var histToggleHtml = '';
-    var histPanelHtml  = '';
+    var historyRows  = _getHistoryForGoal(goal.id);
+    var isHistOpen   = !!_historyOpen[goal.id];
+    var histToggle   = '';
+    var histPanel    = '';
 
     if (historyRows.length > 0) {
       var histRowsHtml = historyRows.map(function(h) {
         var dateStr = h.recorded_at ? _formatSavHistoryDate(h.recorded_at) : '';
-        var noteStr = h.note && h.note !== 'auto' ? ' · ' + _escS(h.note) : '';
+        var noteStr = (h.note && h.note !== 'top-up' && h.note !== 'auto')
+                ? ' · ' + _escS(h.note) : '';
         return (
                 '<div class="sav-history-row">' +
                 '<div>' +
@@ -626,18 +824,17 @@
         );
       }).join('');
 
-      histToggleHtml = (
+      histToggle = (
               '<button class="sav-history-toggle' + (isHistOpen ? ' open' : '') + '" ' +
               'onclick="_toggleHistory(\'' + goal.id + '\')" ' +
               'id="hist-toggle-' + goal.id + '">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-              '<path d="M9 18l6-6-6-6"/>' +
-              '</svg>' +
-              historyRows.length + ' contribution' + (historyRows.length !== 1 ? 's' : '') +
+              '<path d="M9 18l6-6-6-6"/></svg>' +
+              historyRows.length + ' deposit' + (historyRows.length !== 1 ? 's' : '') +
               '</button>'
       );
 
-      histPanelHtml = (
+      histPanel = (
               '<div class="sav-history-panel' + (isHistOpen ? ' open' : '') + '" ' +
               'id="hist-panel-' + goal.id + '">' +
               '<div style="padding-top:8px;">' + histRowsHtml + '</div>' +
@@ -646,49 +843,36 @@
     }
 
     return (
-            '<div class="sav-goal-card" ' +
+            '<div class="sav-goal-card' + (reached ? ' is-complete' : '') + '" ' +
             'id="sav-card-' + goal.id + '" ' +
-            'data-goal-id="' + goal.id + '" ' +
-            'data-idx="' + idx + '" ' +
-            'draggable="true">' +
+            'data-goal-id="' + goal.id + '">' +
 
-            // ── Card header ──────────────────────────────────────────────────────
+            // ── Header: name + milestone badge | actions ─────────────────────────
             '<div class="sav-goal-header">' +
             '<div class="sav-goal-title-row">' +
-
-            // Drag handle
-            '<span class="sav-drag-handle" title="Drag to reorder">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-            '<path d="M9 4h1M14 4h1M9 9h1M14 9h1M9 14h1M14 14h1M9 19h1M14 19h1"/>' +
-            '</svg>' +
-            '</span>' +
-
             '<div class="sav-goal-name">' + _escS(goal.name) + '</div>' +
-
-            // Milestone badge (inline with name)
             milestoneBadge +
-
             '</div>' +
-
-            // Actions: date badge + delete
             '<div class="sav-goal-actions">' +
             dateBadge +
             '<button class="tx-delete" ' +
             'onclick="deleteSavGoal(\'' + goal.id + '\', this)" ' +
             'title="Remove goal">\xd7</button>' +
             '</div>' +
-
             '</div>' +
 
-            // ── Category hint ────────────────────────────────────────────────────
-            hintHtml +
+            // ── Category sub-line ────────────────────────────────────────────────
+            '<div class="sav-goal-category">' +
+            '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+            'display:inline-block;background:' + catColor + ';"></span>' +
+            _escS(goal.category) +
+            '</div>' +
 
             // ── Amount row ───────────────────────────────────────────────────────
             '<div class="sav-amount-row">' +
-            '<span style="font-family:var(--mono);font-size:13px;font-weight:600;">' +
-            fmt(saved) +
-            '</span>' +
-            '<span style="color:var(--text2);">of ' + fmt(target) + '</span>' +
+            '<span style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);">' +
+            fmt(saved) + '</span>' +
+            '<span>of ' + fmt(target) + '</span>' +
             '</div>' +
 
             // ── Progress bar ─────────────────────────────────────────────────────
@@ -696,18 +880,24 @@
             '<div class="sav-prog-fill" style="width:' + p + '%;background:' + barColor + ';"></div>' +
             '</div>' +
 
-            // ── Progress footer ──────────────────────────────────────────────────
-            '<div class="sav-progress-footer">' +
+            // ── Progress footer + Top Up button ──────────────────────────────────
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:' +
+            (paceHtml ? '6px' : '0') + ';">' +
+            '<div class="sav-progress-footer" style="margin-bottom:0;">' +
             '<span>' + Math.round(p) + '% complete</span>' +
-            footerRight +
+            (reached
+                    ? ''
+                    : '<span style="color:var(--text2);">' + fmt(toGo) + ' to go</span>') +
+            '</div>' +
+            topUpBtn +
             '</div>' +
 
-            // ── Pace line (only if target date set) ──────────────────────────────
-            (paceHtml ? '<div style="margin-top:8px;">' + paceHtml + '</div>' : '') +
+            // ── Pace line ────────────────────────────────────────────────────────
+            (paceHtml ? '<div style="margin-top:4px;">' + paceHtml + '</div>' : '') +
 
             // ── History ──────────────────────────────────────────────────────────
-            histToggleHtml +
-            histPanelHtml +
+            histToggle +
+            histPanel +
 
             '</div>'
     );
@@ -716,17 +906,13 @@
 
   // ─── MILESTONE DETECTION ─────────────────────────────────────────────────────
 
-  var MILESTONES = [25, 50, 75, 100];
-
   function _checkMilestone(goal) {
     var p = Math.floor(parseFloat(goal.percent_complete) || 0);
-
-    MILESTONES.forEach(function(m) {
+    [25, 50, 75, 100].forEach(function(m) {
       if (p < m) return;
       var key = goal.id + '_' + m;
       if (_milestonesShown[key]) return;
       _milestonesShown[key] = true;
-
       if (m === 100) {
         showToast('🏆 ' + goal.name + ' goal reached! Amazing work!', 'success', 4000);
       } else {
@@ -737,260 +923,187 @@
   }
 
 
-  // ─── DRAG AND DROP ────────────────────────────────────────────────────────────
-
-  function _wireDragEvents(card, idx) {
-    // Desktop HTML5 drag
-    card.addEventListener('dragstart', function(e) {
-      _dragSrcIndex = idx;
-      card.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(idx));
-    });
-
-    card.addEventListener('dragend', function() {
-      card.classList.remove('dragging');
-      document.querySelectorAll('.sav-goal-card').forEach(function(c) {
-        c.classList.remove('drag-over');
-      });
-      if (_dragSrcIndex !== null && _dragOverIndex !== null && _dragSrcIndex !== _dragOverIndex) {
-        _applyReorder(_dragSrcIndex, _dragOverIndex);
-      }
-      _dragSrcIndex  = null;
-      _dragOverIndex = null;
-    });
-
-    card.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (idx !== _dragSrcIndex) {
-        document.querySelectorAll('.sav-goal-card').forEach(function(c) {
-          c.classList.remove('drag-over');
-        });
-        card.classList.add('drag-over');
-        _dragOverIndex = idx;
-      }
-    });
-
-    card.addEventListener('drop', function(e) {
-      e.preventDefault();
-      card.classList.remove('drag-over');
-    });
-
-    // Mobile touch events
-    var _touchStartY   = 0;
-    var _touchSrcIdx   = idx;
-    var _touchClone    = null;
-    var _touchOverIdx  = null;
-
-    card.addEventListener('touchstart', function(e) {
-      // Only trigger drag from the handle
-      if (!e.target.closest('.sav-drag-handle')) return;
-      e.preventDefault();
-
-      _dragSrcIndex = idx;
-      _touchStartY  = e.touches[0].clientY;
-      card.classList.add('dragging');
-
-      // Visual clone following the finger
-      _touchClone = card.cloneNode(true);
-      _touchClone.style.cssText = [
-        'position:fixed',
-        'left:' + card.getBoundingClientRect().left + 'px',
-        'top:' + card.getBoundingClientRect().top + 'px',
-        'width:' + card.offsetWidth + 'px',
-        'opacity:0.9',
-        'pointer-events:none',
-        'z-index:9999',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.22)',
-        'transform:scale(1.02)',
-        'transition:none'
-      ].join(';');
-      document.body.appendChild(_touchClone);
-
-    }, { passive: false });
-
-    card.addEventListener('touchmove', function(e) {
-      if (!_touchClone) return;
-      e.preventDefault();
-
-      var touch = e.touches[0];
-      var dy    = touch.clientY - _touchStartY;
-
-      _touchClone.style.transform = 'scale(1.02) translateY(' + dy + 'px)';
-
-      // Find which card we're hovering over
-      _touchClone.style.display = 'none';
-      var el = document.elementFromPoint(touch.clientX, touch.clientY);
-      _touchClone.style.display = '';
-
-      if (el) {
-        var hoverCard = el.closest('.sav-goal-card');
-        if (hoverCard && hoverCard !== card) {
-          var overIdx = parseInt(hoverCard.dataset.idx, 10);
-          if (overIdx !== _touchOverIdx) {
-            document.querySelectorAll('.sav-goal-card').forEach(function(c) { c.classList.remove('drag-over'); });
-            hoverCard.classList.add('drag-over');
-            _touchOverIdx  = overIdx;
-            _dragOverIndex = overIdx;
-          }
-        }
-      }
-    }, { passive: false });
-
-    card.addEventListener('touchend', function() {
-      if (_touchClone) {
-        document.body.removeChild(_touchClone);
-        _touchClone = null;
-      }
-      card.classList.remove('dragging');
-      document.querySelectorAll('.sav-goal-card').forEach(function(c) { c.classList.remove('drag-over'); });
-
-      if (_dragSrcIndex !== null && _dragOverIndex !== null && _dragSrcIndex !== _dragOverIndex) {
-        _applyReorder(_dragSrcIndex, _dragOverIndex);
-      }
-
-      _dragSrcIndex  = null;
-      _dragOverIndex = null;
-      _touchOverIdx  = null;
-    });
-  }
+  // ─── TOP UP FLOW ─────────────────────────────────────────────────────────────
 
   /**
-   * _applyReorder(fromIdx, toIdx)
-   * Moves the goal at fromIdx to toIdx in AppState, re-renders, then
-   * persists the new order to the server.
+   * openTopUpModal(goalId)
+   * Routes to modal (desktop) or sheet (mobile).
    */
-  async function _applyReorder(fromIdx, toIdx) {
-    if (_pendingReorder) return;
+  function openTopUpModal(goalId) {
+    var isMobile = window.innerWidth <= 600;
+    _topUpGoalId   = goalId;
+    _topUpIsMobile = isMobile;
+    _populateTopUpForm(goalId, isMobile);
 
-    var goals = AppState.savingsGoals || [];
-    if (fromIdx < 0 || fromIdx >= goals.length || toIdx < 0 || toIdx >= goals.length) return;
-
-    // Move in AppState immediately (optimistic)
-    var reordered = goals.slice();
-    var moved     = reordered.splice(fromIdx, 1)[0];
-    reordered.splice(toIdx, 0, moved);
-    AppState.savingsGoals = reordered;
-    renderAll();
-
-    // Persist to server
-    _pendingReorder = true;
-    try {
-      var orderedIds = reordered.map(function(g) { return g.id; });
-      await callServerSilent('updateSavingsGoalOrderBatch', orderedIds);
-    } catch(e) {
-      console.warn('Savings reorder persist failed:', e);
-    } finally {
-      _pendingReorder = false;
+    if (isMobile) {
+      var s = document.getElementById('topup-sheet');
+      if (s) {
+        s.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+          var inp = document.getElementById('topup-amt-m');
+          if (inp) inp.focus();
+        }, 300);
+      }
+    } else {
+      var m = document.getElementById('topup-modal');
+      if (m) {
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+          var inp = document.getElementById('topup-amt-d');
+          if (inp) inp.focus();
+        }, 220);
+      }
     }
   }
 
+  function closeTopUpModal() {
+    var m = document.getElementById('topup-modal');
+    if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+    _topUpGoalId = null;
+  }
 
-  // ─── TARGET DATE PICKER ───────────────────────────────────────────────────────
+  function closeTopUpSheet() {
+    var s = document.getElementById('topup-sheet');
+    if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+    _topUpGoalId = null;
+  }
 
   /**
-   * _openDatePicker(goalId)
-   * Shows a native date input prompt via a small inline popover on the card.
+   * _populateTopUpForm(goalId, isMobile)
+   * Fills the recap block and max-label in the top-up modal/sheet.
    */
-  function _openDatePicker(goalId) {
-    var card = document.getElementById('sav-card-' + goalId);
-    if (!card) return;
+  function _populateTopUpForm(goalId, isMobile) {
+    var goals   = AppState.savingsGoals || [];
+    var goal    = goals.find(function(g) { return g.id === goalId; });
+    if (!goal) return;
 
-    // Remove any existing picker
-    var existing = document.getElementById('sav-date-picker-pop');
-    if (existing) existing.remove();
+    var saved     = parseFloat(goal.saved_amount)  || 0;
+    var target    = parseFloat(goal.target_amount)  || 0;
+    var remaining = Math.max(0, target - saved);
+    var p         = parseFloat(goal.percent_complete) || 0;
+    var catColor  = getCategoryColor(goal.category);
 
-    var goals  = AppState.savingsGoals || [];
-    var goal   = goals.find(function(g) { return g.id === goalId; });
-    var curDate = goal ? (goal.target_date || '') : '';
-
-    var pop = document.createElement('div');
-    pop.id  = 'sav-date-picker-pop';
-    pop.style.cssText = [
-      'position:absolute',
-      'top:0',
-      'left:0',
-      'right:0',
-      'background:var(--bg)',
-      'border:0.5px solid var(--border2)',
-      'border-radius:var(--radius-lg)',
-      'padding:14px 16px',
-      'z-index:500',
-      'box-shadow:0 8px 32px rgba(0,0,0,0.14)',
-      'animation:atxModalIn 0.15s ease'
-    ].join(';');
-
-    pop.innerHTML = (
-            '<div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-bottom:8px;">Target Date</div>' +
-            '<input id="sav-date-input-' + goalId + '" type="date" class="inp" value="' + curDate + '" style="margin-bottom:10px;"/>' +
-            '<div style="display:flex;gap:8px;">' +
-            '<button onclick="_saveDatePicker(\'' + goalId + '\')" class="btn-primary" style="flex:1;font-size:13px;padding:8px;">' +
-            '<span class="btn-label">Save</span><span class="btn-spinner"></span></button>' +
-            (curDate ? '<button onclick="_clearDatePicker(\'' + goalId + '\')" class="btn-sm" style="color:var(--red);border-color:var(--red);">Clear</button>' : '') +
-            '<button onclick="document.getElementById(\'sav-date-picker-pop\').remove()" class="btn-sm">Cancel</button>' +
+    var recapHtml = (
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">' +
+            '<span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;' +
+            'display:inline-block;background:' + catColor + ';"></span>' +
+            '<div>' +
+            '<div style="font-size:13px;font-weight:600;color:var(--text);">' + _escS(goal.name) + '</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' + _escS(goal.category) + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px;">' +
+            '<div style="height:100%;width:' + p + '%;background:var(--blue);border-radius:3px;"></div>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:space-between;font-size:12px;">' +
+            '<span style="font-family:var(--mono);font-weight:600;">' + fmt(saved) + ' saved</span>' +
+            '<span style="color:var(--text2);">' + fmt(remaining) + ' remaining</span>' +
             '</div>'
     );
 
-    card.style.position = 'relative';
-    card.appendChild(pop);
+    var maxLabel = '(max ' + fmt(remaining) + ')';
+    var suffix   = isMobile ? '-m' : '-d';
 
-    var inp = document.getElementById('sav-date-input-' + goalId);
-    if (inp) inp.focus();
+    var recapEl = document.getElementById(isMobile ? 'topup-goal-recap-m' : 'topup-goal-recap');
+    var subEl   = document.getElementById(isMobile ? 'topup-sheet-subtitle' : 'topup-modal-subtitle');
+    var maxEl   = document.getElementById(isMobile ? 'topup-max-label-m' : 'topup-max-label-d');
+    var amtEl   = document.getElementById('topup-amt' + suffix);
+    var noteEl  = document.getElementById('topup-note' + suffix);
+
+    if (recapEl) recapEl.innerHTML = recapHtml;
+    if (subEl)   subEl.textContent = goal.name + ' · ' + p + '% funded';
+    if (maxEl)   maxEl.textContent = maxLabel;
+    if (amtEl)   amtEl.value = '';
+    if (noteEl)  noteEl.value = '';
   }
 
-  async function _saveDatePicker(goalId) {
-    var inp = document.getElementById('sav-date-input-' + goalId);
-    var date = inp ? inp.value : '';
+  /**
+   * submitTopUp()
+   * Shared handler for both modal and sheet submit buttons.
+   */
+  async function submitTopUp() {
+    if (!_topUpGoalId) return;
 
-    var pop = document.getElementById('sav-date-picker-pop');
-    var btn = pop ? pop.querySelector('.btn-primary') : null;
+    var isMobile = _topUpIsMobile;
+    var suffix   = isMobile ? '-m' : '-d';
+    var btn      = document.getElementById(isMobile ? 'btn-topup-m' : 'btn-topup-d');
 
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.add('loading');
+    var amtRaw = String(getVal('topup-amt' + suffix)).replace(/,/g, '');
+    var note   = getVal('topup-note' + suffix);
+    var amount = parseFloat(amtRaw);
+
+    if (!amtRaw || isNaN(amount) || amount <= 0) {
+      showToast('Please enter a valid amount.', 'error');
+      var inp = document.getElementById('topup-amt' + suffix);
+      if (inp) inp.focus();
+      return;
     }
 
-    try {
-      var updated = await callServer('updateSavingsGoalTarget', goalId, date);
+    // Client-side cap check (server enforces as well)
+    var goals     = AppState.savingsGoals || [];
+    var goal      = goals.find(function(g) { return g.id === _topUpGoalId; });
+    var remaining = goal ? Math.max(0, (parseFloat(goal.target_amount) || 0) - (parseFloat(goal.saved_amount) || 0)) : 0;
 
-      AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
-        return g.id === goalId ? updated : g;
-      });
-
-      if (pop) pop.remove();
-      renderAll();
-      showToast(date ? 'Target date saved!' : 'Target date cleared.', 'success');
-    } catch(e) {
-      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+    if (remaining <= 0) {
+      showToast('This goal is already fully funded.', 'info');
+      if (isMobile) closeTopUpSheet(); else closeTopUpModal();
+      return;
     }
-  }
 
-  async function _clearDatePicker(goalId) {
-    var pop = document.getElementById('sav-date-picker-pop');
-    if (pop) pop.remove();
+    if (amount > remaining) {
+      showToast(
+              'Amount exceeds the remaining balance. Maximum you can add: ' + fmt(remaining) + '.',
+              'error'
+      );
+      return;
+    }
 
-    try {
-      var updated = await callServer('updateSavingsGoalTarget', goalId, '');
-      AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
-        return g.id === goalId ? updated : g;
-      });
-      renderAll();
-      showToast('Target date cleared.', 'info');
-    } catch(e) {}
-  }
+    var goalIdToTopUp = _topUpGoalId;
 
+    await withButtonLoading(btn, async function() {
+      try {
+        var result = await callServer('topUpSavingsGoal', goalIdToTopUp, amount, curKey(), note);
 
-  // ─── HISTORY TOGGLE ───────────────────────────────────────────────────────────
+        // result = { goal: updatedGoal, transaction: newTx }
+        var updatedGoal = result.goal;
+        var newTx       = result.transaction;
 
-  function _toggleHistory(goalId) {
-    _historyOpen[goalId] = !_historyOpen[goalId];
+        // Update AppState.savingsGoals
+        AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
+          return g.id === goalIdToTopUp ? updatedGoal : g;
+        });
 
-    var toggle = document.getElementById('hist-toggle-' + goalId);
-    var panel  = document.getElementById('hist-panel-'  + goalId);
+        // Add the new transaction to AppState.transactions
+        if (newTx) {
+          var key = curKey();
+          if (!AppState.transactions[key]) AppState.transactions[key] = [];
+          AppState.transactions[key].push(newTx);
+        }
 
-    if (toggle) toggle.classList.toggle('open', _historyOpen[goalId]);
-    if (panel)  panel.classList.toggle('open',  _historyOpen[goalId]);
+        // Add history row locally so the panel updates without a re-fetch
+        if (newTx && updatedGoal) {
+          if (!AppState.savingsHistory) AppState.savingsHistory = [];
+          AppState.savingsHistory.unshift({
+            id:             newTx.id + '_hist',
+            goal_id:        goalIdToTopUp,
+            transaction_id: newTx.id,
+            month_key:      curKey(),
+            amount:         amount,
+            note:           note || 'top-up',
+            recorded_at:    new Date().toISOString()
+          });
+        }
+
+        if (isMobile) closeTopUpSheet(); else closeTopUpModal();
+        renderAll();
+        showToast(fmt(amount) + ' added to ' + (goal ? goal.name : 'goal') + '!', 'success');
+
+      } catch(e) {
+        // Error toast shown by callServer
+      }
+    });
   }
 
 
@@ -998,6 +1111,7 @@
 
   function openAddSavModal() {
     if (window.innerWidth <= 600) { openAddSavSheet(); return; }
+    _populateSavCategorySelect('sv-cat-d');
     var m = document.getElementById('add-sav-modal');
     if (!m) return;
     m.classList.add('open');
@@ -1014,6 +1128,7 @@
   }
 
   function openAddSavSheet() {
+    _populateSavCategorySelect('sv-cat-m');
     var s = document.getElementById('add-sav-sheet');
     if (!s) return;
     s.classList.add('open');
@@ -1034,8 +1149,12 @@
             getVal('sv-name-d'),
             getVal('sv-target-d'),
             getVal('sv-date-d'),
+            getVal('sv-cat-d'),
             document.getElementById('btn-add-sav-d'),
-            function() { clearInputs('sv-name-d', 'sv-target-d', 'sv-date-d'); closeAddSavModal(); }
+            function() {
+              clearInputs('sv-name-d', 'sv-target-d', 'sv-date-d');
+              closeAddSavModal();
+            }
     );
   }
 
@@ -1044,12 +1163,16 @@
             getVal('sv-name-m'),
             getVal('sv-target-m'),
             getVal('sv-date-m'),
+            getVal('sv-cat-m'),
             document.getElementById('btn-add-sav-m'),
-            function() { clearInputs('sv-name-m', 'sv-target-m', 'sv-date-m'); closeAddSavSheet(); }
+            function() {
+              clearInputs('sv-name-m', 'sv-target-m', 'sv-date-m');
+              closeAddSavSheet();
+            }
     );
   }
 
-  async function _doAddSavGoal(name, targetRaw, targetDate, btn, onSuccess) {
+  async function _doAddSavGoal(name, targetRaw, targetDate, category, btn, onSuccess) {
     if (!name) {
       showToast('Please enter a goal name.', 'error'); return;
     }
@@ -1057,10 +1180,13 @@
     if (!targetRaw || isNaN(target) || target <= 0) {
       showToast('Please enter a valid target amount.', 'error'); return;
     }
+    if (!category) {
+      showToast('Please select a category.', 'error'); return;
+    }
 
     await withButtonLoading(btn, async function() {
       try {
-        var newGoal = await callServer('addSavingsGoal', name, target, targetDate || '');
+        var newGoal = await callServer('addSavingsGoal', name, target, targetDate || '', category);
 
         if (!AppState.savingsGoals) AppState.savingsGoals = [];
         AppState.savingsGoals.push(newGoal);
@@ -1076,6 +1202,8 @@
   // ─── DELETE SAVINGS GOAL ──────────────────────────────────────────────────────
 
   async function deleteSavGoal(goalId, deleteBtnEl) {
+    if (!window.confirm('Remove this savings goal?\n\nPast transactions and history are kept.')) return;
+
     if (deleteBtnEl) {
       deleteBtnEl.disabled = true;
       deleteBtnEl.style.opacity = '0.35';
@@ -1088,7 +1216,7 @@
         return g.id !== goalId;
       });
 
-      // Clean up milestone tracking for deleted goal
+      // Clean up session state
       Object.keys(_milestonesShown).forEach(function(key) {
         if (key.startsWith(goalId + '_')) delete _milestonesShown[key];
       });
@@ -1105,6 +1233,97 @@
   }
 
 
+  // ─── TARGET DATE PICKER ───────────────────────────────────────────────────────
+
+  function _openDatePicker(goalId) {
+    var card = document.getElementById('sav-card-' + goalId);
+    if (!card) return;
+
+    var existing = document.getElementById('sav-date-picker-pop');
+    if (existing) existing.remove();
+
+    var goals   = AppState.savingsGoals || [];
+    var goal    = goals.find(function(g) { return g.id === goalId; });
+    var curDate = goal ? (goal.target_date || '') : '';
+
+    var pop = document.createElement('div');
+    pop.id  = 'sav-date-picker-pop';
+    pop.style.cssText = [
+      'position:absolute', 'top:0', 'left:0', 'right:0',
+      'background:var(--bg)', 'border:0.5px solid var(--border2)',
+      'border-radius:var(--radius-lg)', 'padding:14px 16px',
+      'z-index:500', 'box-shadow:0 8px 32px rgba(0,0,0,0.14)',
+      'animation:atxModalIn 0.15s ease'
+    ].join(';');
+
+    pop.innerHTML = (
+            '<div style="font-size:11px;font-weight:600;letter-spacing:.06em;' +
+            'text-transform:uppercase;color:var(--text2);margin-bottom:8px;">Target Date</div>' +
+            '<input id="sav-date-input-' + goalId + '" type="date" class="inp" ' +
+            'value="' + curDate + '" style="margin-bottom:10px;"/>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<button onclick="_saveDatePicker(\'' + goalId + '\')" class="btn-primary" ' +
+            'style="flex:1;font-size:13px;padding:8px;">' +
+            '<span class="btn-label">Save</span><span class="btn-spinner"></span></button>' +
+            (curDate ? '<button onclick="_clearDatePicker(\'' + goalId + '\')" ' +
+                    'class="btn-sm" style="color:var(--red);border-color:var(--red);">Clear</button>' : '') +
+            '<button onclick="document.getElementById(\'sav-date-picker-pop\').remove()" ' +
+            'class="btn-sm">Cancel</button>' +
+            '</div>'
+    );
+
+    card.style.position = 'relative';
+    card.appendChild(pop);
+
+    var inp = document.getElementById('sav-date-input-' + goalId);
+    if (inp) inp.focus();
+  }
+
+  async function _saveDatePicker(goalId) {
+    var inp  = document.getElementById('sav-date-input-' + goalId);
+    var date = inp ? inp.value : '';
+    var pop  = document.getElementById('sav-date-picker-pop');
+    var btn  = pop ? pop.querySelector('.btn-primary') : null;
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
+    try {
+      var updated = await callServer('updateSavingsGoalTarget', goalId, date);
+      AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
+        return g.id === goalId ? updated : g;
+      });
+      if (pop) pop.remove();
+      renderAll();
+      showToast(date ? 'Target date saved!' : 'Target date cleared.', 'success');
+    } catch(e) {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+    }
+  }
+
+  async function _clearDatePicker(goalId) {
+    var pop = document.getElementById('sav-date-picker-pop');
+    if (pop) pop.remove();
+    try {
+      var updated = await callServer('updateSavingsGoalTarget', goalId, '');
+      AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
+        return g.id === goalId ? updated : g;
+      });
+      renderAll();
+      showToast('Target date cleared.', 'info');
+    } catch(e) {}
+  }
+
+
+  // ─── HISTORY TOGGLE ───────────────────────────────────────────────────────────
+
+  function _toggleHistory(goalId) {
+    _historyOpen[goalId] = !_historyOpen[goalId];
+    var toggle = document.getElementById('hist-toggle-' + goalId);
+    var panel  = document.getElementById('hist-panel-'  + goalId);
+    if (toggle) toggle.classList.toggle('open', _historyOpen[goalId]);
+    if (panel)  panel.classList.toggle('open',  _historyOpen[goalId]);
+  }
+
+
   // ─── FAB ─────────────────────────────────────────────────────────────────────
 
   function _updateSavFabVisibility() {
@@ -1113,7 +1332,7 @@
   }
 
 
-  // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
+  // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
   function _computeAllTimeSaved() {
     var total  = 0;
@@ -1125,14 +1344,6 @@
       });
     });
     return total;
-  }
-
-  function _getCategoryHintForGoal(goalName) {
-    var cats  = getCategoriesByType('savings');
-    var match = cats.find(function(c) {
-      return c.name.toLowerCase() === String(goalName || '').toLowerCase();
-    });
-    return match ? match.name : null;
   }
 
   function _getHistoryForGoal(goalId) {
@@ -1153,6 +1364,19 @@
     } catch(e) { return ''; }
   }
 
+  function _populateSavCategorySelect(selectId) {
+    var sel = document.getElementById(selectId);
+    if (!sel) return;
+    var cats = getCategoriesByType('savings');
+    sel.innerHTML = '';
+    cats.forEach(function(cat) {
+      var opt = document.createElement('option');
+      opt.value = cat.name;
+      opt.textContent = cat.name;
+      sel.appendChild(opt);
+    });
+  }
+
   function _escS(str) {
     return String(str || '')
             .replace(/&/g, '&amp;')
@@ -1161,17 +1385,18 @@
   }
 
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      closeAddSavModal();
-      closeAddSavSheet();
-      var pop = document.getElementById('sav-date-picker-pop');
-      if (pop) pop.remove();
-    }
+    if (e.key !== 'Escape') return;
+    closeAddSavModal();
+    closeAddSavSheet();
+    closeTopUpModal();
+    closeTopUpSheet();
+    var pop = document.getElementById('sav-date-picker-pop');
+    if (pop) pop.remove();
   });
 
 </script>
 
-<!-- Mobile FAB for savings -->
+<!-- Mobile FAB -->
 <button id="fab-add-sav"
         onclick="openAddSavSheet()"
         aria-label="Add savings goal"

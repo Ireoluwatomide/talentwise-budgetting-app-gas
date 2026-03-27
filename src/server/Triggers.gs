@@ -1,25 +1,23 @@
 /**
  * Triggers.gs — Time-Based Trigger Setup & Cron Handlers
  *
- * PURPOSE:
- *   Register and manage the two time-based triggers that automate background tasks:
+ * CHANGE FROM PREVIOUS VERSION:
+ *   dailyAlertHandler() now calls sendSavingsAlerts() after sendDailyAlerts().
+ *   Each is wrapped in its own try/catch so a failure in one does not prevent
+ *   the other from running.
  *
- *   1. Daily trigger    → dailyAlertHandler()
- *      Fires every morning at 8 AM Lagos time (WAT / UTC+1).
- *      Checks bills due within 5 days and over-budget categories.
- *      Sends a consolidated email if there is anything to report.
+ * TRIGGERS (registered once via installTriggers()):
+ *   1. Daily    → dailyAlertHandler()  — every day at 8 AM WAT
+ *      Sends bills + budget alert email (sendDailyAlerts)
+ *      Sends savings alert email       (sendSavingsAlerts)
  *
- *   2. Monthly trigger  → monthlyHandler()
- *      Fires at 6 AM on the 1st of each month.
- *      Applies all recurring transactions to the new month.
- *      Resets all bills to unpaid for the new month.
+ *   2. Monthly  → monthlyHandler()     — 1st of each month at 6 AM
+ *      Applies recurring transactions
+ *      Resets all bills to unpaid
  *
  * SETUP:
  *   Run installTriggers() ONCE from the Apps Script editor after deployment.
  *   Run removeTriggers() first if re-installing to avoid duplicate triggers.
- *
- * ⚠ IMPORTANT: Never call installTriggers() without first calling removeTriggers()
- *   if triggers are already installed. Duplicate triggers will fire multiple times.
  */
 
 
@@ -27,32 +25,26 @@
 
 /**
  * installTriggers()
- *
- * Registers both time-based triggers for this script project.
- * Call ONCE from the Apps Script editor during initial setup.
- *
- * Run removeTriggers() first to clear any existing triggers before re-installing.
+ * Registers both time-based triggers. Call ONCE during initial setup.
+ * Run removeTriggers() first to clear any existing triggers.
  */
 function installTriggers() {
-  // Guard: warn if triggers already exist.
   var existing = ScriptApp.getProjectTriggers();
   if (existing.length > 0) {
     Logger.log(
       'Triggers.gs: WARNING — ' + existing.length + ' trigger(s) already exist. ' +
       'Run removeTriggers() first to avoid duplicates.'
     );
-    // Do not abort — the developer may be intentionally adding a second trigger,
-    // though this is rarely the right call. Log the warning and proceed.
   }
 
-  // Trigger 1: Daily alert — every day at 8–9 AM (Apps Script picks the exact minute).
+  // Trigger 1: Daily at 8–9 AM
   ScriptApp.newTrigger('dailyAlertHandler')
     .timeBased()
     .everyDays(1)
     .atHour(8)
     .create();
 
-  // Trigger 2: Monthly handler — 1st of every month at 6–7 AM.
+  // Trigger 2: 1st of every month at 6–7 AM
   ScriptApp.newTrigger('monthlyHandler')
     .timeBased()
     .onMonthDay(1)
@@ -60,40 +52,32 @@ function installTriggers() {
     .create();
 
   Logger.log('Triggers.gs: Installed 2 triggers (dailyAlertHandler, monthlyHandler).');
-  listTriggers(); // Log the full trigger list for confirmation.
+  listTriggers();
 }
 
 /**
  * removeTriggers()
- *
- * Deletes ALL existing triggers for this script project.
- * Call before re-running installTriggers() to prevent duplicates.
+ * Deletes ALL existing triggers. Call before re-running installTriggers().
  */
 function removeTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   var count    = triggers.length;
-
   triggers.forEach(function(trigger) {
     ScriptApp.deleteTrigger(trigger);
   });
-
   Logger.log('Triggers.gs: Removed ' + count + ' trigger(s).');
 }
 
 /**
  * listTriggers()
- *
- * Logs all currently installed triggers to the Apps Script execution log.
- * Useful for verifying setup without opening the Triggers UI.
+ * Logs all currently installed triggers to the execution log.
  */
 function listTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
-
   if (triggers.length === 0) {
     Logger.log('Triggers.gs: No triggers installed.');
     return;
   }
-
   Logger.log('Triggers.gs: ' + triggers.length + ' trigger(s) installed:');
   triggers.forEach(function(trigger, i) {
     Logger.log(
@@ -107,40 +91,48 @@ function listTriggers() {
 
 
 // ─── TRIGGER HANDLERS ────────────────────────────────────────────────────────
-// These are top-level functions registered with ScriptApp.newTrigger() by name.
-// Apps Script calls them directly — they must be at the top level of the project.
 
 /**
  * dailyAlertHandler()
  *
- * Called every morning by the daily time-based trigger.
- * Delegates to Notifications.sendDailyAlerts().
+ * Fires every morning at 8 AM WAT.
+ * Runs two independent alert functions back-to-back.
+ * Each is wrapped in its own try/catch so a failure in one does not prevent
+ * the other from sending.
  *
- * Wrapped in try/catch — a thrown error from a trigger handler causes Google
- * to send its own error notification email, which is noisy. Better to log
- * failures gracefully and let the next day's trigger retry naturally.
+ * Why two separate calls instead of one combined email?
+ *   - Bills/budget alerts are time-sensitive (due dates, over-budget).
+ *   - Savings alerts are motivational / informational.
+ *   - Keeping them separate lets users filter/label them differently in Gmail.
+ *   - A failure in getSavingsAlertsData() won't block the bills email.
  */
 function dailyAlertHandler() {
+  Logger.log('Triggers.gs: dailyAlertHandler() fired at ' + new Date().toISOString());
+
+  // Step 1 — Bills + budget alerts
   try {
-    Logger.log('Triggers.gs: dailyAlertHandler() fired at ' + new Date().toISOString());
     sendDailyAlerts(); // from Notifications.gs
-    Logger.log('Triggers.gs: dailyAlertHandler() completed successfully.');
+    Logger.log('Triggers.gs: sendDailyAlerts() completed.');
   } catch (e) {
-    Logger.log('Triggers.gs: dailyAlertHandler() error — ' + e.message);
-    // Intentionally not re-throwing — see comment above.
+    Logger.log('Triggers.gs: sendDailyAlerts() error — ' + e.message);
   }
+
+  // Step 2 — Savings alerts
+  try {
+    sendSavingsAlerts(); // from Notifications.gs
+    Logger.log('Triggers.gs: sendSavingsAlerts() completed.');
+  } catch (e) {
+    Logger.log('Triggers.gs: sendSavingsAlerts() error — ' + e.message);
+  }
+
+  Logger.log('Triggers.gs: dailyAlertHandler() finished.');
 }
 
 /**
  * monthlyHandler()
  *
- * Called on the 1st of each month by the monthly time-based trigger.
- * Performs two independent tasks:
- *   1. Applies all recurring transactions to the new month.
- *   2. Resets all bills to unpaid for the new month.
- *
- * Each step is wrapped in its own try/catch so a failure in step 1
- * does not prevent step 2 from running.
+ * Fires on the 1st of each month at 6 AM WAT.
+ * Two independent steps — failure in step 1 does not prevent step 2.
  */
 function monthlyHandler() {
   var today    = new Date();
@@ -148,7 +140,7 @@ function monthlyHandler() {
 
   Logger.log('Triggers.gs: monthlyHandler() fired for ' + monthKey);
 
-  // Step 1 — Apply recurring transactions.
+  // Step 1 — Apply recurring transactions
   try {
     var result = applyRecurringToMonth(monthKey); // from Recurring.gs
     Logger.log(
@@ -159,7 +151,7 @@ function monthlyHandler() {
     Logger.log('Triggers.gs: applyRecurringToMonth() error — ' + e.message);
   }
 
-  // Step 2 — Reset bill paid status for the new month.
+  // Step 2 — Reset bill paid status
   try {
     var reset = resetAllBillsPaid(); // from Bills.gs
     Logger.log('Triggers.gs: resetAllBillsPaid() — reset: ' + reset.reset);
@@ -176,8 +168,6 @@ function monthlyHandler() {
 /**
  * _triggerMonthKey(date)
  * Builds the YYYY-MM month key for a given Date object.
- * Kept local to Triggers.gs to avoid depending on any other module's helpers —
- * this file should be as self-contained as possible.
  */
 function _triggerMonthKey(date) {
   var y = date.getFullYear();

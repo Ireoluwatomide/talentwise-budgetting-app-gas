@@ -1,21 +1,26 @@
 /**
  * Transactions.gs — Transaction CRUD
  *
- * PURPOSE:
- *   All server-side logic for reading, adding, and deleting transactions.
- *   Transactions are the core data unit — every income, expense, and savings
- *   deposit is stored as a row in the Transactions sheet.
+ * CHANGE FROM PREVIOUS VERSION:
+ *   The savings auto-credit side-effect has been removed from addTransaction().
+ *   Previously, every savings-type transaction would call
+ *   updateSavingsGoalOnDeposit() to try to match the transaction category
+ *   against a goal name. This caused goal credits to fire even when the user
+ *   was not intentionally topping up a specific goal.
+ *
+ *   All goal crediting now goes through Savings.gs topUpSavingsGoal(), which
+ *   calls addTransaction() internally. addTransaction() is now a pure
+ *   write-to-sheet function with no side effects.
  *
  * SHEET: Transactions
  * COLUMNS: id | month_key | name | amount | type | category | note
  *
- * month_key format: "YYYY-MM" (e.g. "2026-03")
- *   Used to filter transactions to a specific month without full date parsing.
- *
  * CALLED BY:
- *   - Client via google.script.run.<functionName>(args)
- *   - Recurring.gs → addTransaction() when applying recurring items
- *   - Main.gs      → getTransactionsByMonth() + getAllTransactions() in getBootstrapData()
+ *   - Client via google.script.run
+ *   - Savings.gs  → topUpSavingsGoal() (replaces the old side-effect pattern)
+ *   - Recurring.gs → applyRecurringToMonth()
+ *   - Bills.gs    → toggleBillPaid()
+ *   - Main.gs     → getTransactionsByMonth() + getAllTransactions() in getBootstrapData()
  */
 
 
@@ -32,14 +37,10 @@ const VALID_TYPES = ['income', 'expense', 'savings'];
  * Returns all transactions for a given month as an array of objects.
  * Preserves insertion order (sheet row order) — newest-first reversal
  * is handled client-side in renderOverview(), not here.
- *
- * amount is cast to a number — Sheets can return numeric strings
- * depending on cell formatting.
  */
 function getTransactionsByMonth(monthKey) {
   if (!monthKey) throw new Error('Transactions.gs: monthKey is required.');
 
-  // Normalise the incoming monthKey too, in case the caller passes an ISO date.
   var normKey = _normaliseMonthKey(monthKey);
 
   return getUserRowsByFilter('TRANSACTIONS', function(row) {
@@ -63,11 +64,16 @@ function getAllTransactions() {
 /**
  * addTransaction(monthKey, name, amount, type, category, note)
  *
- * Validates inputs, writes a new row, and returns the created transaction object.
+ * Validates inputs and writes a new transaction row.
+ * Returns the created transaction object.
  *
- * SAVINGS SIDE-EFFECT (updated):
- *   Now passes tx.id, monthKey, and note to updateSavingsGoalOnDeposit() so the
- *   SavingsHistory row has a full transaction reference for the history panel.
+ * This function has NO side effects on savings goals. All goal crediting
+ * is handled by Savings.gs topUpSavingsGoal() which calls this function
+ * after performing its own validation and capping logic.
+ *
+ * When called from the Overview tab with type='savings', the client must
+ * pass a goalId and route through topUpSavingsGoal() instead of calling
+ * addTransaction() directly. See Overview.html for the updated flow.
  */
 function addTransaction(monthKey, name, amount, type, category, note) {
   // ── Validation ──────────────────────────────────────────────────────────
@@ -104,19 +110,17 @@ function addTransaction(monthKey, name, amount, type, category, note) {
 
   getUserAppendRow('TRANSACTIONS', tx);
 
-  // ── Side-effect: credit savings goal if applicable ───────────────────────
-  // Now passes tx.id and monthKey so SavingsHistory can reference the transaction.
-  if (normalisedType === 'savings' && typeof updateSavingsGoalOnDeposit === 'function') {
-    try {
-      updateSavingsGoalOnDeposit(tx.category, tx.amount, tx.id, tx.month_key, tx.note);
-    } catch (e) {
-      Logger.log('Transactions.gs: updateSavingsGoalOnDeposit failed (non-fatal): ' + e.message);
-    }
-  }
+  // ── NOTE: No savings side-effect here. ──────────────────────────────────
+  // If type === 'savings', the caller (topUpSavingsGoal) has already
+  // handled goal crediting before calling addTransaction().
 
   return tx;
 }
 
+/**
+ * deleteTransaction(transactionId)
+ * Removes the transaction row matching transactionId.
+ */
 function deleteTransaction(transactionId) {
   if (!transactionId) throw new Error('Transactions.gs: transactionId is required.');
 
@@ -132,6 +136,11 @@ function deleteTransaction(transactionId) {
   return { success: true };
 }
 
+/**
+ * clearMonthTransactions(monthKey)
+ * Deletes all transactions for the given month.
+ * Returns { deleted: N }.
+ */
 function clearMonthTransactions(monthKey) {
   if (!monthKey) throw new Error('Transactions.gs: monthKey is required.');
 
@@ -167,11 +176,19 @@ function clearMonthTransactions(monthKey) {
 
 // ─── AGGREGATIONS ─────────────────────────────────────────────────────────────
 
+/**
+ * getMonthSummary(monthKey)
+ * Returns income / expenses / savings / balance totals for a single month.
+ */
 function getMonthSummary(monthKey) {
   var txs = getTransactionsByMonth(monthKey);
   return _computeSummary(_normaliseMonthKey(monthKey), txs);
 }
 
+/**
+ * getAllMonthSummaries()
+ * Returns summary objects for every month that has transactions, sorted oldest first.
+ */
 function getAllMonthSummaries() {
   var all = getAllTransactions();
 
@@ -189,15 +206,21 @@ function getAllMonthSummaries() {
     });
 }
 
+/**
+ * getCategoryBreakdown(monthKey)
+ *
+ * Returns expense totals grouped by category for the given month,
+ * sorted descending by amount. Used by Goals.gs checkBudgetAlerts().
+ */
 function getCategoryBreakdown(monthKey) {
   var txs = getTransactionsByMonth(monthKey);
 
-  var totals = {};
+  var totals     = {};
   var grandTotal = 0;
 
   txs.forEach(function(tx) {
     if (tx.type !== 'expense') return;
-    var cat = tx.category || 'Other Expense';
+    var cat     = tx.category || 'Other Expense';
     totals[cat] = (totals[cat] || 0) + tx.amount;
     grandTotal  += tx.amount;
   });
@@ -216,15 +239,69 @@ function getCategoryBreakdown(monthKey) {
 }
 
 
-// ─── CSV IMPORT BRIDGE ────────────────────────────────────────────────────────
+// ─── CSV IMPORT ───────────────────────────────────────────────────────────────
 
+/**
+ * importTransactionsFromCSV(csvString, monthKey)
+ *
+ * Parses the CSV string (built by CSV.gs parseCSV) and inserts each valid
+ * row as a transaction. Delegates all parsing and validation to CSV.gs.
+ *
+ * Returns { imported: N, skipped: M, errors: [...] }
+ */
 function importTransactionsFromCSV(csvString, monthKey) {
-  throw new Error('importTransactionsFromCSV: Not yet implemented. Coming in Phase 6.');
+  if (!csvString || !monthKey) {
+    throw new Error('Transactions.gs: csvString and monthKey are both required.');
+  }
+  // Delegate to CSV.gs
+  return _importFromCSV(csvString, monthKey);
+}
+
+// Internal alias called by CSV.gs (avoids circular reference issues)
+function _importFromCSV(csvString, monthKey) {
+  var rows     = parseCSV(csvString);
+  var imported = 0;
+  var skipped  = 0;
+  var errors   = [];
+
+  rows.forEach(function(row, i) {
+    var validation = validateImportRow(row);
+
+    if (!validation.valid) {
+      skipped++;
+      errors.push('Row ' + (i + 2) + ': ' + validation.reason);
+      return;
+    }
+
+    var d = validation.data;
+
+    try {
+      addTransaction(monthKey, d.name, d.amount, d.type, d.category, d.note);
+      imported++;
+    } catch (e) {
+      skipped++;
+      errors.push('Row ' + (i + 2) + ': ' + e.message);
+    }
+  });
+
+  Logger.log(
+    'Transactions.gs: importTransactionsFromCSV(' + monthKey + ') — ' +
+    'imported: ' + imported + ', skipped: ' + skipped
+  );
+
+  return { imported: imported, skipped: skipped, errors: errors };
 }
 
 
 // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
+/**
+ * _normaliseMonthKey(raw)
+ *
+ * Converts any month_key representation to YYYY-MM.
+ * Handles ISO date strings that Google Sheets may produce when reading
+ * a cell that was auto-converted from "2026-03" to a Date object.
+ */
 function _normaliseMonthKey(raw) {
   if (!raw) return '';
 
@@ -235,9 +312,10 @@ function _normaliseMonthKey(raw) {
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
     var d = new Date(str);
     if (!isNaN(d.getTime())) {
+      // Apply WAT (UTC+1) offset to avoid off-by-one on midnight boundaries
       var wat = new Date(d.getTime() + 60 * 60 * 1000);
-      var y = wat.getUTCFullYear();
-      var m = wat.getUTCMonth() + 1;
+      var y   = wat.getUTCFullYear();
+      var m   = wat.getUTCMonth() + 1;
       return y + '-' + (m < 10 ? '0' : '') + m;
     }
   }
@@ -249,6 +327,10 @@ function _normaliseMonthKey(raw) {
   return str;
 }
 
+/**
+ * _castTransaction(row)
+ * Normalises a raw sheet row into a typed transaction object.
+ */
 function _castTransaction(row) {
   return {
     id:        String(row.id        || '').trim(),
@@ -261,6 +343,10 @@ function _castTransaction(row) {
   };
 }
 
+/**
+ * _computeSummary(monthKey, txs)
+ * Aggregates a flat array of transactions into income/expenses/savings/balance totals.
+ */
 function _computeSummary(monthKey, txs) {
   var income   = 0;
   var expenses = 0;

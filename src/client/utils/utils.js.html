@@ -62,6 +62,9 @@
         billAlertDays: 5,       // Configurable alert threshold (days before due)
         savingsGoals:  [],
         debts:         [],
+        debtHistory:       [],
+        debtArchived:      [],
+        debtToIncomeRatio: 0,
         netWorthItems: [],
         recurring:     [],
         isLoading:     false,
@@ -75,6 +78,10 @@
     // Bills overhaul: pick up new bootstrap fields
     if (_boot.billHistory   !== undefined) AppState.billHistory   = _boot.billHistory;
     if (_boot.billAlertDays !== undefined) AppState.billAlertDays = _boot.billAlertDays;
+
+    if (_boot.debtHistory        !== undefined) AppState.debtHistory        = _boot.debtHistory;
+    if (_boot.debtArchived       !== undefined) AppState.debtArchived       = _boot.debtArchived;
+    if (_boot.debtToIncomeRatio  !== undefined) AppState.debtToIncomeRatio  = _boot.debtToIncomeRatio;
 
     // currentMonthKey from bootstrap may need to be split into curYear/curMonth.
     if (_boot.currentMonthKey) {

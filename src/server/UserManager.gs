@@ -25,6 +25,7 @@ var _LOGICAL_NAME_MAP = {
   'SAVINGS_GOALS':   'SavingsGoals',
   'SAVINGS_HISTORY': 'SavingsHistory',
   'DEBTS':           'Debts',
+  'DEBT_HISTORY':    'DebtHistory',
   'NET_WORTH':       'NetWorth',
   'RECURRING':       'Recurring',
   'PREFERENCES':     'Preferences',
@@ -36,6 +37,7 @@ var _LOGICAL_NAME_MAP = {
   'SavingsGoals':    'SavingsGoals',
   'SavingsHistory':  'SavingsHistory',
   'Debts':           'Debts',
+  'DebtHistory':     'DebtHistory',
   'NetWorth':        'NetWorth',
   'Recurring':       'Recurring',
   'Preferences':     'Preferences'

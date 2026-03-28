@@ -160,6 +160,15 @@ function monthlyHandler() {
   }
 
   Logger.log('Triggers.gs: monthlyHandler() completed for ' + monthKey);
+
+  // Step 3 — Auto-apply recurring debt payments
+  try {
+    var debtResult = applyRecurringDebtPayments(monthKey); // from Debt.gs
+    Logger.log('Triggers.gs: applyRecurringDebtPayments(' + monthKey + ') — applied: ' +
+      debtResult.applied + ', skipped: ' + debtResult.skipped);
+  } catch (e) {
+    Logger.log('Triggers.gs: applyRecurringDebtPayments() error — ' + e.message);
+  }
 }
 
 

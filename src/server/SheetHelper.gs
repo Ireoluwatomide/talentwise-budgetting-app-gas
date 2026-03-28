@@ -45,7 +45,8 @@ const SHEET_HEADERS = {
   BillHistory:    ['id', 'bill_id', 'month_key', 'paid_at', 'transaction_id', 'amount'],
   SavingsGoals:   ['id', 'name', 'target_amount', 'saved_amount', 'target_date', 'sort_order'],
   SavingsHistory: ['id', 'goal_id', 'transaction_id', 'month_key', 'amount', 'note', 'recorded_at'],
-  Debts:          ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate'],
+  Debts:          ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate', 'archived', 'recurring_id'],
+  DebtHistory:    ['id', 'debt_id', 'month_key', 'transaction_id', 'amount', 'paid_at'],
   NetWorth:       ['id', 'name', 'type', 'amount'],
   Recurring:      ['id', 'name', 'amount', 'type', 'category'],
   Preferences:    ['key', 'value']

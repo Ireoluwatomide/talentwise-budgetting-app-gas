@@ -112,6 +112,9 @@ function getBootstrapData() {
     savingsGoals:   [],
     savingsHistory: [],      // NEW: contribution history rows
     debts:          [],
+    debtHistory:    [],
+    debtArchived:   [],
+    debtToIncomeRatio: 0,
     netWorthItems:  [],
     recurring:      []
   };
@@ -190,6 +193,34 @@ function getBootstrapData() {
     try { data.savingsHistory = getAllSavingsHistory(); } catch(e) {
       Logger.log('Bootstrap: SavingsHistory — ' + e.message + ' (run initSavingsEnhancements() if sheet is missing)');
       data.savingsHistory = [];
+    }
+  }
+
+  // Debt History
+  if (typeof getAllDebtHistory === 'function') {
+    try { data.debtHistory = getAllDebtHistory(); } catch(e) {
+      Logger.log('Bootstrap: DebtHistory — ' + e.message);
+      data.debtHistory = [];
+    }
+  }
+
+  // Archived Debts
+  if (typeof getArchivedDebts === 'function') {
+    try { data.debtArchived = getArchivedDebts(); } catch(e) {
+      Logger.log('Bootstrap: ArchivedDebts — ' + e.message);
+      data.debtArchived = [];
+    }
+  }
+
+  // Debt-to-income ratio (based on current month income)
+  if (typeof getDebtSummary === 'function') {
+    try {
+      var curMk = data.curYear + '-' +
+        (data.curMonth < 10 ? '0' : '') + data.curMonth;
+      var debtSummary = getDebtSummary(curMk);
+      data.debtToIncomeRatio = debtSummary.debt_to_income_ratio || 0;
+    } catch(e) {
+      Logger.log('Bootstrap: DebtSummary — ' + e.message);
     }
   }
 

@@ -125,6 +125,18 @@ function dailyAlertHandler() {
     Logger.log('Triggers.gs: sendSavingsAlerts() error — ' + e.message);
   }
 
+  // Step 3 — Net Worth alerts
+  try {
+      var nwAlerts = checkNetWorthAlerts(); // from NetWorth.gs
+      if (nwAlerts && nwAlerts.length > 0) {
+        _sendNetWorthAlertEmail(nwAlerts);
+      }
+      Logger.log('Triggers.gs: checkNetWorthAlerts() — ' +
+                 (nwAlerts || []).length + ' alert(s).');
+    } catch (e) {
+      Logger.log('Triggers.gs: checkNetWorthAlerts() error — ' + e.message);
+    }
+
   Logger.log('Triggers.gs: dailyAlertHandler() finished.');
 }
 
@@ -169,6 +181,29 @@ function monthlyHandler() {
   } catch (e) {
     Logger.log('Triggers.gs: applyRecurringDebtPayments() error — ' + e.message);
   }
+
+  // Step 4 — Auto-sync debt balances into Net Worth
+    try {
+      var nwDebtSync = syncDebtsToNetWorth(); // from NetWorth.gs
+      Logger.log(
+        'Triggers.gs: syncDebtsToNetWorth — created: ' + nwDebtSync.created +
+        ', updated: ' + nwDebtSync.updated +
+        ', removed: ' + nwDebtSync.removed
+      );
+    } catch (e) {
+      Logger.log('Triggers.gs: syncDebtsToNetWorth() error — ' + e.message);
+    }
+
+    // Step 5 — Record monthly net worth snapshot (auto)
+    try {
+      var monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+      var snapshotLabel = monthNames[today.getMonth()] + ' ' + today.getFullYear();
+      var snapshot = recordNetWorthSnapshot(snapshotLabel); // from NetWorth.gs
+      Logger.log('Triggers.gs: recordNetWorthSnapshot — NW: ' + snapshot.net_worth);
+    } catch (e) {
+      Logger.log('Triggers.gs: recordNetWorthSnapshot() error — ' + e.message);
+    }
 }
 
 

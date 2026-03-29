@@ -47,13 +47,15 @@ const SHEET_HEADERS = {
   SavingsHistory: ['id', 'goal_id', 'transaction_id', 'month_key', 'amount', 'note', 'recorded_at'],
   Debts:          ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate', 'archived', 'recurring_id'],
   DebtHistory:    ['id', 'debt_id', 'month_key', 'transaction_id', 'amount', 'paid_at'],
-  NetWorth:       ['id', 'name', 'type', 'amount'],
+  NetWorth:       ['id', 'name', 'type', 'amount', 'category', 'last_updated', 'source_id'],
+  NetWorthHistory: ['id', 'snapshot_date', 'label', 'total_assets', 'total_liabilities', 'net_worth'],
   Recurring:      ['id', 'name', 'amount', 'type', 'category'],
   Preferences:    ['key', 'value']
 };
 
 // Columns that must always be stored as plain text strings.
-var STRING_COLUMNS = ['month_key', 'key', 'recorded_at', 'paid_at', 'target_date'];
+var STRING_COLUMNS = ['month_key', 'key', 'recorded_at', 'paid_at', 'target_date',
+                           'last_updated', 'snapshot_date', 'source_id'];
 
 
 // ─── SPREADSHEET ACCESS ───────────────────────────────────────────────────────

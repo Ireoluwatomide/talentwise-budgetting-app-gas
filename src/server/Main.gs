@@ -116,6 +116,9 @@ function getBootstrapData() {
     debtArchived:   [],
     debtToIncomeRatio: 0,
     netWorthItems:  [],
+    netWorthHistory: [],
+    netWorthTarget:  0,
+    netWorthSummary: null,
     recurring:      []
   };
 
@@ -224,8 +227,44 @@ function getBootstrapData() {
     }
   }
 
+  if (typeof syncDebtsToNetWorth === 'function' &&
+      typeof getAllNetWorthItems  === 'function') {
+    try {
+      // AUTO-SYNC: silently update debt liability items before reading
+      // so the client always sees up-to-date debt balances on page load.
+      syncDebtsToNetWorth();
+      data.netWorthItems = getAllNetWorthItems();
+    } catch(e) {
+      Logger.log('Bootstrap: NetWorth/syncDebts — ' + e.message);
+      try { data.netWorthItems = getAllNetWorthItems(); } catch(e2) {}
+    }
+  }
+
+  // Net Worth History (trend chart data)
+  if (typeof getNetWorthHistory === 'function') {
+    try { data.netWorthHistory = getNetWorthHistory(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthHistory — ' + e.message);
+      data.netWorthHistory = [];
+    }
+  }
+
+  // Net Worth Target (user goal)
+  if (typeof getNetWorthTarget === 'function') {
+    try { data.netWorthTarget = getNetWorthTarget(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthTarget — ' + e.message);
+      data.netWorthTarget = 0;
+    }
+  }
+
+  // Net Worth Summary (pre-computed for the client)
+  if (typeof getNetWorthSummary === 'function') {
+    try { data.netWorthSummary = getNetWorthSummary(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthSummary — ' + e.message);
+      data.netWorthSummary = null;
+    }
+  }
+
   if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
-  if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }
   if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '  + e.message); } }
 
   return data;

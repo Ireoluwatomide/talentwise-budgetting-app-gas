@@ -573,3 +573,39 @@ function _wrapEmailHtml(today, bodyContent, styles) {
     '</body></html>'
   );
 }
+
+function _sendNetWorthAlertEmail(alerts) {
+    var email   = getUserEmail();
+    var today   = new Date();
+    var styles  = _emailStyles();
+
+    var rows = alerts.map(function(a) {
+      var badgeSt = a.severity === 'danger'
+        ? 'background:#FCEBEB;color:#791F1F;'
+        : 'background:#FAEEDA;color:#412402;';
+      var badge = a.severity === 'danger' ? 'Action needed' : 'Warning';
+      return (
+        '<div style="' + styles.row + '">' +
+          '<div>' +
+            '<div style="' + styles.name + '">' + _escHtml(a.title) + '</div>' +
+            '<div style="' + styles.sub  + '">' + _escHtml(a.sub)   + '</div>' +
+          '</div>' +
+          '<div style="font-size:10px;font-weight:600;padding:2px 7px;' +
+          'border-radius:4px;' + badgeSt + '">' + badge + '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    var body = '<div style="margin-bottom:24px;">' +
+      '<div style="' + styles.secHdr + '">Net Worth Alerts</div>' +
+      rows + '</div>';
+
+    MailApp.sendEmail({
+      to:       email,
+      subject:  'Budget Tracker — Net Worth Alert: ' +
+                alerts.map(function(a){ return a.title; }).join(', '),
+      body:     'Net Worth Alerts:\n' +
+                alerts.map(function(a){ return a.title + ': ' + a.sub; }).join('\n'),
+      htmlBody: _wrapEmailHtml(today, body, styles)
+    });
+  }

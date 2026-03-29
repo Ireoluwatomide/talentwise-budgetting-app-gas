@@ -27,6 +27,7 @@ var _LOGICAL_NAME_MAP = {
   'DEBTS':           'Debts',
   'DEBT_HISTORY':    'DebtHistory',
   'NET_WORTH':       'NetWorth',
+  'NET_WORTH_HISTORY': 'NetWorthHistory',
   'RECURRING':       'Recurring',
   'PREFERENCES':     'Preferences',
   // PascalCase (for getUserSheetName direct calls)
@@ -39,6 +40,7 @@ var _LOGICAL_NAME_MAP = {
   'Debts':           'Debts',
   'DebtHistory':     'DebtHistory',
   'NetWorth':        'NetWorth',
+  'NetWorthHistory':   'NetWorthHistory',
   'Recurring':       'Recurring',
   'Preferences':     'Preferences'
 };

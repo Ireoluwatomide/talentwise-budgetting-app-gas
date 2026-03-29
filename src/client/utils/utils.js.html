@@ -66,6 +66,9 @@
         debtArchived:      [],
         debtToIncomeRatio: 0,
         netWorthItems: [],
+        netWorthHistory: [],
+        netWorthTarget:  0,
+        netWorthSummary: null,
         recurring:     [],
         isLoading:     false,
         activeTab:     'overview'
@@ -82,6 +85,10 @@
     if (_boot.debtHistory        !== undefined) AppState.debtHistory        = _boot.debtHistory;
     if (_boot.debtArchived       !== undefined) AppState.debtArchived       = _boot.debtArchived;
     if (_boot.debtToIncomeRatio  !== undefined) AppState.debtToIncomeRatio  = _boot.debtToIncomeRatio;
+
+    if (_boot.netWorthHistory !== undefined) AppState.netWorthHistory = _boot.netWorthHistory;
+    if (_boot.netWorthTarget  !== undefined) AppState.netWorthTarget  = _boot.netWorthTarget;
+    if (_boot.netWorthSummary !== undefined) AppState.netWorthSummary = _boot.netWorthSummary;
 
     // currentMonthKey from bootstrap may need to be split into curYear/curMonth.
     if (_boot.currentMonthKey) {

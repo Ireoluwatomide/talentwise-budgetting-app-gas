@@ -1,13 +1,10 @@
 /**
  * UserManager.gs — Multi-User Data Layer
  *
- * FIX: _provisionUserSheets() now calls _applyStringFormats() after creating
- * each user sheet. Without this, user sheets had no @STRING@ format on the
- * month_key column, causing Sheets to auto-convert "2026-03" to a Date cell
- * on every appendRow() call — which manifested as transactions appearing in
- * the wrong month after a page refresh.
- *
- * All other logic is unchanged from the original.
+ * CHANGES (recurring enhancement):
+ *   - Added RECURRING_HISTORY to _LOGICAL_NAME_MAP and _provisionUserSheets
+ *   - _seedDefaultPreferences() unchanged
+ *   - All other logic unchanged from previous version
  */
 
 
@@ -18,31 +15,33 @@ var USERS_HEADERS    = ['user_key', 'email', 'display_name', 'created_at', 'last
 
 var _LOGICAL_NAME_MAP = {
   // Uppercase logical names (used by .gs files)
-  'TRANSACTIONS':    'Transactions',
-  'GOALS':           'Goals',
-  'BILLS':           'Bills',
-  'BILL_HISTORY':    'BillHistory',
-  'SAVINGS_GOALS':   'SavingsGoals',
-  'SAVINGS_HISTORY': 'SavingsHistory',
-  'DEBTS':           'Debts',
-  'DEBT_HISTORY':    'DebtHistory',
-  'NET_WORTH':       'NetWorth',
+  'TRANSACTIONS':      'Transactions',
+  'GOALS':             'Goals',
+  'BILLS':             'Bills',
+  'BILL_HISTORY':      'BillHistory',
+  'SAVINGS_GOALS':     'SavingsGoals',
+  'SAVINGS_HISTORY':   'SavingsHistory',
+  'DEBTS':             'Debts',
+  'DEBT_HISTORY':      'DebtHistory',
+  'NET_WORTH':         'NetWorth',
   'NET_WORTH_HISTORY': 'NetWorthHistory',
-  'RECURRING':       'Recurring',
-  'PREFERENCES':     'Preferences',
+  'RECURRING':         'Recurring',
+  'RECURRING_HISTORY': 'RecurringHistory',
+  'PREFERENCES':       'Preferences',
   // PascalCase (for getUserSheetName direct calls)
-  'Transactions':    'Transactions',
-  'Goals':           'Goals',
-  'Bills':           'Bills',
-  'BillHistory':     'BillHistory',
-  'SavingsGoals':    'SavingsGoals',
-  'SavingsHistory':  'SavingsHistory',
-  'Debts':           'Debts',
-  'DebtHistory':     'DebtHistory',
-  'NetWorth':        'NetWorth',
+  'Transactions':      'Transactions',
+  'Goals':             'Goals',
+  'Bills':             'Bills',
+  'BillHistory':       'BillHistory',
+  'SavingsGoals':      'SavingsGoals',
+  'SavingsHistory':    'SavingsHistory',
+  'Debts':             'Debts',
+  'DebtHistory':       'DebtHistory',
+  'NetWorth':          'NetWorth',
   'NetWorthHistory':   'NetWorthHistory',
-  'Recurring':       'Recurring',
-  'Preferences':     'Preferences'
+  'Recurring':         'Recurring',
+  'RecurringHistory':  'RecurringHistory',
+  'Preferences':       'Preferences'
 };
 
 
@@ -112,9 +111,8 @@ function getOrCreateUser(email) {
 /**
  * _provisionUserSheets(userKey)
  *
- * Creates all data sheets for a new user (all keys in SHEET_HEADERS).
- * Applies @STRING@ format to string columns immediately after creation.
- * Now includes SavingsHistory automatically.
+ * Creates all data sheets for a new user.
+ * Now includes RecurringHistory automatically.
  */
 function _provisionUserSheets(userKey) {
   var ss = getSpreadsheet();
@@ -144,7 +142,6 @@ function _provisionUserSheets(userKey) {
 /**
  * _seedDefaultPreferences(userKey)
  * Writes the default preference rows into the new user's Preferences sheet.
- * Includes bills_alert_days default of 5.
  */
 function _seedDefaultPreferences(userKey) {
   var prefsSheetName = userKey + ':Preferences';
@@ -263,15 +260,10 @@ function fixExistingUserSheets() {
 
   sheets.forEach(function(sheet) {
     var name = sheet.getName();
-
-    // Only process user data sheets (format: "xxxxxx:SheetName")
     if (!name.match(/^[a-z0-9]{6}:/)) return;
 
-    // Extract the logical sheet name after the colon.
     var logicalName = name.split(':').slice(1).join(':');
     var headers     = SHEET_HEADERS[logicalName];
-
-    // Skip sheets we don't recognise (e.g. Users registry).
     if (!headers) return;
 
     _applyStringFormats(sheet, headers);

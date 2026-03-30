@@ -706,15 +706,20 @@
             var color  = tx.type === 'income'  ? 'var(--acc)'
                 : tx.type === 'savings' ? 'var(--blue)'
                     :                         'var(--red)';
-            var tag    = tx.note
-                ? '<span class="tx-tag">' + _esc(tx.note) + '</span>' : '';
+            // Suppress raw 'auto' note — the AUTO badge replaces it visually
+            var noteText = (tx.note && tx.note !== 'auto') ? tx.note : '';
+            var tag      = noteText ? '<span class="tx-tag">' + _esc(noteText) + '</span>' : '';
+
+            // AUTO badge for recurring-applied transactions
+            var autoBadge = (typeof getAutoTransactionBadge === 'function')
+                ? getAutoTransactionBadge(tx) : '';
 
             html += (
                 '<div class="tx-row">' +
                 '<div class="tx-left">' +
                 '<span class="tx-dot" style="background:' + dot + ';"></span>' +
                 '<div class="tx-meta">' +
-                '<div class="tx-name">' + _esc(tx.name) + tag + '</div>' +
+                '<div class="tx-name">' + _esc(tx.name) + autoBadge + tag + '</div>' +
                 '<div class="tx-cat">'  + _esc(tx.category) + '</div>' +
                 '</div>' +
                 '</div>' +

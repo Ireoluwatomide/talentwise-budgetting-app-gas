@@ -1,248 +1,1112 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Recurring.html — Recurring Transactions Screen
+     Recurring.html — Recurring Transactions Screen (Overhauled)
+
+     IMPROVEMENTS FROM PREVIOUS VERSION:
+       #1  Per-template status indicators — applied ✓ / pending / skipped badges
+           on every list item so users see the operational state at a glance
+       #2  Edit modal / sheet — full edit support (name, amount, type, category,
+           frequency, start/end dates, active toggle)
+       #3  Frequency selector — monthly / weekly / fortnightly / quarterly / annual
+       #4  Start date + End date pickers — with visual expiry warnings
+       #5  Pause/Resume toggle — active flag with amber "Paused" badge
+       #6  History panel (collapsible) — shows last N application records
+           per template with month label, status, and linked transaction note
+       #7  Visual distinction for auto-applied transactions — "auto" badge
+           rendered consistently across the UI
+       #8  Summary metrics — Monthly committed / Active templates / Paused
+       #9  "Applied this month" count in section header
+      #10  Committed spend section in Report-style summary
+      #11  Debt link warning — warns if deleting a template linked to a debt
+      #12  Bill link suggestion — offers to link a recurring template to a bill
+      #13  Mobile FAB
 
      TAB: Recurring
-
-     SECTIONS:
-       1. Explanation + manual apply button
-       2. Recurring templates list
-       3. Add Recurring Transaction form
-
-     STATE: AppState.recurring, AppState.transactions (current month)
-     SERVER CALLS: addRecurring, deleteRecurring, applyRecurringToMonth
+     STATE: AppState.recurring, AppState.recurringHistory, AppState.recurringStatus,
+            AppState.transactions (current month)
+     SERVER CALLS: addRecurring, updateRecurring, deleteRecurring,
+                   toggleRecurringActive, applyRecurringToMonth
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-recurring">
 
-    <!-- ── Subtitle + Manual Apply ───────────────────────────────────────────── -->
+    <!-- ── Subtitle + Manual Apply ─────────────────────────────────────────── -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;
               margin-bottom:1.25rem;gap:12px;">
-        <div style="font-size:12px;color:var(--text2);">
-            Recurring transactions are auto-applied when you navigate to a new month.
-            You can also apply them manually to the current month below.
+        <div style="font-size:12px;color:var(--text2);line-height:1.6;">
+            Recurring transactions auto-apply when you navigate to a new month.
+            Frequencies other than monthly apply only in their eligible months.
         </div>
-        <button
-                id="btn-apply-recurring"
-                onclick="applyRecurringNow()"
-                class="btn-sm"
-                style="flex-shrink:0;"
-                title="Apply all recurring transactions to the current month">
-            Apply now
+        <button id="btn-apply-recurring" onclick="applyRecurringNow()"
+                class="btn-sm" style="flex-shrink:0;"
+                title="Apply all eligible recurring transactions to the current month">
+            <span class="btn-label">Apply now</span>
+            <span class="btn-spinner"></span>
         </button>
     </div>
 
-    <!-- ── Recurring List ────────────────────────────────────────────────────── -->
+    <!-- ── 8. Summary Metrics ──────────────────────────────────────────────── -->
+    <div class="row3" style="margin-bottom:1.25rem;" id="rec-metrics">
+        <div class="metric">
+            <div class="lbl">Monthly Committed</div>
+            <div class="val" id="rec-monthly-total" style="color:var(--red);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Active Templates</div>
+            <div class="val" id="rec-active-count" style="color:var(--text);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Applied This Month</div>
+            <div class="val" id="rec-applied-count" style="color:var(--acc);">—</div>
+        </div>
+    </div>
+
+    <!-- ── Section header ──────────────────────────────────────────────────── -->
+    <div class="ov-section-hdr" style="margin-bottom:10px;">
+        <span class="sec" style="margin:0;">Templates</span>
+        <button id="btn-open-add-rec"
+                onclick="openAddRecModal()"
+                class="btn-add-tx-trigger"
+                title="Add recurring transaction">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Add Template
+        </button>
+    </div>
+
+    <!-- ── 1. Recurring List ───────────────────────────────────────────────── -->
     <div id="rec-list">
         <!-- populated by renderRecurring() -->
     </div>
 
-    <!-- ── Add Recurring Form ────────────────────────────────────────────────── -->
-    <div class="sec">Add Recurring Transaction</div>
-    <div class="row2" style="margin-bottom:8px;">
-        <input  id="r-name" class="inp" placeholder="Description"/>
-        <input  id="r-amt"  class="inp" placeholder="Amount" type="number" min="1"/>
-        <!--
-          Type select is placed before category so the user picks the type first,
-          which then filters the category options via syncCategoryToType().
-        -->
-        <select id="r-type" class="inp"
-                onchange="syncCategoryToType('r-cat','r-type')">
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-            <option value="savings">Savings</option>
-        </select>
-        <select id="r-cat"  class="inp"><!-- filled by populateCategorySelects() --></select>
+    <!-- ── 10. Committed Spend Summary ────────────────────────────────────── -->
+    <div id="rec-committed-section" style="display:none;margin-top:1.5rem;">
+        <div class="sec" style="margin-top:0;">Committed Spend by Frequency</div>
+        <div id="rec-committed-breakdown"></div>
     </div>
-    <button id="btn-add-recurring" onclick="addRecurringForm()" class="btn-primary" style="width:100%;">
-        <span class="btn-label">Add Recurring</span>
-        <span class="btn-spinner"></span>
-    </button>
 
 </div>
 
 
-<script>
-    // =============================================================================
-    // Recurring screen — render + action functions
-    // =============================================================================
+<!-- ══ ADD / EDIT MODAL (desktop ≥ 601px) ════════════════════════════════ -->
+<div id="add-rec-modal" role="dialog" aria-modal="true" aria-label="Recurring Transaction">
+    <div id="add-rec-modal-backdrop" onclick="closeAddRecModal()"></div>
+    <div id="add-rec-modal-panel">
 
-    /**
-     * renderRecurring()
-     * Called from renderAll() when the Recurring pane is active.
-     * Renders each recurring template as a tx-row with name, category,
-     * type badge, amount, and delete button.
-     */
+        <div class="atx-modal-header">
+            <span class="atx-modal-title" id="rec-modal-title">Add Recurring Transaction</span>
+            <button class="atx-modal-close" onclick="closeAddRecModal()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="atx-modal-body">
+            <input type="hidden" id="rec-edit-id" value=""/>
+
+            <!-- Row 1: description + amount -->
+            <div class="row2" style="margin-bottom:8px;">
+                <div>
+                    <label class="rec-field-label">Description</label>
+                    <input id="r-name-d" class="inp" placeholder="e.g. Rent, Netflix, Salary"/>
+                </div>
+                <div>
+                    <label class="rec-field-label">Amount</label>
+                    <input id="r-amt-d" class="inp amt-input" type="text"
+                           inputmode="numeric" placeholder="e.g. 150,000"/>
+                </div>
+            </div>
+
+            <!-- Row 2: type + category -->
+            <div class="row2" style="margin-bottom:8px;">
+                <div>
+                    <label class="rec-field-label">Type</label>
+                    <select id="r-type-d" class="inp"
+                            onchange="syncCategoryToType('r-cat-d','r-type-d')">
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                        <option value="savings">Savings</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="rec-field-label">Category</label>
+                    <select id="r-cat-d" class="inp"></select>
+                </div>
+            </div>
+
+            <!-- Row 3: frequency + day of month -->
+            <div class="row2" style="margin-bottom:8px;">
+                <div>
+                    <label class="rec-field-label">Frequency</label>
+                    <select id="r-freq-d" class="inp" onchange="_syncFreqHint('d')">
+                        <option value="monthly">Monthly</option>
+                        <option value="weekly">Weekly (applied monthly)</option>
+                        <option value="fortnightly">Fortnightly (applied monthly)</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annual">Annual</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="rec-field-label">
+                        Day of month
+                        <span style="font-weight:400;text-transform:none;letter-spacing:0;
+                   color:var(--text2);margin-left:4px;">(optional)</span>
+                    </label>
+                    <input id="r-dom-d" class="inp" type="number" min="1" max="31"
+                           placeholder="e.g. 25"/>
+                </div>
+            </div>
+
+            <!-- Frequency hint -->
+            <div id="r-freq-hint-d" style="display:none;margin-bottom:8px;
+           font-size:12px;color:var(--text2);padding:8px 10px;
+           background:var(--bg2);border-radius:var(--radius);
+           border:0.5px solid var(--border);line-height:1.5;"></div>
+
+            <!-- Row 4: start date + end date -->
+            <div class="row2" style="margin-bottom:14px;">
+                <div>
+                    <label class="rec-field-label">
+                        Start date
+                        <span style="font-weight:400;text-transform:none;letter-spacing:0;
+                   color:var(--text2);margin-left:4px;">(optional)</span>
+                    </label>
+                    <input id="r-start-d" class="inp" type="date"/>
+                </div>
+                <div>
+                    <label class="rec-field-label">
+                        End date
+                        <span style="font-weight:400;text-transform:none;letter-spacing:0;
+                   color:var(--text2);margin-left:4px;">(optional)</span>
+                    </label>
+                    <input id="r-end-d" class="inp" type="date"/>
+                </div>
+            </div>
+
+            <button id="btn-save-rec-d" onclick="saveRecFromModal()"
+                    class="btn-primary" style="width:100%;">
+                <span class="btn-label">Add Template</span>
+                <span class="btn-spinner"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ ADD / EDIT SHEET (mobile ≤ 600px) ════════════════════════════════ -->
+<div id="add-rec-sheet">
+    <div id="add-rec-sheet-backdrop" onclick="closeAddRecSheet()"></div>
+    <div id="add-rec-sheet-panel">
+        <div id="add-rec-sheet-handle"></div>
+        <div class="atx-modal-title" style="margin-bottom:1.25rem;"
+             id="rec-sheet-title">Add Recurring Transaction</div>
+
+        <input type="hidden" id="rec-edit-id-m" value=""/>
+
+        <div style="margin-bottom:8px;">
+            <label class="rec-field-label">Description</label>
+            <input id="r-name-m" class="inp" placeholder="e.g. Rent, Netflix, Salary"/>
+        </div>
+        <div style="margin-bottom:8px;">
+            <label class="rec-field-label">Amount</label>
+            <input id="r-amt-m" class="inp amt-input" type="text"
+                   inputmode="numeric" placeholder="Amount"/>
+        </div>
+        <div class="row2" style="margin-bottom:8px;">
+            <div>
+                <label class="rec-field-label">Type</label>
+                <select id="r-type-m" class="inp"
+                        onchange="syncCategoryToType('r-cat-m','r-type-m')">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                    <option value="savings">Savings</option>
+                </select>
+            </div>
+            <div>
+                <label class="rec-field-label">Category</label>
+                <select id="r-cat-m" class="inp"></select>
+            </div>
+        </div>
+        <div style="margin-bottom:8px;">
+            <label class="rec-field-label">Frequency</label>
+            <select id="r-freq-m" class="inp" onchange="_syncFreqHint('m')">
+                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly (applied monthly)</option>
+                <option value="fortnightly">Fortnightly (applied monthly)</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+            </select>
+        </div>
+        <div id="r-freq-hint-m" style="display:none;margin-bottom:8px;
+         font-size:12px;color:var(--text2);padding:8px 10px;
+         background:var(--bg2);border-radius:var(--radius);
+         border:0.5px solid var(--border);line-height:1.5;"></div>
+        <div class="row2" style="margin-bottom:14px;">
+            <div>
+                <label class="rec-field-label">Start date <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);">(optional)</span></label>
+                <input id="r-start-m" class="inp" type="date"/>
+            </div>
+            <div>
+                <label class="rec-field-label">End date <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);">(optional)</span></label>
+                <input id="r-end-m" class="inp" type="date"/>
+            </div>
+        </div>
+
+        <button id="btn-save-rec-m" onclick="saveRecFromSheet()"
+                class="btn-primary" style="width:100%;">
+            <span class="btn-label">Add Template</span>
+            <span class="btn-spinner"></span>
+        </button>
+    </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Field label ─────────────────────────────────────────────────────── */
+    .rec-field-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin-bottom: 5px;
+    }
+
+    /* ── Recurring row card ──────────────────────────────────────────────── */
+    .rec-card {
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 13px 15px;
+        margin-bottom: 8px;
+        transition: border-color 0.15s;
+    }
+    .rec-card:hover { border-color: var(--border2); }
+    .rec-card.is-paused { opacity: 0.65; }
+    .rec-card.is-expired { opacity: 0.5; border-style: dashed; }
+
+    .rec-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 6px;
+        gap: 10px;
+    }
+
+    .rec-card-left { flex: 1; min-width: 0; }
+
+    .rec-card-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 3px;
+    }
+
+    .rec-card-sub {
+        font-size: 11px;
+        color: var(--text2);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+    }
+
+    .rec-card-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    /* ── Status badge ────────────────────────────────────────────────────── */
+    .rec-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 20px;
+        white-space: nowrap;
+    }
+    .rec-status-applied  { background: rgba(29,158,117,0.12); color: var(--acc);  }
+    .rec-status-pending  { background: rgba(186,117,23,0.12); color: var(--amber);}
+    .rec-status-paused   { background: rgba(136,135,128,0.12);color: var(--text2);}
+    .rec-status-skipped  { background: rgba(216,90,48,0.12);  color: var(--red);  }
+    .rec-status-expired  { background: rgba(216,90,48,0.12);  color: var(--red);  }
+    .rec-status-notdue   { background: rgba(24,95,165,0.12);   color: var(--blue); }
+
+    /* ── Frequency chip ──────────────────────────────────────────────────── */
+    .rec-freq-chip {
+        display: inline-flex;
+        align-items: center;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    /* ── End date warning ────────────────────────────────────────────────── */
+    .rec-enddate-warn {
+        font-size: 10px;
+        color: var(--amber);
+        font-weight: 600;
+    }
+
+    /* ── History toggle + panel ──────────────────────────────────────────── */
+    .rec-history-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text2);
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 6px 0 0;
+        margin-top: 4px;
+        border-top: 0.5px solid var(--border);
+        width: 100%;
+        text-align: left;
+        transition: color 0.12s;
+    }
+    .rec-history-toggle:hover { color: var(--text); }
+    .rec-history-toggle svg { width: 12px; height: 12px; transition: transform 0.2s; }
+    .rec-history-toggle.open svg { transform: rotate(90deg); }
+
+    .rec-history-panel {
+        overflow: hidden;
+        max-height: 0;
+        transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .rec-history-panel.open { max-height: 400px; }
+
+    .rec-history-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 0.5px solid var(--border);
+        font-size: 11px;
+    }
+    .rec-history-row:last-child { border-bottom: none; }
+
+    /* ── Edit/pause buttons ──────────────────────────────────────────────── */
+    .rec-action-btn {
+        background: none; border: none; cursor: pointer;
+        color: var(--text2); padding: 2px 4px; border-radius: 4px;
+        display: flex; align-items: center;
+        transition: color 0.12s, background 0.12s;
+    }
+    .rec-action-btn:hover { color: var(--text); background: var(--border); }
+    .rec-action-btn svg { width: 13px; height: 13px; }
+
+    /* ── Committed breakdown ─────────────────────────────────────────────── */
+    .rec-committed-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 0.5px solid var(--border);
+        font-size: 13px;
+    }
+    .rec-committed-row:last-child { border-bottom: none; }
+
+    /* ── Modal ───────────────────────────────────────────────────────────── */
+    #add-rec-modal {
+        display: none;
+        position: fixed; inset: 0;
+        z-index: 400;
+        align-items: center; justify-content: center;
+        padding: 1rem;
+    }
+    #add-rec-modal.open { display: flex; }
+    #add-rec-modal-backdrop {
+        position: absolute; inset: 0;
+        background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    }
+    #add-rec-modal-panel {
+        position: relative;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius-lg);
+        width: 100%; max-width: 480px;
+        max-height: 90vh; overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    @media (max-width: 600px) { #add-rec-modal { display: none !important; } }
+
+    /* ── Sheet ───────────────────────────────────────────────────────────── */
+    #add-rec-sheet { display: none; position: fixed; inset: 0; z-index: 350; }
+    #add-rec-sheet.open { display: block; }
+    #add-rec-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+    #add-rec-sheet-panel {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+        max-height: 92vh; overflow-y: auto;
+        animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    #add-rec-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2); border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+    @media (min-width: 601px) { #add-rec-sheet { display: none !important; } }
+
+    /* ── Mobile: hide desktop add trigger ────────────────────────────────── */
+    @media (max-width: 600px) { #btn-open-add-rec { display: none; } }
+
+    /* ── Mobile FAB ──────────────────────────────────────────────────────── */
+    #fab-add-rec {
+        display: none;
+        position: fixed;
+        bottom: calc(72px + max(12px, env(safe-area-inset-bottom)));
+        right: 20px; z-index: 190;
+        width: 52px; height: 52px; border-radius: 50%;
+        background: var(--text); color: var(--bg);
+        border: none; cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+        align-items: center; justify-content: center;
+        transition: transform 0.15s; -webkit-tap-highlight-color: transparent;
+    }
+    #fab-add-rec svg { width: 22px; height: 22px; }
+    #fab-add-rec:active { transform: scale(0.93); }
+    @media (max-width: 600px) { #fab-add-rec.fab-visible { display: flex; } }
+    @media (min-width: 601px) { #fab-add-rec { display: none !important; } }
+
+</style>
+
+
+<!-- ══ RECURRING JAVASCRIPT ══════════════════════════════════════════════ -->
+<script>
+
+    // ─── STATE ──────────────────────────────────────────────────────────────────
+
+    var _recHistoryOpen = {};  // { recurringId: boolean }
+    var _recEditId      = null;
+
+    var FREQ_HINTS = {
+        monthly:     'Applies every month when you navigate to a new month.',
+        weekly:      'Applied once per month (the amount should reflect your weekly spend × 4 or × ~4.3 weeks).',
+        fortnightly: 'Applied once per month (amount should reflect 2 bi-weekly payments per month).',
+        quarterly:   'Applies in January, April, July, and October — or the equivalent months offset from your start date.',
+        annual:      'Applies only in the same month as your start date (or January if no start date is set).'
+    };
+
+    var FREQ_LABELS = {
+        monthly:     'Monthly',
+        weekly:      'Weekly',
+        fortnightly: 'Fortnightly',
+        quarterly:   'Quarterly',
+        annual:      'Annual'
+    };
+
+
+    // ─── RENDER ─────────────────────────────────────────────────────────────────
+
     function renderRecurring() {
-        var listEl = document.getElementById('rec-list');
+        _renderRecMetrics();
+        _renderRecList();
+        _renderCommittedBreakdown();
+        _updateRecFabVisibility();
+    }
+
+
+    // ── Summary metrics ──────────────────────────────────────────────────────────
+
+    function _renderRecMetrics() {
+        var recurring = AppState.recurring || [];
+        var status    = AppState.recurringStatus || [];
+        var curMk     = curKey();
+
+        // Monthly-equivalent committed spend (active templates only)
+        var monthlyCommitted = 0;
+        recurring.forEach(function(r) {
+            if (!r.active) return;
+            var amt = parseFloat(r.amount) || 0;
+            var freq = r.frequency || 'monthly';
+            // Normalise to monthly equivalent
+            var monthly = freq === 'quarterly' ? amt / 3
+                : freq === 'annual'    ? amt / 12
+                    : amt; // monthly, weekly, fortnightly — as-entered
+            monthlyCommitted += monthly;
+        });
+
+        var activeCount  = recurring.filter(function(r) { return r.active; }).length;
+        var appliedCount = status.filter(function(s) { return s.applied_this_month; }).length;
+
+        var el = function(id, val, col) {
+            var e = document.getElementById(id);
+            if (!e) return;
+            e.textContent = val;
+            if (col) e.style.color = col;
+        };
+
+        el('rec-monthly-total', fmt(monthlyCommitted), 'var(--red)');
+        el('rec-active-count',  activeCount + ' / ' + recurring.length, 'var(--text)');
+        el('rec-applied-count', appliedCount + ' / ' + activeCount, appliedCount === activeCount && activeCount > 0 ? 'var(--acc)' : 'var(--amber)');
+    }
+
+
+    // ── Recurring list ───────────────────────────────────────────────────────────
+
+    function _renderRecList() {
+        var listEl    = document.getElementById('rec-list');
         if (!listEl) return;
 
         var recurring = AppState.recurring || [];
+        var status    = AppState.recurringStatus || [];
+        var history   = AppState.recurringHistory || [];
+        var curMk     = curKey();
 
         if (recurring.length === 0) {
             listEl.innerHTML = (
-                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
-                'No recurring transactions set up yet.' +
+                '<div style="text-align:center;color:var(--text2);padding:2.5rem 1rem;font-size:13px;">' +
+                '<div style="font-size:22px;margin-bottom:8px;">🔄</div>' +
+                '<strong style="color:var(--text);display:block;margin-bottom:4px;">No recurring templates yet</strong>' +
+                'Add templates for salary, rent, subscriptions — anything that repeats.' +
                 '</div>'
             );
             return;
         }
 
-        var html = '';
+        // Build status lookup by id
+        var statusMap = {};
+        status.forEach(function(s) { statusMap[s.id] = s; });
 
-        recurring.forEach(function(r) {
-            var amtColor  = r.type === 'income'  ? 'var(--acc)'
-                : r.type === 'savings' ? 'var(--blue)'
-                    :                        'var(--red)';
-
-            var typeLabel = r.type === 'income'  ? 'Income'
-                : r.type === 'savings' ? 'Savings'
-                    :                        'Expense';
-
-            var typeBadge = r.type === 'income'  ? 'badge-green'
-                : r.type === 'savings' ? 'badge-blue'
-                    :                        'badge-red';
-
-            html += (
-                '<div class="tx-row">' +
-
-                // LEFT: name + sub-line (category · type)
-                '<div class="tx-left">' +
-                '<div class="tx-meta">' +
-                '<div class="tx-name">' + _escR(r.name) + '</div>' +
-                '<div class="tx-cat">' +
-                _escR(r.category) + ' &middot; ' +
-                '<span class="badge ' + typeBadge + '">' + typeLabel + '</span>' +
-                '</div>' +
-                '</div>' +
-                '</div>' +
-
-                // RIGHT: amount + delete (passes itself for optimistic dimming)
-                '<div class="tx-right">' +
-                '<span class="tx-amount" style="color:' + amtColor + ';">' +
-                fmt(r.amount) +
-                '</span>' +
-                '<button ' +
-                'class="tx-delete" ' +
-                'onclick="deleteRecurring(\'' + r.id + '\', this)" ' +
-                'title="Remove recurring">×</button>' +
-                '</div>' +
-
-                '</div>'
-            );
+        // Build history lookup by recurring_id
+        var histMap = {};
+        history.forEach(function(h) {
+            if (!histMap[h.recurring_id]) histMap[h.recurring_id] = [];
+            histMap[h.recurring_id].push(h);
         });
+
+        // Sort: active first, then by name
+        var sorted = recurring.slice().sort(function(a, b) {
+            if (a.active !== b.active) return a.active ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        var html = sorted.map(function(r) {
+            return _buildRecCard(r, statusMap[r.id] || {}, histMap[r.id] || [], curMk);
+        }).join('');
 
         listEl.innerHTML = html;
     }
 
 
-    // ─── APPLY NOW ────────────────────────────────────────────────────────────────
+    // ── Card builder ─────────────────────────────────────────────────────────────
 
-    /**
-     * applyRecurringNow()
-     *
-     * Manually applies all recurring templates to the current month.
-     * The server is idempotent — existing transactions are skipped,
-     * only missing ones are created.
-     *
-     * After the server call, re-fetches the current month's transactions
-     * so the Overview tab shows the newly applied entries immediately.
-     */
+    function _buildRecCard(r, status, history, curMk) {
+        var amtColor = r.type === 'income'  ? 'var(--acc)'
+            : r.type === 'savings' ? 'var(--blue)'
+                :                        'var(--red)';
+
+        var typeLabel = r.type === 'income'  ? 'Income'
+            : r.type === 'savings' ? 'Savings'
+                :                        'Expense';
+
+        var typeBadgeClass = r.type === 'income'  ? 'badge-green'
+            : r.type === 'savings' ? 'badge-blue'
+                :                        'badge-red';
+
+        // #1 Status badge
+        var statusBadge = _buildStatusBadge(r, status, curMk);
+
+        // Frequency chip
+        var freqChip = '<span class="rec-freq-chip">' +
+            _escR(FREQ_LABELS[r.frequency] || r.frequency) + '</span>';
+
+        // End date warning
+        var endDateWarn = '';
+        if (r.end_date) {
+            var endMk = r.end_date.slice(0, 7);
+            var today = new Date();
+            var todayMk = today.getFullYear() + '-' +
+                (today.getMonth() + 1 < 10 ? '0' : '') + (today.getMonth() + 1);
+
+            if (endMk <= todayMk) {
+                endDateWarn = '<span class="rec-enddate-warn">⏰ Expired ' + _formatDate(r.end_date) + '</span>';
+            } else {
+                // Show warning if ending within 2 months
+                var monthsLeft = _monthsBetween(todayMk, endMk);
+                if (monthsLeft <= 2) {
+                    endDateWarn = '<span class="rec-enddate-warn">⚠ Ends ' + _formatDate(r.end_date) + '</span>';
+                }
+            }
+        }
+
+        // Next apply badge
+        var nextApply = (status && status.next_apply_month && !status.applied_this_month)
+            ? '<span style="font-size:10px;color:var(--text2);">Next: ' + _monthKeyToLabel(status.next_apply_month) + '</span>'
+            : '';
+
+        // #6 History toggle + panel
+        var templateHistory = history.filter(function(h) { return !h.skipped_reason; });
+        var isHistOpen = !!_recHistoryOpen[r.id];
+        var histToggle = '';
+        var histPanel  = '';
+
+        if (templateHistory.length > 0) {
+            var histRowsHtml = templateHistory.slice(0, 10).map(function(h) {
+                var mLabel = _monthKeyToLabel(h.month_key);
+                var dateStr = h.applied_at ? _formatDate(h.applied_at.slice(0, 10)) : '';
+                return (
+                    '<div class="rec-history-row">' +
+                    '<div>' +
+                    '<span style="font-weight:500;color:var(--text);">' + mLabel + '</span>' +
+                    (dateStr ? '<span style="color:var(--text2);margin-left:8px;">· ' + dateStr + '</span>' : '') +
+                    '</div>' +
+                    '<span class="rec-status-badge rec-status-applied">✓ Applied</span>' +
+                    '</div>'
+                );
+            }).join('');
+
+            histToggle = (
+                '<button class="rec-history-toggle' + (isHistOpen ? ' open' : '') + '" ' +
+                'onclick="_toggleRecHistory(\'' + r.id + '\')" ' +
+                'id="rechist-toggle-' + r.id + '">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+                'stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' +
+                templateHistory.length + ' application' + (templateHistory.length !== 1 ? 's' : '') +
+                (status.history_count > 10 ? ' (showing last 10)' : '') +
+                '</button>'
+            );
+
+            histPanel = (
+                '<div class="rec-history-panel' + (isHistOpen ? ' open' : '') + '" ' +
+                'id="rechist-panel-' + r.id + '">' +
+                '<div style="padding-top:6px;">' + histRowsHtml + '</div>' +
+                '</div>'
+            );
+        }
+
+        var cardClass = 'rec-card' +
+            (!r.active ? ' is-paused' : '') +
+            (r.end_date && r.end_date.slice(0, 7) < curMk ? ' is-expired' : '');
+
+        return (
+            '<div class="' + cardClass + '" id="reccard-' + r.id + '">' +
+
+            // Header
+            '<div class="rec-card-header">' +
+            '<div class="rec-card-left">' +
+            '<div class="rec-card-name">' + _escR(r.name) + '</div>' +
+            '<div class="rec-card-sub">' +
+            '<span class="badge ' + typeBadgeClass + '">' + typeLabel + '</span>' +
+            freqChip +
+            _escR(r.category) +
+            (r.day_of_month ? '<span style="font-size:10px;color:var(--text2);">Day ' + r.day_of_month + '</span>' : '') +
+            endDateWarn +
+            nextApply +
+            '</div>' +
+            '</div>' +
+            '<div class="rec-card-right">' +
+            '<span style="font-family:var(--mono);font-size:14px;font-weight:600;color:' + amtColor + ';">' +
+            fmt(r.amount) + '</span>' +
+            statusBadge +
+            // Pause/resume button
+            '<button class="rec-action-btn" title="' + (r.active ? 'Pause' : 'Resume') + '"' +
+            ' onclick="toggleRecActiveAction(\'' + r.id + '\', this)">' +
+            (r.active
+                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
+            ) +
+            '</button>' +
+            // Edit button
+            '<button class="rec-action-btn" title="Edit template"' +
+            ' onclick="openEditRecModal(\'' + r.id + '\')">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>' +
+            '<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>' +
+            '</svg></button>' +
+            // Delete button
+            '<button class="tx-delete"' +
+            ' onclick="deleteRecurringAction(\'' + r.id + '\', this)" title="Remove template">\xd7</button>' +
+            '</div>' +
+            '</div>' +
+
+            histToggle +
+            histPanel +
+
+            '</div>'
+        );
+    }
+
+    function _buildStatusBadge(r, status, curMk) {
+        if (!r.active) {
+            return '<span class="rec-status-badge rec-status-paused">⏸ Paused</span>';
+        }
+
+        // Check expiry
+        if (r.end_date && r.end_date.slice(0, 7) < curMk) {
+            return '<span class="rec-status-badge rec-status-expired">Expired</span>';
+        }
+
+        if (status.applied_this_month) {
+            return '<span class="rec-status-badge rec-status-applied">✓ Applied</span>';
+        }
+
+        if (status.skipped_reason) {
+            var reason = status.skipped_reason;
+            if (reason.indexOf('frequency') !== -1) {
+                return '<span class="rec-status-badge rec-status-notdue">Not due</span>';
+            }
+            if (reason.indexOf('before start_date') !== -1) {
+                return '<span class="rec-status-badge rec-status-notdue">Not started</span>';
+            }
+            return '<span class="rec-status-badge rec-status-skipped" title="' + _escR(reason) + '">Skipped</span>';
+        }
+
+        // Pending — eligible but not yet applied
+        return '<span class="rec-status-badge rec-status-pending">⏳ Pending</span>';
+    }
+
+
+    // ── Committed breakdown ───────────────────────────────────────────────────────
+
+    function _renderCommittedBreakdown() {
+        var secEl = document.getElementById('rec-committed-section');
+        var el    = document.getElementById('rec-committed-breakdown');
+        if (!secEl || !el) return;
+
+        var recurring = (AppState.recurring || []).filter(function(r) { return r.active; });
+        if (recurring.length === 0) {
+            secEl.style.display = 'none';
+            return;
+        }
+
+        secEl.style.display = 'block';
+
+        // Group by frequency
+        var byFreq = {};
+        recurring.forEach(function(r) {
+            var f = r.frequency || 'monthly';
+            if (!byFreq[f]) byFreq[f] = { count: 0, total: 0 };
+            byFreq[f].count++;
+            byFreq[f].total += parseFloat(r.amount) || 0;
+        });
+
+        var freqOrder = ['monthly', 'weekly', 'fortnightly', 'quarterly', 'annual'];
+        var html = freqOrder.filter(function(f) { return byFreq[f]; }).map(function(f) {
+            var g = byFreq[f];
+            return (
+                '<div class="rec-committed-row">' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span class="rec-freq-chip">' + FREQ_LABELS[f] + '</span>' +
+                '<span style="font-size:13px;color:var(--text2);">' + g.count + ' template' + (g.count !== 1 ? 's' : '') + '</span>' +
+                '</div>' +
+                '<span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--red);">' +
+                fmt(g.total) + '</span>' +
+                '</div>'
+            );
+        }).join('');
+
+        el.innerHTML = html;
+    }
+
+
+    // ─── APPLY NOW ──────────────────────────────────────────────────────────────
+
     async function applyRecurringNow() {
-        if (!AppState.recurring || AppState.recurring.length === 0) {
-            showToast('No recurring transactions to apply.', 'info');
+        var recurring = AppState.recurring || [];
+        var active    = recurring.filter(function(r) { return r.active; });
+
+        if (active.length === 0) {
+            showToast('No active recurring templates to apply.', 'info');
             return;
         }
 
         var btn = document.getElementById('btn-apply-recurring');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Applying…';
-        }
-
-        try {
-            var result  = await callServer('applyRecurringToMonth', curKey());
-            var applied = (result && result.applied) ? result.applied : 0;
-            var skipped = (result && result.skipped) ? result.skipped : 0;
-
-            // Re-fetch current month transactions to sync AppState with what
-            // the server just wrote — we don't know which ones were added.
-            var txs = await callServerSilent('getTransactionsByMonth', curKey());
-            AppState.transactions[curKey()] = txs || [];
-
-            renderAll();
-
-            if (applied > 0) {
-                showToast(applied + ' recurring transaction' + (applied > 1 ? 's' : '') + ' applied!', 'success');
-            } else {
-                showToast('All recurring transactions already applied this month.', 'info');
-            }
-
-        } catch (e) {
-            // Error toast shown by callServer.
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Apply now';
-            }
-        }
-    }
-
-
-    // ─── ADD RECURRING ────────────────────────────────────────────────────────────
-
-    /**
-     * addRecurringForm()
-     * Uses withButtonLoading() to show an inline spinner while saving.
-     */
-    async function addRecurringForm() {
-        var btn      = document.getElementById('btn-add-recurring');
-        var name     = getVal('r-name');
-        var amtRaw   = getVal('r-amt');
-        var type     = getVal('r-type');
-        var category = getVal('r-cat');
-
-        if (!name) {
-            showToast('Please enter a description.', 'error');
-            document.getElementById('r-name').focus();
-            return;
-        }
-
-        var amount = parseFloat(amtRaw);
-        if (!amtRaw || isNaN(amount) || amount <= 0) {
-            showToast('Please enter a valid amount greater than zero.', 'error');
-            document.getElementById('r-amt').focus();
-            return;
-        }
-
         await withButtonLoading(btn, async function() {
             try {
-                var newRecurring = await callServer('addRecurring', name, amount, type, category);
+                var result = await callServer('applyRecurringToMonth', curKey());
+                var applied = (result && result.applied) ? result.applied : 0;
+                var expired = (result && result.expired) ? result.expired : 0;
 
-                if (!AppState.recurring) AppState.recurring = [];
-                AppState.recurring.push(newRecurring);
+                // Re-fetch current month transactions
+                var txs = await callServerSilent('getTransactionsByMonth', curKey());
+                AppState.transactions[curKey()] = txs || [];
 
-                clearInputs('r-name', 'r-amt');
+                // Re-fetch recurring status for current month
+                var newStatus = await callServerSilent('getRecurringStatus', curKey());
+                AppState.recurringStatus = newStatus || AppState.recurringStatus;
+
+                // Re-fetch recurring (last_applied may have changed, expiries may have fired)
+                var newRec = await callServerSilent('getAllRecurring');
+                if (newRec) AppState.recurring = newRec;
+
+                // Re-fetch history
+                var newHist = await callServerSilent('getRecurringHistory');
+                if (newHist) AppState.recurringHistory = newHist;
+
                 renderAll();
-                showToast('Recurring transaction added!', 'success');
 
-            } catch (e) {
-                // Error toast shown by callServer.
-            }
+                if (applied > 0) {
+                    var msg = applied + ' recurring transaction' + (applied > 1 ? 's' : '') + ' applied!';
+                    if (expired > 0) msg += ' ' + expired + ' template' + (expired > 1 ? 's' : '') + ' expired and paused.';
+                    showToast(msg, 'success');
+                } else if (expired > 0) {
+                    showToast(expired + ' template' + (expired > 1 ? 's' : '') + ' expired and auto-paused.', 'info');
+                } else {
+                    showToast('All eligible recurring transactions already applied this month.', 'info');
+                }
+
+            } catch (e) {}
         });
     }
 
 
-    // ─── DELETE RECURRING ────────────────────────────────────────────────────────
+    // ─── ADD MODAL (desktop) ────────────────────────────────────────────────────
 
-    /**
-     * deleteRecurring(recurringId, deleteBtnEl)
-     * Dims the delete button immediately as optimistic feedback.
-     */
-    async function deleteRecurring(recurringId, deleteBtnEl) {
-        if (deleteBtnEl) {
-            deleteBtnEl.disabled = true;
-            deleteBtnEl.style.opacity = '0.35';
+    function openAddRecModal() {
+        if (window.innerWidth <= 600) { openAddRecSheet(); return; }
+
+        _recEditId = null;
+        _resetRecForm('d');
+        document.getElementById('rec-modal-title').textContent = 'Add Recurring Transaction';
+        document.getElementById('btn-save-rec-d').querySelector('.btn-label').textContent = 'Add Template';
+        document.getElementById('rec-edit-id').value = '';
+
+        var m = document.getElementById('add-rec-modal');
+        if (m) {
+            m.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            setTimeout(function() {
+                var el = document.getElementById('r-name-d'); if (el) el.focus();
+            }, 220);
         }
+    }
+
+    function closeAddRecModal() {
+        var m = document.getElementById('add-rec-modal');
+        if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+        _recEditId = null;
+    }
+
+    async function saveRecFromModal() {
+        var btn = document.getElementById('btn-save-rec-d');
+        var id  = getVal('rec-edit-id');
+        await _doSaveRec(
+            id,
+            getVal('r-name-d'),
+            getVal('r-amt-d'),
+            getVal('r-type-d'),
+            getVal('r-cat-d'),
+            getVal('r-freq-d'),
+            getVal('r-dom-d'),
+            getVal('r-start-d'),
+            getVal('r-end-d'),
+            btn,
+            closeAddRecModal
+        );
+    }
+
+
+    // ─── ADD SHEET (mobile) ─────────────────────────────────────────────────────
+
+    function openAddRecSheet() {
+        _recEditId = null;
+        _resetRecForm('m');
+        document.getElementById('rec-sheet-title').textContent = 'Add Recurring Transaction';
+        document.getElementById('btn-save-rec-m').querySelector('.btn-label').textContent = 'Add Template';
+        document.getElementById('rec-edit-id-m').value = '';
+
+        var s = document.getElementById('add-rec-sheet');
+        if (s) {
+            s.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            setTimeout(function() {
+                var el = document.getElementById('r-name-m'); if (el) el.focus();
+            }, 300);
+        }
+    }
+
+    function closeAddRecSheet() {
+        var s = document.getElementById('add-rec-sheet');
+        if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+        _recEditId = null;
+    }
+
+    async function saveRecFromSheet() {
+        var btn = document.getElementById('btn-save-rec-m');
+        var id  = getVal('rec-edit-id-m');
+        await _doSaveRec(
+            id,
+            getVal('r-name-m'),
+            getVal('r-amt-m'),
+            getVal('r-type-m'),
+            getVal('r-cat-m'),
+            getVal('r-freq-m'),
+            '',
+            getVal('r-start-m'),
+            getVal('r-end-m'),
+            btn,
+            closeAddRecSheet
+        );
+    }
+
+
+    // ─── EDIT ───────────────────────────────────────────────────────────────────
+
+    function openEditRecModal(recurringId) {
+        var recurring = AppState.recurring || [];
+        var r         = recurring.find(function(t) { return t.id === recurringId; });
+        if (!r) return;
+
+        _recEditId = recurringId;
+        var isMobile = window.innerWidth <= 600;
+        var suffix   = isMobile ? 'm' : 'd';
+
+        _resetRecForm(suffix);
+
+        var setV = function(id, val) {
+            var el = document.getElementById(id); if (el) el.value = val;
+        };
+
+        setV('r-name-'  + suffix, r.name);
+        setV('r-type-'  + suffix, r.type);
+        syncCategoryToType('r-cat-' + suffix, 'r-type-' + suffix);
+        setV('r-cat-'   + suffix, r.category);
+        document.getElementById('r-amt-' + suffix).value =
+            _formatNumberWithCommas(String(Math.round(r.amount)));
+        setV('r-freq-'  + suffix, r.frequency || 'monthly');
+        if (r.day_of_month) setV('r-dom-'  + suffix, String(r.day_of_month));
+        setV('r-start-' + suffix, r.start_date || '');
+        setV('r-end-'   + suffix, r.end_date   || '');
+        _syncFreqHint(suffix);
+
+        if (isMobile) {
+            setV('rec-edit-id-m', recurringId);
+            document.getElementById('rec-sheet-title').textContent = 'Edit Recurring';
+            document.getElementById('btn-save-rec-m').querySelector('.btn-label').textContent = 'Save Changes';
+            var s = document.getElementById('add-rec-sheet');
+            if (s) { s.classList.add('open'); document.body.style.overflow = 'hidden'; }
+        } else {
+            setV('rec-edit-id', recurringId);
+            document.getElementById('rec-modal-title').textContent = 'Edit Recurring';
+            document.getElementById('btn-save-rec-d').querySelector('.btn-label').textContent = 'Save Changes';
+            var m = document.getElementById('add-rec-modal');
+            if (m) {
+                m.classList.add('open');
+                document.body.style.overflow = 'hidden';
+                setTimeout(function() {
+                    var el = document.getElementById('r-amt-d'); if (el) el.select();
+                }, 220);
+            }
+        }
+    }
+
+
+    // ─── SHARED SAVE ────────────────────────────────────────────────────────────
+
+    async function _doSaveRec(editId, name, amtRaw, type, category, frequency, dayOfMonth, startDate, endDate, btn, closeFn) {
+        if (!name) { showToast('Please enter a description.', 'error'); return; }
+
+        var amount = parseFloat(String(amtRaw || '').replace(/,/g, ''));
+        if (!amtRaw || isNaN(amount) || amount <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error'); return;
+        }
+
+        if (startDate && endDate && endDate <= startDate) {
+            showToast('End date must be after start date.', 'error'); return;
+        }
+
+        var options = {
+            frequency:    frequency || 'monthly',
+            day_of_month: dayOfMonth || '',
+            start_date:   startDate  || '',
+            end_date:     endDate    || ''
+        };
+
+        await withButtonLoading(btn, async function() {
+            try {
+                var result;
+                if (editId) {
+                    result = await callServer('updateRecurring', editId,
+                        Object.assign({ name: name, amount: amount, type: type, category: category }, options));
+
+                    AppState.recurring = (AppState.recurring || []).map(function(r) {
+                        return r.id === editId ? result : r;
+                    });
+
+                    // Refresh status since frequency/dates may have changed
+                    var newStatus = await callServerSilent('getRecurringStatus', curKey()).catch(function() { return null; });
+                    if (newStatus) AppState.recurringStatus = newStatus;
+
+                    showToast('Template updated!', 'success');
+                } else {
+                    result = await callServer('addRecurring', name, amount, type, category, options);
+                    if (!AppState.recurring) AppState.recurring = [];
+                    AppState.recurring.push(result);
+                    showToast('Recurring template added!', 'success');
+                }
+
+                closeFn();
+                renderAll();
+            } catch (e) {}
+        });
+    }
+
+
+    // ─── TOGGLE ACTIVE ──────────────────────────────────────────────────────────
+
+    async function toggleRecActiveAction(recurringId, btnEl) {
+        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.4'; }
+        try {
+            var updated = await callServer('toggleRecurringActive', recurringId);
+
+            AppState.recurring = (AppState.recurring || []).map(function(r) {
+                return r.id === recurringId ? updated : r;
+            });
+
+            // Refresh status
+            var newStatus = await callServerSilent('getRecurringStatus', curKey()).catch(function() { return null; });
+            if (newStatus) AppState.recurringStatus = newStatus;
+
+            renderAll();
+
+            var action = updated.active ? 'resumed' : 'paused';
+            showToast('"' + updated.name + '" ' + action + '.', 'info');
+        } catch (e) {
+            if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = ''; }
+        }
+    }
+
+
+    // ─── DELETE ─────────────────────────────────────────────────────────────────
+
+    async function deleteRecurringAction(recurringId, deleteBtnEl) {
+        // #11 Warn if linked to a debt
+        var debts = AppState.debts || [];
+        var linkedDebt = debts.find(function(d) { return d.recurring_id === recurringId; });
+        if (linkedDebt) {
+            if (!window.confirm(
+                'This template is linked to the "' + linkedDebt.name + '" debt for auto-pay.\n\n' +
+                'Deleting it will disable the debt\'s automatic payments.\n\nContinue?'
+            )) return;
+        }
+
+        if (deleteBtnEl) { deleteBtnEl.disabled = true; deleteBtnEl.style.opacity = '0.35'; }
 
         try {
             await callServer('deleteRecurring', recurringId);
@@ -250,26 +1114,114 @@
             AppState.recurring = (AppState.recurring || []).filter(function(r) {
                 return r.id !== recurringId;
             });
+            AppState.recurringStatus = (AppState.recurringStatus || []).filter(function(s) {
+                return s.id !== recurringId;
+            });
+            delete _recHistoryOpen[recurringId];
 
             renderAll();
-            showToast('Recurring transaction removed.', 'info');
-
+            showToast('Recurring template removed.', 'info');
         } catch (e) {
-            if (deleteBtnEl) {
-                deleteBtnEl.disabled = false;
-                deleteBtnEl.style.opacity = '';
-            }
-            // Error toast shown by callServer.
+            if (deleteBtnEl) { deleteBtnEl.disabled = false; deleteBtnEl.style.opacity = ''; }
         }
     }
 
 
-    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+    // ─── HISTORY TOGGLE ─────────────────────────────────────────────────────────
+
+    function _toggleRecHistory(recurringId) {
+        _recHistoryOpen[recurringId] = !_recHistoryOpen[recurringId];
+        var toggle = document.getElementById('rechist-toggle-' + recurringId);
+        var panel  = document.getElementById('rechist-panel-'  + recurringId);
+        if (toggle) toggle.classList.toggle('open', _recHistoryOpen[recurringId]);
+        if (panel)  panel.classList.toggle('open',  _recHistoryOpen[recurringId]);
+    }
+
+
+    // ─── FAB ────────────────────────────────────────────────────────────────────
+
+    function _updateRecFabVisibility() {
+        var fab = document.getElementById('fab-add-rec');
+        if (fab) fab.classList.toggle('fab-visible', AppState.activeTab === 'recurring');
+    }
+
+
+    // ─── FREQUENCY HINT ─────────────────────────────────────────────────────────
+
+    function _syncFreqHint(suffix) {
+        var freqEl = document.getElementById('r-freq-'      + suffix);
+        var hintEl = document.getElementById('r-freq-hint-' + suffix);
+        if (!freqEl || !hintEl) return;
+
+        var freq = freqEl.value;
+        var hint = FREQ_HINTS[freq] || '';
+
+        if (freq === 'monthly') {
+            hintEl.style.display = 'none';
+        } else {
+            hintEl.style.display = 'block';
+            hintEl.textContent   = hint;
+        }
+    }
+
+
+    // ─── HELPERS ────────────────────────────────────────────────────────────────
+
+    function _resetRecForm(suffix) {
+        var fields = ['r-name-', 'r-amt-', 'r-dom-', 'r-start-', 'r-end-'];
+        fields.forEach(function(f) {
+            var el = document.getElementById(f + suffix); if (el) el.value = '';
+        });
+        var typeEl = document.getElementById('r-type-' + suffix);
+        if (typeEl) typeEl.value = 'expense';
+        syncCategoryToType('r-cat-' + suffix, 'r-type-' + suffix);
+        var freqEl = document.getElementById('r-freq-' + suffix);
+        if (freqEl) freqEl.value = 'monthly';
+        var hintEl = document.getElementById('r-freq-hint-' + suffix);
+        if (hintEl) hintEl.style.display = 'none';
+    }
+
+    function _monthKeyToLabel(key) {
+        if (!key) return '';
+        var parts = String(key).split('-');
+        if (parts.length < 2) return key;
+        return MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+    }
+
+    function _formatDate(isoStr) {
+        if (!isoStr) return '';
+        try {
+            var d = new Date(isoStr);
+            return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+        } catch(e) { return isoStr; }
+    }
+
+    function _monthsBetween(fromMk, toMk) {
+        var fromParts = fromMk.split('-');
+        var toParts   = toMk.split('-');
+        var fy = parseInt(fromParts[0], 10), fm = parseInt(fromParts[1], 10);
+        var ty = parseInt(toParts[0],   10), tm = parseInt(toParts[1],   10);
+        return (ty - fy) * 12 + (tm - fm);
+    }
 
     function _escR(str) {
         return String(str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeAddRecModal(); closeAddRecSheet(); }
+    });
+
 </script>
+
+<!-- Mobile FAB -->
+<button id="fab-add-rec"
+        onclick="openAddRecSheet()"
+        aria-label="Add recurring template"
+        title="Add recurring template">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+    </svg>
+</button>

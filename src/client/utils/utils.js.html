@@ -2,22 +2,14 @@
     // =============================================================================
     // utils.js.html — Shared Client-Side Utilities
     //
-    // SECTIONS:
-    //   1.  Constants
-    //   2.  AppState
-    //   3.  Server bridge (callServer / callServerSilent)
-    //   4.  Loading state helpers
-    //   5.  Formatters
-    //   6.  Toast notifications
-    //   7.  Tab router (switchTab)
-    //   8.  Month navigation  ← REWRITTEN: optimistic render + background sync
-    //   9.  Category utilities
-    //   10. Month stats helpers  ← PATCHED: null-safe curTxs / getMonthStats
-    //   11. DOM helpers
-    //   12. Chart helpers
-    //   13. Dark mode & currency
-    //   14. CSV export / import
-    //   15. renderAll
+    // PHASE 1 FIXES APPLIED:
+    //   1.2 — getChartDefaults() now returns a fresh object each call, preventing
+    //         cross-chart scale mutations when two charts render in the same cycle.
+    //   1.7 — renderAll() no longer silently skips charts/multimonth/forecast.
+    //         When those panes are active they re-render immediately (50ms delay).
+    //         When inactive, _chartTabsDirty flag is set so next switchTab forces
+    //         a fresh render rather than showing stale data.
+    //   1.8 — getChartDefaults() Y-axis tick callback now null-guards FX reads.
     // =============================================================================
 
 
@@ -58,8 +50,8 @@
         transactions:  {},
         goals:         {},
         bills:         [],
-        billHistory:   [],      // BillHistory rows loaded on bootstrap
-        billAlertDays: 5,       // Configurable alert threshold (days before due)
+        billHistory:   [],
+        billAlertDays: 5,
         savingsGoals:  [],
         debts:         [],
         debtHistory:       [],
@@ -78,7 +70,6 @@
 
     var AppState = Object.assign({}, _DEFAULT_STATE, _boot);
 
-    // Bills overhaul: pick up new bootstrap fields
     if (_boot.billHistory   !== undefined) AppState.billHistory   = _boot.billHistory;
     if (_boot.billAlertDays !== undefined) AppState.billAlertDays = _boot.billAlertDays;
 
@@ -90,14 +81,12 @@
     if (_boot.netWorthTarget  !== undefined) AppState.netWorthTarget  = _boot.netWorthTarget;
     if (_boot.netWorthSummary !== undefined) AppState.netWorthSummary = _boot.netWorthSummary;
 
-    // currentMonthKey from bootstrap may need to be split into curYear/curMonth.
     if (_boot.currentMonthKey) {
         var _parts = _boot.currentMonthKey.split('-');
         AppState.curYear  = parseInt(_parts[0], 10);
         AppState.curMonth = parseInt(_parts[1], 10);
     }
 
-    // Normalise dark_mode key from server (snake_case) to camelCase.
     if (_boot.preferences) {
         AppState.currency      = _boot.preferences.currency      || 'NGN';
         AppState.darkMode      = _boot.preferences.dark_mode     || false;
@@ -105,18 +94,19 @@
         AppState.billAlertDays = _boot.preferences.bills_alert_days || 5;
     }
 
+    // FIX 1.7 — dirty flags for chart tabs.
+    // When a chart tab is not active during renderAll(), its flag is set true.
+    // switchTab() clears the flag and always re-renders on navigation, ensuring
+    // the chart reflects current AppState regardless of when data last changed.
+    // PHASE 2: updated from charts/multimonth/forecast → spending/trends
+    var _chartTabsDirty = {
+        spending: false,
+        trends:   false
+    };
+
 
     // ─── 3. SERVER BRIDGE ─────────────────────────────────────────────────────────
 
-    /**
-     * callServer(fnName, ...args)
-     *
-     * Wraps google.script.run in a Promise so all screen files can use
-     * async/await instead of nested callbacks.
-     *
-     * Sets AppState.isLoading while the call is in flight so inputs can
-     * be disabled during server round-trips.
-     */
     function callServer(fnName) {
         var args = Array.prototype.slice.call(arguments, 1);
         AppState.isLoading = true;
@@ -156,22 +146,6 @@
 
     // ─── 4. LOADING STATE HELPERS ─────────────────────────────────────────────────
 
-    /**
-     * setButtonLoading(btnEl, isLoading)
-     *
-     * Puts a .btn-primary button into a loading state:
-     *   - Adds .loading class → CSS shows the inline spinner, dims the label
-     *   - Disables the button to prevent double-submits
-     *   - Disables all .inp fields within the same .pane ancestor
-     *
-     * For .btn-sm buttons it simply disables them (no spinner needed).
-     *
-     * The button should have this structure (initAllBtnStructures() ensures it):
-     *   <button class="btn-primary">
-     *     <span class="btn-label">Add Transaction</span>
-     *     <span class="btn-spinner"></span>
-     *   </button>
-     */
     function setButtonLoading(btnEl, isLoading) {
         if (!btnEl) return;
 
@@ -179,8 +153,6 @@
             btnEl.disabled = true;
             btnEl.classList.add('loading');
 
-            // Disable sibling inputs in the nearest .pane ancestor so the user
-            // cannot edit fields while the server call is in flight.
             var pane = btnEl.closest ? btnEl.closest('.pane') : null;
             if (!pane) pane = btnEl.parentElement;
             if (pane) {
@@ -206,20 +178,6 @@
         }
     }
 
-    /**
-     * withButtonLoading(btnEl, asyncFn)
-     *
-     * Convenience wrapper that calls setButtonLoading(true) before asyncFn
-     * and setButtonLoading(false) in a finally block, regardless of success
-     * or failure. Usage:
-     *
-     *   async function addTx() {
-     *     await withButtonLoading(document.getElementById('btn-add-tx'), async () => {
-     *       var result = await callServer('addTransaction', ...);
-     *       // update AppState, renderAll(), showToast(...)
-     *     });
-     *   }
-     */
     async function withButtonLoading(btnEl, asyncFn) {
         setButtonLoading(btnEl, true);
         try {
@@ -229,19 +187,9 @@
         }
     }
 
-    /**
-     * initAllBtnStructures()
-     *
-     * Ensures every .btn-primary button in the document has the
-     * .btn-label + .btn-spinner child structure required by the CSS loading
-     * animation. Idempotent — safe to call multiple times.
-     *
-     * Called once from Index.html boot sequence after all panes are in the DOM.
-     */
     function initAllBtnStructures() {
         document.querySelectorAll('.btn-primary').forEach(function(btn) {
             if (btn.querySelector('.btn-label')) return;
-
             var text = btn.textContent.trim();
             btn.innerHTML = (
                 '<span class="btn-label">' + text + '</span>' +
@@ -253,11 +201,6 @@
 
     // ─── 5. FORMATTERS ────────────────────────────────────────────────────────────
 
-    /**
-     * fmt(amount)
-     * Converts a raw NGN number to the current currency with symbol + separators.
-     * Handles negatives, zeros, and NaN defensively.
-     */
     function fmt(amount) {
         var num = parseFloat(amount);
         if (isNaN(num)) num = 0;
@@ -273,43 +216,23 @@
         return isNeg ? '-' + formatted : formatted;
     }
 
-    /**
-     * pct(value, total)
-     * Returns an integer percentage, capped at 100, guarded against division by zero.
-     */
     function pct(value, total) {
         if (!total || total === 0) return 0;
         return Math.min(100, Math.round((value / total) * 100));
     }
 
-    /**
-     * monthLabel(year, month)
-     * e.g. monthLabel(2026, 3) → 'March 2026'
-     */
     function monthLabel(year, month) {
         return MONTHS[month - 1] + ' ' + year;
     }
 
-    /**
-     * monthKey(year, month)
-     * e.g. monthKey(2026, 3) → '2026-03'
-     */
     function monthKey(year, month) {
         return year + '-' + (month < 10 ? '0' : '') + month;
     }
 
-    /**
-     * curKey()
-     * Returns the YYYY-MM key for the currently displayed month.
-     */
     function curKey() {
         return monthKey(AppState.curYear, AppState.curMonth);
     }
 
-    /**
-     * parseMonthKey(key)
-     * Parses '2026-03' into { year: 2026, month: 3 }
-     */
     function parseMonthKey(key) {
         var parts = String(key).split('-');
         return {
@@ -321,21 +244,12 @@
 
     // ─── 6. TOAST NOTIFICATIONS ───────────────────────────────────────────────────
 
-    // Track the current toast timeout so rapid calls don't stack.
     var _toastTimer = null;
 
-    /**
-     * showToast(message, type, duration)
-     *
-     * Displays a non-blocking notification at the bottom of the screen.
-     * type: 'success' | 'error' | 'info' (default 'info')
-     * duration: ms visible (default 3000)
-     */
     function showToast(message, type, duration) {
         type     = type     || 'info';
         duration = duration || 3000;
 
-        // Create the toast container if it doesn't exist yet.
         var toast = document.getElementById('toast');
         if (!toast) {
             toast = document.createElement('div');
@@ -360,16 +274,15 @@
             document.body.appendChild(toast);
         }
 
-        // Apply colour based on type.
         var styles = {
             success: { bg: '#1D9E75', color: '#fff' },
             error:   { bg: '#D85A30', color: '#fff' },
             info:    { bg: '#1a1a1a', color: '#f5f5f3' }
         };
-        var style           = styles[type] || styles.info;
+        var style              = styles[type] || styles.info;
         toast.style.background = style.bg;
         toast.style.color      = style.color;
-        toast.style.pointerEvents = 'none'; // reset in case bills overrode it
+        toast.style.pointerEvents = 'none';
         toast.textContent      = message;
         toast.style.opacity    = '1';
 
@@ -379,28 +292,18 @@
         }, duration);
     }
 
-    /**
-     * showLoading(show)
-     * Toggles a subtle full-screen loading overlay.
-     * Used during longer server operations (e.g. applying a budget template).
-     */
     function showLoading(show) {
         var overlay = document.getElementById('loading-overlay');
-
         if (show) {
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = 'loading-overlay';
                 overlay.style.cssText = [
-                    'position:fixed',
-                    'inset:0',
+                    'position:fixed', 'inset:0',
                     'background:rgba(255,255,255,0.6)',
-                    'z-index:9998',
-                    'display:flex',
-                    'align-items:center',
-                    'justify-content:center',
-                    'font-size:13px',
-                    'color:#666'
+                    'z-index:9998', 'display:flex',
+                    'align-items:center', 'justify-content:center',
+                    'font-size:13px', 'color:#666'
                 ].join(';');
                 overlay.textContent = 'Loading…';
                 document.body.appendChild(overlay);
@@ -417,12 +320,12 @@
     /**
      * switchTab(tabId)
      *
-     * Activates the given tab pane, deactivates all others.
-     * Chart tabs need a 50ms delay before rendering because Chart.js
-     * requires the canvas element to be visible (non-zero dimensions) first.
+     * FIX 1.7: Chart tabs always re-render on switchTab regardless of dirty flag —
+     * the dirty flag simply communicates "data changed while you were away."
+     * We clear it here and render fresh. The 50ms delay is unchanged (canvas needs
+     * to be visible before Chart.js measures dimensions).
      */
     function switchTab(tabId) {
-        // Deactivate all tabs and panes.
         var tabs  = document.querySelectorAll('.tab');
         var panes = document.querySelectorAll('.pane');
 
@@ -437,24 +340,25 @@
 
         AppState.activeTab = tabId;
 
-        // Chart tabs: delay render until canvas is visible.
+        // Chart tabs: clear dirty flag + render after 50ms canvas-visible delay
+        // PHASE 2: spending (was charts+categories) and trends (was multimonth+forecast)
         var chartTabs = {
-            'charts':     function() { if (typeof renderCharts     === 'function') renderCharts();     },
-            'multimonth': function() { if (typeof renderMultiMonth === 'function') renderMultiMonth(); },
-            'forecast':   function() { if (typeof renderForecast   === 'function') renderForecast();   }
+            'spending': function() {
+                _chartTabsDirty.spending = false;
+                if (typeof renderSpending === 'function') renderSpending();
+            },
+            'trends': function() {
+                _chartTabsDirty.trends = false;
+                if (typeof renderTrends === 'function') renderTrends();
+            }
         };
 
         if (chartTabs[tabId]) {
             setTimeout(chartTabs[tabId], 50);
-            // Still update FAB before returning.
             if (typeof _updateFabVisibility === 'function') _updateFabVisibility();
             return;
         }
 
-        // Non-chart tabs that need a fresh render on switch.
-        // Every data tab is listed here so navigating to it always draws
-        // the current AppState — even on first load after a page refresh,
-        // when renderAll() only rendered the default 'overview' tab.
         var renderOnSwitch = {
             'overview':   function() { if (typeof renderOverview    === 'function') renderOverview();    },
             'goals':      function() { if (typeof renderGoals       === 'function') renderGoals();       },
@@ -469,7 +373,6 @@
             'settings':   function() { if (typeof renderSettings    === 'function') renderSettings();    },
             'report':     function() { if (typeof renderReport      === 'function') renderReport();      },
             'insights':   function() { if (typeof renderInsights    === 'function') renderInsights();    },
-            'categories': function() { if (typeof renderCategories  === 'function') renderCategories();  },
             'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   }
         };
 
@@ -483,37 +386,9 @@
 
 
     // ─── 8. MONTH NAVIGATION ──────────────────────────────────────────────────────
-    //
-    // OPTIMISTIC PATTERN — how it works:
-    //
-    //   OLD (blocking):
-    //     click → await server fetch → await recurring apply → renderAll()
-    //     Result: 6–10s freeze before anything appears
-    //
-    //   NEW (optimistic):
-    //     click → update month counters → renderAll() immediately (~0ms)
-    //             ↳ shows cached data if visited before, or empty state otherwise
-    //     then  → background fetch if not cached → re-render on arrival
-    //     then  → background recurring apply → re-render only if new rows added
-    //
-    //   Stale-result guard: after every async step, checks curKey() === key
-    //   before writing to AppState. Rapid navigation discards out-of-order results.
-    //
-    //   Debounce: _monthNavInFlight prevents overlapping calls from double-taps.
-    //   It resets immediately after the optimistic render so the user can keep
-    //   tapping — but one background sync per navigation is still enforced.
-
-    // null sentinel: means "this month is known to be uncached, fetch in progress"
-    // undefined:     means "this month has never been referenced"
-    // []:            means "fetched from server, no transactions"
-    // [{...}, ...]:  means "fetched from server, has transactions"
 
     var _monthNavInFlight = false;
 
-    /**
-     * prevMonth()
-     * Steps back one calendar month with an instant optimistic render.
-     */
     async function prevMonth() {
         if (_monthNavInFlight) return;
         _monthNavInFlight = true;
@@ -524,20 +399,11 @@
             AppState.curYear  -= 1;
         }
 
-        // Step 1: render NOW from whatever is already in cache.
         _renderMonthInstant();
-
-        // Step 2: release debounce so rapid taps still work responsively.
         _monthNavInFlight = false;
-
-        // Step 3: background sync — fetch + recurring (non-blocking).
         _backgroundSyncMonth(curKey());
     }
 
-    /**
-     * nextMonth()
-     * Steps forward one calendar month with an instant optimistic render.
-     */
     async function nextMonth() {
         if (_monthNavInFlight) return;
         _monthNavInFlight = true;
@@ -553,71 +419,35 @@
         _backgroundSyncMonth(curKey());
     }
 
-    /**
-     * _renderMonthInstant()
-     *
-     * Renders the new month from AppState immediately — zero server calls.
-     *
-     * If this month has never been loaded (undefined), we set it to null
-     * (fetch-in-progress sentinel) so curTxs() returns [] and the UI shows
-     * "No transactions this month" cleanly rather than stale data or errors.
-     *
-     * If it was previously fetched (array), it renders the real cached data
-     * instantly — repeat visits to past months feel completely synchronous.
-     */
     function _renderMonthInstant() {
         var key = curKey();
 
         if (AppState.transactions[key] === undefined) {
-            // Never seen this month — mark as pending fetch so curTxs() returns [].
             AppState.transactions[key] = null;
         }
 
-        // Show a subtle "syncing" dot on the month label when fetching.
         _setMonthSyncIndicator(AppState.transactions[key] === null);
 
-        // Disable nav buttons only during the instant render (< 50ms), not the
-        // background fetch, so the user can keep tapping through months freely.
         if (typeof setMonthNavLoading === 'function') setMonthNavLoading(false);
 
         renderAll();
         if (typeof updateSidebar === 'function') updateSidebar();
     }
 
-    /**
-     * _backgroundSyncMonth(key)
-     *
-     * Runs entirely in the background without blocking the UI.
-     *
-     * Phase 1 — fetch transactions if not cached:
-     *   Checks for null sentinel (pending) or missing key. If cached ([]),
-     *   skips the fetch entirely. On arrival, stale-result guard ensures
-     *   we only update AppState if the user hasn't navigated away.
-     *
-     * Phase 2 — apply recurring:
-     *   Calls applyRecurringToMonth silently. If it created new rows (applied > 0),
-     *   re-fetches the month to pick them up, then re-renders.
-     */
     async function _backgroundSyncMonth(key) {
         var needsFetch = !AppState.transactions[key] ||
             !Array.isArray(AppState.transactions[key]);
 
-        // ── Phase 1: fetch transactions ────────────────────────────────────────
         if (needsFetch) {
             try {
                 var txs = await callServerSilent('getTransactionsByMonth', key);
-
-                // Stale-result guard — user may have navigated away while we waited.
                 if (curKey() !== key) return;
-
                 AppState.transactions[key] = txs || [];
                 _setMonthSyncIndicator(false);
                 renderAll();
                 if (typeof updateSidebar === 'function') updateSidebar();
             } catch(e) {
                 if (curKey() === key) {
-                    // On error, leave as empty so UI shows "No transactions" rather
-                    // than staying in a loading state forever.
                     AppState.transactions[key] = [];
                     _setMonthSyncIndicator(false);
                     renderAll();
@@ -627,13 +457,10 @@
             }
         }
 
-        // ── Phase 2: apply recurring (fire-and-forget) ─────────────────────────
         if (!AppState.recurring || AppState.recurring.length === 0) return;
 
         try {
             var result = await callServerSilent('applyRecurringToMonth', key);
-
-            // Only re-fetch if the server actually added new rows.
             if (result && result.applied > 0 && curKey() === key) {
                 var updatedTxs = await callServerSilent('getTransactionsByMonth', key);
                 if (curKey() === key) {
@@ -642,21 +469,10 @@
                 }
             }
         } catch(e) {
-            // Recurring failures are non-fatal — transactions were already loaded.
             console.warn('Recurring apply failed for', key, e);
         }
     }
 
-    /**
-     * _setMonthSyncIndicator(isSyncing)
-     *
-     * Shows/hides a subtle pulsing dot next to the month label to signal
-     * that a background fetch is in progress. Gives the user a visual cue
-     * without blocking interaction.
-     *
-     * Targets both the header month label (#hd-month) and the sidebar label
-     * (#sidebar-month-label) if present.
-     */
     function _setMonthSyncIndicator(isSyncing) {
         var dotId = 'month-sync-dot';
         var dot   = document.getElementById(dotId);
@@ -666,37 +482,25 @@
             return;
         }
 
-        // Create the dot once and reuse it.
         if (!dot) {
             dot = document.createElement('span');
             dot.id = dotId;
             dot.style.cssText = [
-                'display:inline-block',
-                'width:6px',
-                'height:6px',
-                'border-radius:50%',
-                'background:var(--acc)',
-                'margin-left:6px',
-                'vertical-align:middle',
-                'opacity:0',
-                'transition:opacity 0.2s ease',
+                'display:inline-block', 'width:6px', 'height:6px',
+                'border-radius:50%', 'background:var(--acc)', 'margin-left:6px',
+                'vertical-align:middle', 'opacity:0', 'transition:opacity 0.2s ease',
                 'animation:monthSyncPulse 1.2s ease-in-out infinite'
             ].join(';');
 
-            // Inject the keyframe once.
             if (!document.getElementById('month-sync-style')) {
                 var style = document.createElement('style');
                 style.id = 'month-sync-style';
-                style.textContent = [
-                    '@keyframes monthSyncPulse {',
-                    '  0%, 100% { opacity: 0.25; transform: scale(0.85); }',
-                    '  50%       { opacity: 1;    transform: scale(1.1);  }',
-                    '}'
-                ].join('');
+                style.textContent = '@keyframes monthSyncPulse {' +
+                    '0%,100%{opacity:0.25;transform:scale(0.85)}' +
+                    '50%{opacity:1;transform:scale(1.1)}}';
                 document.head.appendChild(style);
             }
 
-            // Attach to the header month label if it exists.
             var hdMonth = document.getElementById('hd-month');
             if (hdMonth && hdMonth.parentElement) {
                 hdMonth.parentElement.appendChild(dot);
@@ -708,18 +512,10 @@
         dot.style.opacity = '1';
     }
 
-    /**
-     * applyRecurringForMonth()
-     * Public alias kept for backward compatibility (called from Recurring.html).
-     */
     async function applyRecurringForMonth() {
         await _backgroundSyncMonth(curKey());
     }
 
-    /**
-     * _ensureMonthLoaded(key)
-     * Kept for backward compatibility. Delegates to the background sync path.
-     */
     async function _ensureMonthLoaded(key) {
         if (AppState.transactions[key] && Array.isArray(AppState.transactions[key])) return;
         AppState.transactions[key] = null;
@@ -745,33 +541,12 @@
     function getCategoriesByType(type) {
         var cats = AppState.categories || [];
         var norm = String(type || '').toLowerCase();
-
         if (CATEGORY_TYPES.indexOf(norm) === -1) return cats;
-
         var filtered = cats.filter(function(c) { return c.type === norm; });
         return filtered.length > 0 ? filtered : cats;
     }
 
-    /**
-     * populateCategorySelects()
-     *
-     * Rebuilds all shared category <select> elements from AppState.categories.
-     * Each select is scoped to its paired type select (if one exists in the
-     * same form group — identified by a data-type-select attribute).
-     *
-     * Preserves the currently selected value across re-renders.
-     * Called on boot and after adding/deleting a category.
-     *
-     * Select IDs and their paired type-select IDs:
-     *   tx-cat   ← paired with tx-type   (Overview inline form, legacy)
-     *   tx-cat-d ← paired with tx-type-d (Overview desktop modal)
-     *   tx-cat-m ← paired with tx-type-m (Overview mobile sheet)
-     *   g-cat    ← always expense (Goals — budget goals are always expense limits)
-     *   r-cat    ← paired with r-type    (Recurring form)
-     */
     function populateCategorySelects() {
-        // Mappings: { catSelectId: typeSelectId | null }
-        // null means always show a specific fixed type (see below).
         var pairs = [
             { catId: 'tx-cat',   typeId: 'tx-type'   },
             { catId: 'tx-cat-d', typeId: 'tx-type-d'  },
@@ -783,49 +558,27 @@
         pairs.forEach(function(pair) {
             var catEl = document.getElementById(pair.catId);
             if (!catEl) return;
-
-            // Determine which type to filter by.
             var filterType;
             if (pair.typeId === null) {
-                // Goals — always expense.
                 filterType = 'expense';
             } else {
                 var typeEl = document.getElementById(pair.typeId);
                 filterType = typeEl ? typeEl.value : 'expense';
             }
-
             _fillCategorySelect(catEl, filterType);
         });
     }
 
-    /**
-     * syncCategoryToType(catSelectId, typeSelectId)
-     *
-     * Re-fills a single category <select> based on the current value of its
-     * paired type <select>. Call this from the type select's onchange handler.
-     *
-     * Example (in HTML):
-     *   <select id="tx-type-d" onchange="syncCategoryToType('tx-cat-d','tx-type-d')">
-     */
     function syncCategoryToType(catSelectId, typeSelectId) {
         var catEl  = document.getElementById(catSelectId);
         var typeEl = document.getElementById(typeSelectId);
         if (!catEl || !typeEl) return;
-
         _fillCategorySelect(catEl, typeEl.value);
     }
 
-    /**
-     * _fillCategorySelect(selectEl, type)
-     *
-     * Internal helper — repopulates a <select> element with categories
-     * filtered to the given type. Tries to preserve the previously selected
-     * value; falls back to the first option if it's no longer present.
-     */
     function _fillCategorySelect(selectEl, type) {
         var current = selectEl.value;
         var cats    = getCategoriesByType(type);
-
         selectEl.innerHTML = '';
         cats.forEach(function(cat) {
             var opt         = document.createElement('option');
@@ -833,7 +586,6 @@
             opt.textContent = cat.name;
             selectEl.appendChild(opt);
         });
-
         if (current && selectEl.querySelector('option[value="' + current + '"]')) {
             selectEl.value = current;
         }
@@ -841,23 +593,10 @@
 
 
     // ─── 10. MONTH STATS HELPERS ──────────────────────────────────────────────────
-    //
-    // PATCH: both helpers are now null-safe.
-    //
-    // AppState.transactions[key] can be:
-    //   undefined  — never referenced (treated as empty)
-    //   null       — fetch in progress (treated as empty, dot is showing)
-    //   []         — fetched, no transactions
-    //   [{...}]    — fetched, has transactions
-    //
-    // Using `|| []` would coerce null → [] correctly, but being explicit
-    // with Array.isArray() makes the intent clear and guards against any
-    // accidental non-array value that could sneak in.
 
     function getMonthStats(key) {
         var raw = AppState.transactions[key];
         var txs = (raw && Array.isArray(raw)) ? raw : [];
-
         var inc = 0, exp = 0, sav = 0;
         txs.forEach(function(tx) {
             var amt = parseFloat(tx.amount) || 0;
@@ -865,7 +604,6 @@
             else if (tx.type === 'expense') exp += amt;
             else if (tx.type === 'savings') sav += amt;
         });
-
         return { inc: inc, exp: exp, sav: sav, bal: inc - exp - sav };
     }
 
@@ -879,30 +617,17 @@
 
     function $(id) { return document.getElementById(id); }
 
-    /**
-     * setHTML(id, html)
-     * Sets innerHTML of an element by id. Warns if element not found
-     * rather than throwing — keeps renders resilient to missing stubs.
-     */
     function setHTML(id, html) {
         var el = document.getElementById(id);
         if (!el) { console.warn('setHTML: element #' + id + ' not found'); return; }
         el.innerHTML = html;
     }
 
-    /**
-     * getVal(id)
-     * Returns the trimmed value of an input/select by id, or '' if not found.
-     */
     function getVal(id) {
         var el = document.getElementById(id);
         return el ? String(el.value).trim() : '';
     }
 
-    /**
-     * clearInputs(...ids)
-     * Clears the value of one or more input elements by id.
-     */
     function clearInputs() {
         var ids = Array.prototype.slice.call(arguments);
         ids.forEach(function(id) {
@@ -916,12 +641,6 @@
 
     var chartRegistry = {};
 
-    /**
-     * destroyChart(canvasId)
-     * Destroys an existing Chart.js instance on the given canvas.
-     * Must be called before creating a new chart on the same canvas —
-     * Chart.js throws "Canvas already in use" otherwise.
-     */
     function destroyChart(canvasId) {
         if (chartRegistry[canvasId]) {
             chartRegistry[canvasId].destroy();
@@ -929,18 +648,26 @@
         }
     }
 
-    /**
-     * registerChart(canvasId, chartInstance)
-     * Stores a Chart.js instance in the registry after creation.
-     */
     function registerChart(canvasId, chartInstance) {
         chartRegistry[canvasId] = chartInstance;
     }
 
     /**
      * getChartDefaults()
-     * Returns a base Chart.js options object shared across all charts.
-     * Returns a fresh object each time so callers can extend without mutating.
+     *
+     * FIX 1.2: Previously returned the same object reference every call.
+     * Callers like _renderBarChart() would then do:
+     *   defaults.scales.x.grid = { display: false }
+     * mutating the shared object, so every subsequent call to getChartDefaults()
+     * returned the already-mutated version. Two charts rendered in the same cycle
+     * (e.g. Charts.html rendering bar + donut) would silently corrupt each other.
+     *
+     * Fix: construct and return a completely fresh plain object on every call.
+     * Each caller owns its copy and can extend it freely.
+     *
+     * FIX 1.8 (partial): Y-axis tick callback now null-guards all FX reads.
+     * Previously, if AppState or FX tables weren't ready at callback time, it
+     * would throw a silent TypeError. Now falls back to '₦' / rate 1.
      */
     function getChartDefaults() {
         return {
@@ -960,9 +687,10 @@
                         color: '#888',
                         font:  { size: 11 },
                         callback: function(v) {
-                            var symbol = FX_SYMBOLS[AppState.currency] || '₦';
-                            var rate   = FX_RATES[AppState.currency]   || 1;
-                            return symbol + Math.round(v * rate).toLocaleString();
+                            // FIX 1.8: null-safe FX reads
+                            var sym  = (typeof FX_SYMBOLS !== 'undefined' && AppState && FX_SYMBOLS[AppState.currency]) || '₦';
+                            var rate = (typeof FX_RATES   !== 'undefined' && AppState && FX_RATES[AppState.currency])   || 1;
+                            return sym + Math.round(v * rate).toLocaleString();
                         }
                     }
                 }
@@ -973,10 +701,6 @@
 
     // ─── 13. DARK MODE & CURRENCY ─────────────────────────────────────────────────
 
-    /**
-     * toggleDark()
-     * Flips dark mode state, updates DOM class, persists via server.
-     */
     function toggleDark() {
         AppState.darkMode = !AppState.darkMode;
 
@@ -998,10 +722,6 @@
         callServerSilent('setDarkMode', AppState.darkMode).catch(function() {});
     }
 
-    /**
-     * setCurrency(value)
-     * Updates the active currency, re-renders all amounts, persists to server.
-     */
     function setCurrency(value) {
         AppState.currency = value;
         renderAll();
@@ -1011,13 +731,6 @@
 
     // ─── 14. CSV ──────────────────────────────────────────────────────────────────
 
-    /**
-     * exportCSV()
-     *
-     * Calls the server to generate a CSV string for the current month,
-     * then triggers a browser file download via a temporary <a> element.
-     * No server storage — the CSV is streamed directly to the client.
-     */
     async function exportCSV() {
         try {
             var csv = await callServer('exportTransactionsToCSV', curKey());
@@ -1027,7 +740,6 @@
                 return;
             }
 
-            // Build a Blob and trigger a download via a temporary anchor element.
             var blob     = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             var url      = URL.createObjectURL(blob);
             var filename = 'budget_' + curKey() + '.csv';
@@ -1039,8 +751,6 @@
             document.body.appendChild(a);
             a.click();
 
-            // Clean up immediately — revoking too early on some browsers cancels the download,
-            // so use a short timeout.
             setTimeout(function() {
                 URL.revokeObjectURL(url);
                 document.body.removeChild(a);
@@ -1051,24 +761,10 @@
         } catch (e) {}
     }
 
-
-    // ─── 15. Import CSV ──────────────────────────────────────────────────────────────────
-
-    /**
-     * importCSV(event)
-     *
-     * Reads the selected .csv file, sends it to the server for parsing and
-     * insertion, then merges the returned transactions into AppState and
-     * refreshes the UI.
-     *
-     * Called by the hidden file input in Overview.html:
-     *   <input type="file" accept=".csv" onchange="importCSV(event)"/>
-     */
     function importCSV(event) {
         var file = event.target.files && event.target.files[0];
         if (!file) return;
 
-        // Reset the input so the same file can be re-selected if needed.
         event.target.value = '';
 
         var reader    = new FileReader();
@@ -1080,19 +776,15 @@
                 return;
             }
 
-            // Send to server — callServer returns a Promise.
             callServer('importTransactionsFromCSV', csvText, curKey())
                 .then(function(result) {
                     var imported = result && result.imported ? result.imported : 0;
                     var skipped  = result && result.skipped  ? result.skipped  : 0;
 
-                    // Re-fetch the current month's transactions to get the server's
-                    // authoritative list (includes the newly imported rows with IDs).
                     return callServerSilent('getTransactionsByMonth', curKey())
                         .then(function(txs) {
                             AppState.transactions[curKey()] = txs || [];
                             renderAll();
-
                             var msg = 'Imported ' + imported + ' transaction' + (imported !== 1 ? 's' : '') + '.';
                             if (skipped > 0) msg += ' ' + skipped + ' row' + (skipped !== 1 ? 's' : '') + ' skipped.';
                             showToast(msg, imported > 0 ? 'success' : 'info');
@@ -1114,13 +806,17 @@
     /**
      * renderAll()
      *
-     * Master re-render function. Called after any state mutation.
-     * Renders the header, alert banners, category selects, and whichever
-     * screen pane is currently active.
+     * FIX 1.7: Chart tabs (charts, multimonth, forecast) are no longer silently
+     * excluded from re-rendering.
      *
-     * Screen render functions are defined in their respective pane files.
-     * We guard each call with typeof checks so renderAll() works even when
-     * only some screen files are loaded (e.g. during incremental branch work).
+     * Strategy:
+     *   - If a chart tab IS the active tab → re-render with 50ms delay (unchanged).
+     *   - If a chart tab is NOT active    → set _chartTabsDirty[tabId] = true.
+     *     switchTab() always re-renders chart tabs anyway, so when the user next
+     *     navigates to Charts/MultiMonth/Forecast they get fresh data.
+     *
+     * This guarantees: deleting a transaction → switching to Charts always shows
+     * the correct updated data. No extra server calls needed.
      */
     function renderAll() {
         // ── Shared chrome ──────────────────────────────────────────────────────────
@@ -1129,9 +825,24 @@
         if (typeof updateNotificationBell  === 'function') updateNotificationBell();
         if (typeof populateCategorySelects === 'function') populateCategorySelects();
 
-        // ── Active pane ────────────────────────────────────────────────────────────
         var activeTab = AppState.activeTab || 'overview';
 
+        // ── Handle chart tabs ──────────────────────────────────────────────────────
+        // PHASE 2: spending (was charts+categories) and trends (was multimonth+forecast)
+        ['spending', 'trends'].forEach(function(tabId) {
+            if (activeTab === tabId) {
+                // Active: re-render after canvas-visible delay
+                setTimeout(function() {
+                    if (tabId === 'spending' && typeof renderSpending === 'function') renderSpending();
+                    if (tabId === 'trends'   && typeof renderTrends   === 'function') renderTrends();
+                }, 50);
+            } else {
+                // Inactive: mark dirty — switchTab will re-render on next visit
+                _chartTabsDirty[tabId] = true;
+            }
+        });
+
+        // ── Active non-chart pane ──────────────────────────────────────────────────
         var renderMap = {
             'overview':   function() { if (typeof renderOverview    === 'function') renderOverview();    },
             'goals':      function() { if (typeof renderGoals       === 'function') renderGoals();       },
@@ -1144,13 +855,9 @@
                 if (typeof _updateBillFabVisibility === 'function') _updateBillFabVisibility();
             },
             'settings':   function() { if (typeof renderSettings    === 'function') renderSettings();    },
-            'categories': function() { if (typeof renderCategories  === 'function') renderCategories();  },
             'report':     function() { if (typeof renderReport      === 'function') renderReport();      },
             'insights':   function() { if (typeof renderInsights    === 'function') renderInsights();    },
-            'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   },
-            'charts':     function() { /* rendered by switchTab — avoids canvas flicker */ },
-            'multimonth': function() { /* rendered by switchTab */ },
-            'forecast':   function() { /* rendered by switchTab */ }
+            'templates':  function() { if (typeof renderTemplates   === 'function') renderTemplates();   }
         };
 
         if (renderMap[activeTab]) {

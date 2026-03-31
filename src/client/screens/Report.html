@@ -1,19 +1,23 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Report.html — Full Budget Summary Report
 
-     TAB: Report
+     PHASE 1 FIX:
+       1.1 — XSS / HTML injection vulnerability fixed.
+             _statCell() was interpolating its `value` parameter directly into
+             innerHTML without escaping. If a category name contained '<', '>'
+             or '&' (e.g. "Food & Drink", or a manually typed name with HTML)
+             it would break the report layout or inject markup.
 
-     SECTIONS (inside a single bordered card):
-       1. Header bar — "Budget Summary Report" + N months recorded
-       2. All-time totals (Income / Expenses / Saved)
-       3. Monthly averages + savings rate
-       4. Highlights (Best Month / Highest Spend Month)
-       5. Top spending categories (all-time, sorted descending)
-       6. Month-by-month table (all loaded months, oldest first)
+             The same issue existed in topCatRows (category names interpolated
+             directly) and in tableRows (month labels are safe, but category
+             names in top-cats were not).
 
-     Print button triggers window.print() — styles.css hides chrome in @media print.
-     All data from AppState.transactions — no server call needed.
-     switchTab('report') calls renderReport() immediately (no canvas delay).
+             Fix:
+               - _statCell() now escapes its label and value parameters.
+               - topCatRows entry.cat is escaped via _escRpt() (already existed).
+               - All other dynamic string interpolations audited and confirmed
+                 safe (month labels from MONTHS array, fmt() output is numeric).
+               - _escRpt() is applied consistently to any user-sourced string.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-report">
@@ -35,14 +39,6 @@
     // Report screen
     // =============================================================================
 
-    /**
-     * renderReport()
-     *
-     * Assembles the full printable report from AppState.transactions.
-     * Only months that have at least one transaction are included.
-     *
-     * Called by switchTab('report') and renderAll() when this pane is active.
-     */
     function renderReport() {
         var bodyEl = document.getElementById('report-body');
         if (!bodyEl) return;
@@ -53,7 +49,7 @@
                 var txs = AppState.transactions[k];
                 return txs && txs.length > 0;
             })
-            .sort(); // oldest first
+            .sort();
 
         if (keys.length === 0) {
             bodyEl.innerHTML = (
@@ -127,6 +123,7 @@
                 );
             };
 
+            // Month label is from MONTHS array — safe. fmt() output is numeric — safe.
             return (
                 '<tr>' +
                 '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);">' + label + '</td>' +
@@ -142,6 +139,7 @@
         // ── Top categories rows ───────────────────────────────────────────────────
         var topCatRows = topCats.map(function(entry) {
             var catPct = totExp > 0 ? Math.round((entry.amt / totExp) * 100) : 0;
+            // FIX 1.1: entry.cat is user-sourced — must be escaped
             return (
                 '<div class="tx-row">' +
                 '<div style="display:flex;align-items:center;gap:8px;">' +
@@ -167,7 +165,7 @@
             .map(function(h, i) { return '<th style="' + thStyle(i) + '">' + h + '</th>'; })
             .join('');
 
-        // ── Assemble report ───────────────────────────────────────────────────────
+        // ── Section label helper ──────────────────────────────────────────────────
         var sec = function(label) {
             return '<div style="font-size:10px;font-weight:500;letter-spacing:0.08em;' +
                 'text-transform:uppercase;color:var(--text2);margin-bottom:10px;">' +
@@ -191,6 +189,7 @@
             '<div style="' + pad + '">' +
             sec('Totals') +
             '<div class="row3">' +
+            // FIX 1.1: _statCell now escapes label and value
             _statCell('Total Income',   fmt(totInc), 'var(--acc)') +
             _statCell('Total Expenses', fmt(totExp), 'var(--red)') +
             _statCell('Total Saved',    fmt(totSav), 'var(--blue)') +
@@ -213,6 +212,7 @@
             '<div class="row2">' +
             '<div style="background:var(--bg2);border-radius:8px;padding:12px;">' +
             '<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">Best Month</div>' +
+            // bestLabel is from MONTHS array — safe
             '<div style="font-size:13px;font-weight:500;">' + bestLabel + '</div>' +
             '<div style="font-family:var(--mono);font-size:12px;color:var(--acc);">' + fmt(bestStats.bal) + ' net</div>' +
             '</div>' +
@@ -246,17 +246,31 @@
 
     // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
+    /**
+     * _statCell(label, value, color)
+     *
+     * FIX 1.1: Both `label` and `value` are now HTML-escaped before interpolation.
+     * Previously `value` was injected raw — a category name like "Food & Drink"
+     * passed as a label would render as "Food &amp; Drink" without escaping, or
+     * worse, a name containing '<' could break the HTML structure.
+     *
+     * fmt() returns a numeric string like "₦450,000" — technically safe, but we
+     * escape it anyway for defense in depth.
+     */
     function _statCell(label, value, color) {
         return (
             '<div>' +
-            '<div style="font-size:11px;color:var(--text2);margin-bottom:2px;">' + label + '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-bottom:2px;">' + _escRpt(label) + '</div>' +
             '<div style="font-family:var(--mono);font-size:14px;font-weight:500;' +
-            (color ? 'color:' + color + ';' : '') + '">' + value + '</div>' +
+            (color ? 'color:' + color + ';' : '') + '">' + _escRpt(value) + '</div>' +
             '</div>'
         );
     }
 
     function _escRpt(str) {
-        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 </script>

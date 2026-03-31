@@ -1,0 +1,488 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Spending.html — Spending Analytics (merged Charts + Categories)
+
+     PHASE 2 TASK 2.1: Replaces Charts.html and Categories.html.
+     Tab ID: "spending"
+
+     SECTIONS:
+       1. Income / Expenses / Savings bar chart (current month)
+       2. Spending by Category — interactive donut with HTML legend
+       3. Ranked category list with goal-relative progress bars,
+          month-over-month delta chips, and quick-edit limit links.
+
+     Phase 1 fixes carried forward:
+       - getChartDefaults() fresh copy per call (fix 1.2 via utils.js)
+       - FX null-guards on tick callbacks (fix 1.8)
+       - Category progress bars use goal limit as denominator (fix 1.4)
+       - Null-guard on curTxs() (fix 1.5)
+
+     switchTab('spending') calls renderSpending() after a 50ms delay
+     (canvas must be visible before Chart.js measures dimensions).
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<div class="pane" id="pane-spending">
+
+    <!-- ── 1. Bar Chart: Income vs Expenses vs Savings ───────────────────────── -->
+    <div class="sec" style="margin-top:0;">Income vs Expenses vs Savings</div>
+
+    <div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block;"></span>Income
+    </span>
+        <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block;"></span>Expenses
+    </span>
+        <span style="display:flex;align-items:center;gap:5px;">
+      <span style="width:10px;height:10px;border-radius:2px;background:var(--blue);display:inline-block;"></span>Savings
+    </span>
+    </div>
+
+    <div style="position:relative;width:100%;height:200px;margin-bottom:2rem;">
+        <canvas id="spending-bar-chart"></canvas>
+    </div>
+
+    <!-- ── 2. Donut Chart: Spending by Category ──────────────────────────────── -->
+    <div class="sec">Spending by Category</div>
+
+    <div id="spending-donut-legend"
+         style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+    </div>
+
+    <div id="spending-donut-wrap" style="position:relative;width:100%;height:240px;">
+        <canvas id="spending-donut-chart"></canvas>
+    </div>
+
+    <!-- ── 3. Category Breakdown List ───────────────────────────────────────── -->
+    <div class="sec" style="margin-top:2rem;">Category Breakdown</div>
+
+    <div id="spending-cat-list">
+        <!-- populated by renderSpending() -->
+    </div>
+
+</div>
+
+
+<script>
+    // =============================================================================
+    // Spending screen — renderSpending()
+    // Merged from Charts.html + Categories.html
+    // =============================================================================
+
+    function renderSpending() {
+        _renderSpendingBar();
+        _renderSpendingDonut();
+        _renderSpendingCatList();
+    }
+
+
+    // ─── 1. BAR CHART ─────────────────────────────────────────────────────────────
+
+    function _renderSpendingBar() {
+        destroyChart('spending-bar-chart');
+
+        var canvas = document.getElementById('spending-bar-chart');
+        if (!canvas) return;
+
+        var stats = getMonthStats(curKey());
+        var label = monthLabel(AppState.curYear, AppState.curMonth);
+
+        var colAcc  = _resolveSpendColor('--acc',  '#1D9E75');
+        var colRed  = _resolveSpendColor('--red',  '#D85A30');
+        var colBlue = _resolveSpendColor('--blue', '#185FA5');
+
+        // getChartDefaults() returns a fresh object each call (fix 1.2)
+        var defaults = getChartDefaults();
+        defaults.scales.x.grid = { display: false };
+        defaults.scales.y.ticks.maxTicksLimit = 5;
+
+        var chart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: [label],
+                datasets: [
+                    {
+                        label:           'Income',
+                        data:            [stats.inc],
+                        backgroundColor: colAcc,
+                        borderRadius:    4,
+                        borderSkipped:   false
+                    },
+                    {
+                        label:           'Expenses',
+                        data:            [stats.exp],
+                        backgroundColor: colRed,
+                        borderRadius:    4,
+                        borderSkipped:   false
+                    },
+                    {
+                        label:           'Savings',
+                        data:            [stats.sav],
+                        backgroundColor: colBlue,
+                        borderRadius:    4,
+                        borderSkipped:   false
+                    }
+                ]
+            },
+            options: defaults
+        });
+
+        registerChart('spending-bar-chart', chart);
+    }
+
+
+    // ─── 2. DONUT CHART ───────────────────────────────────────────────────────────
+
+    function _renderSpendingDonut() {
+        destroyChart('spending-donut-chart');
+
+        var wrapEl   = document.getElementById('spending-donut-wrap');
+        var legendEl = document.getElementById('spending-donut-legend');
+        if (!wrapEl) return;
+
+        var breakdown = _buildSpendingBreakdown();
+
+        // ── Empty state ──────────────────────────────────────────────────────────
+        if (breakdown.length === 0) {
+            wrapEl.innerHTML = (
+                '<div style="display:flex;align-items:center;justify-content:center;' +
+                'height:100%;color:var(--text2);font-size:13px;">' +
+                'No expense data for this month.' +
+                '</div>'
+            );
+            if (legendEl) legendEl.innerHTML = '';
+            return;
+        }
+
+        // Restore canvas if previously replaced with empty state
+        if (!document.getElementById('spending-donut-chart')) {
+            wrapEl.innerHTML = '<canvas id="spending-donut-chart"></canvas>';
+        }
+
+        var canvas = document.getElementById('spending-donut-chart');
+        if (!canvas) return;
+
+        var labels = breakdown.map(function(item) { return item.category; });
+        var data   = breakdown.map(function(item) { return item.amount;   });
+        var colors = breakdown.map(function(item) { return getCategoryColor(item.category); });
+        var total  = data.reduce(function(sum, v) { return sum + v; }, 0);
+
+        // ── Legend ──────────────────────────────────────────────────────────────
+        if (legendEl) {
+            legendEl.innerHTML = breakdown.map(function(item) {
+                var color   = getCategoryColor(item.category);
+                var percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
+                return (
+                    '<span style="display:flex;align-items:center;gap:5px;">' +
+                    '<span style="width:10px;height:10px;border-radius:2px;' +
+                    'background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
+                    '<span>' + _escSp(item.category) + ' ' + percent + '%</span>' +
+                    '</span>'
+                );
+            }).join('');
+        }
+
+        // ── FIX 1.8: null-safe symbol/rate in tooltip ────────────────────────────
+        var symbol = (typeof FX_SYMBOLS !== 'undefined' && AppState && FX_SYMBOLS[AppState.currency])
+            ? FX_SYMBOLS[AppState.currency] : '₦';
+
+        // Center-total plugin — draws total spend in the donut cutout
+        var centerTotalPlugin = {
+            id: 'centerTotal',
+            beforeDraw: function(chart) {
+                if (chart.config.type !== 'doughnut') return;
+                var ctx    = chart.ctx;
+                var width  = chart.width;
+                var height = chart.height;
+                var centerX = (chart.chartArea.left + chart.chartArea.right)  / 2;
+                var centerY = (chart.chartArea.top  + chart.chartArea.bottom) / 2;
+
+                // FIX 1.8: null-safe rate
+                var rate = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
+                var displayTotal = symbol + Math.round(total * rate).toLocaleString();
+
+                ctx.save();
+                ctx.textAlign    = 'center';
+                ctx.textBaseline = 'middle';
+
+                // Sub-label: "Total"
+                ctx.font      = '11px system-ui, sans-serif';
+                ctx.fillStyle = '#888';
+                ctx.fillText('Total', centerX, centerY - 12);
+
+                // Main total figure
+                ctx.font      = 'bold 14px system-ui, sans-serif';
+                ctx.fillStyle = (document.getElementById('app') || {}).classList &&
+                document.getElementById('app').classList.contains('dark')
+                    ? '#e8e6e1' : '#1a1a1a';
+                ctx.fillText(displayTotal, centerX, centerY + 8);
+
+                ctx.restore();
+            }
+        };
+
+        var chart = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels:   labels,
+                datasets: [{
+                    data:            data,
+                    backgroundColor: colors,
+                    borderWidth:     0,
+                    hoverOffset:     6
+                }]
+            },
+            plugins: [centerTotalPlugin],
+            options: {
+                responsive:          true,
+                maintainAspectRatio: false,
+                cutout:              '68%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var val     = ctx.parsed || 0;
+                                // FIX 1.8: null-safe rate
+                                var rate    = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
+                                var percent = total > 0 ? Math.round((val / total) * 100) : 0;
+                                return ' ' + ctx.label + ': ' + symbol +
+                                    Math.round(val * rate).toLocaleString() + ' (' + percent + '%)';
+                            }
+                        }
+                    }
+                },
+                // Clicking a donut segment scrolls to that category in the list below
+                onClick: function(evt, elements) {
+                    if (!elements || !elements.length) return;
+                    var idx     = elements[0].index;
+                    var catName = labels[idx];
+                    _scrollToCategoryRow(catName);
+                }
+            }
+        });
+
+        registerChart('spending-donut-chart', chart);
+    }
+
+
+    // ─── 3. CATEGORY LIST ─────────────────────────────────────────────────────────
+
+    function _renderSpendingCatList() {
+        var listEl = document.getElementById('spending-cat-list');
+        if (!listEl) return;
+
+        // FIX 1.5: null-guard before iterating
+        var txs = curTxs();
+        if (!Array.isArray(txs)) txs = [];
+
+        var catMap = {};
+        txs.forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            var cat = tx.category || 'Other';
+            catMap[cat] = (catMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        var entries = Object.keys(catMap)
+            .map(function(cat) { return { cat: cat, amt: catMap[cat] }; })
+            .sort(function(a, b) { return b.amt - a.amt; });
+
+        if (entries.length === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
+                'No expense data for this month.' +
+                '</div>'
+            );
+            return;
+        }
+
+        var totalExp = entries.reduce(function(sum, e) { return sum + e.amt; }, 0);
+
+        // Goal lookup
+        var goalMap = {};
+        ((AppState.goals && AppState.goals[curKey()]) || []).forEach(function(g) {
+            goalMap[g.category] = g;
+        });
+
+        // Previous month spend lookup for delta chips
+        var prevKey = _getPrevMonthKey();
+        var prevCatMap = {};
+        if (prevKey) {
+            var prevTxs = AppState.transactions[prevKey];
+            if (Array.isArray(prevTxs)) {
+                prevTxs.forEach(function(tx) {
+                    if (tx.type !== 'expense') return;
+                    var cat = tx.category || 'Other';
+                    prevCatMap[cat] = (prevCatMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+                });
+            }
+        }
+
+        var html = '';
+
+        entries.forEach(function(entry) {
+            var cat   = entry.cat;
+            var amt   = entry.amt;
+            var color = getCategoryColor(cat);
+            var goal  = goalMap[cat];
+
+            // FIX 1.4: correct bar denominator and color
+            var barPct, barColor, isOver, limitLabel;
+
+            if (goal && goal.monthly_limit > 0) {
+                var limit = parseFloat(goal.monthly_limit);
+                barPct    = Math.min(100, Math.round((amt / limit) * 100));
+                isOver    = amt > limit;
+                barColor  = isOver        ? 'var(--red)'
+                    : barPct >= 70  ? 'var(--amber)'
+                        :                 color;
+                limitLabel = (
+                    '<span style="font-size:11px;color:' + (isOver ? 'var(--red)' : 'var(--text2)') + ';">' +
+                    barPct + '% of limit' +
+                    (isOver ? ' (' + fmt(amt - limit) + ' over)' : '') +
+                    '</span>'
+                );
+            } else {
+                barPct    = pct(amt, totalExp);
+                barColor  = color;
+                isOver    = false;
+                limitLabel = (
+                    '<span style="font-size:11px;color:var(--text2);">' +
+                    barPct + '% of spend</span>'
+                );
+            }
+
+            var overBadge = isOver
+                ? ' <span class="badge badge-red">Over limit</span>'
+                : '';
+
+            // Month-over-month delta chip
+            var deltaHtml = '';
+            if (prevKey && prevCatMap[cat] !== undefined) {
+                var prevAmt = prevCatMap[cat] || 0;
+                var delta   = amt - prevAmt;
+                if (Math.abs(delta) > 0) {
+                    var deltaSign  = delta > 0 ? '↑' : '↓';
+                    var deltaColor = delta > 0 ? 'var(--red)' : 'var(--acc)';
+                    deltaHtml = (
+                        '<span style="font-size:10px;font-weight:600;color:' + deltaColor + ';' +
+                        'background:' + (delta > 0 ? 'rgba(216,90,48,0.10)' : 'rgba(29,158,117,0.10)') + ';' +
+                        'padding:1px 6px;border-radius:3px;margin-left:6px;white-space:nowrap;">' +
+                        deltaSign + ' ' + fmt(Math.abs(delta)) +
+                        '</span>'
+                    );
+                }
+            }
+
+            // Goal sub-line
+            var goalLabel = '';
+            if (goal && goal.monthly_limit > 0) {
+                goalLabel = (
+                    '<div style="font-size:11px;color:' + (isOver ? 'var(--red)' : 'var(--text2)') +
+                    ';margin-top:2px;">' +
+                    'Limit: ' + fmt(goal.monthly_limit) + ' — ' +
+                    Math.round((amt / goal.monthly_limit) * 100) + '% used' +
+                    (isOver ? ' (' + fmt(amt - goal.monthly_limit) + ' over)' : '') +
+                    '&nbsp;<span style="color:var(--text2);cursor:pointer;text-decoration:underline;" ' +
+                    'onclick="openGoalModal(\'' + goal.id + '\')" title="Edit this spending limit">Edit limit</span>' +
+                    '</div>'
+                );
+            } else {
+                goalLabel = (
+                    '<div style="font-size:11px;color:var(--text2);margin-top:2px;">' +
+                    'No limit set — ' +
+                    '<span style="cursor:pointer;color:var(--text2);text-decoration:underline;" ' +
+                    'onclick="switchTabSidebar(\'goals\')" title="Add a spending limit for this category">' +
+                    'Add limit</span>' +
+                    '</div>'
+                );
+            }
+
+            html += (
+                '<div style="margin-bottom:1.25rem;" id="spcat-' + _catId(cat) + '">' +
+
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">' +
+                '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                '<span style="width:10px;height:10px;border-radius:2px;' +
+                'background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
+                '<span style="font-size:13px;font-weight:500;">' + _escSp(cat) + '</span>' +
+                overBadge +
+                deltaHtml +
+                '</div>' +
+                '<div style="display:flex;align-items:baseline;gap:6px;">' +
+                '<span style="font-family:var(--mono);font-size:13px;">' + fmt(amt) + '</span>' +
+                limitLabel +
+                '</div>' +
+                '</div>' +
+
+                '<div class="prog-track">' +
+                '<div class="prog-fill" style="width:' + barPct + '%;background:' + barColor + ';"></div>' +
+                '</div>' +
+
+                goalLabel +
+
+                '</div>'
+            );
+        });
+
+        listEl.innerHTML = html;
+    }
+
+
+    // ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+    function _buildSpendingBreakdown() {
+        var map = {};
+        var txs = curTxs();
+        if (!Array.isArray(txs)) return [];
+
+        txs.forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            var cat = tx.category || 'Other';
+            map[cat] = (map[cat] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        return Object.keys(map)
+            .map(function(cat) { return { category: cat, amount: map[cat] }; })
+            .sort(function(a, b) { return b.amount - a.amount; });
+    }
+
+    function _resolveSpendColor(varName, fallback) {
+        var val = getComputedStyle(document.getElementById('app') || document.documentElement)
+            .getPropertyValue(varName).trim();
+        return val || fallback;
+    }
+
+    function _getPrevMonthKey() {
+        var y = AppState.curYear;
+        var m = AppState.curMonth - 1;
+        if (m < 1) { m = 12; y--; }
+        return monthKey(y, m);
+    }
+
+    // Scroll and briefly highlight a category row when a donut segment is clicked
+    function _scrollToCategoryRow(catName) {
+        var id  = 'spcat-' + _catId(catName);
+        var el  = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Flash highlight
+        el.style.transition = 'background 0.15s ease';
+        el.style.background = 'rgba(29,158,117,0.08)';
+        setTimeout(function() {
+            el.style.background = '';
+            setTimeout(function() { el.style.transition = ''; }, 300);
+        }, 1200);
+    }
+
+    // Generate a safe DOM id suffix from a category name
+    function _catId(cat) {
+        return String(cat || '').replace(/[^a-zA-Z0-9]/g, '_');
+    }
+
+    function _escSp(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+</script>

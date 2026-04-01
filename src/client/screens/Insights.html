@@ -1,42 +1,342 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Insights.html — Auto-Generated Spending Insights
 
-     PHASE 1 FIX:
-       1.5 — Added null-guards before all iterations over transaction data.
-             curTxs() already returns [] safely per utils.js, but during a
-             background sync the value can transiently be null (the fetch-in-
-             progress sentinel). Explicit Array.isArray() checks prevent silent
-             TypeErrors in that edge case and make the intent clear.
-             Also guards getMonthStats() calls — if a key's transactions are
-             null/undefined, getMonthStats returns zeroed stats safely, but
-             we add an explicit check before deriving ratios to avoid 0/0 NaN.
+     PHASE 3C ENHANCEMENTS:
+       3C.1 — Financial Health Score: circular indicator, letter grade, 5-component
+       3C.2 — Data minimum enforcement per insight (unlock placeholders)
+       3C.3 — Actionable CTA links on every relevant insight card
+       3C.4 — Multi-month expense trend: 3-month rolling linear regression
+       3C.5 — Remove duplicate top-category card; add recurring commitment ratio
+       3C.6 — Insight prioritization + capping at 5 + colored left borders
+
+     Phase 1 fixes:
+       1.5 — Null-guards on curTxs() and getMonthStats() before iteration
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-insights">
+
+    <!-- ── Financial Health Score (3C.1) ─────────────────────────────────────── -->
+    <div id="insights-health-section" style="margin-bottom:1.5rem;">
+        <!-- populated by renderInsights() -->
+    </div>
+
+    <!-- ── Insight Cards ──────────────────────────────────────────────────────── -->
     <div id="insights-body">
         <!-- populated by renderInsights() -->
     </div>
+
 </div>
+
+
+<style>
+    /* ── 3C.1 Financial Health Score ────────────────────────────────────────── */
+    .fhs-card {
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 1.5rem;
+    }
+
+    .fhs-ring-wrap {
+        position: relative;
+        flex-shrink: 0;
+        width: 80px;
+        height: 80px;
+    }
+
+    .fhs-ring-wrap svg {
+        transform: rotate(-90deg);
+    }
+
+    .fhs-grade {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .fhs-grade-letter {
+        font-size: 26px;
+    }
+
+    .fhs-grade-score {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 2px;
+        font-weight: 500;
+    }
+
+    .fhs-meta { flex: 1; min-width: 0; }
+
+    .fhs-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 4px;
+    }
+
+    .fhs-summary {
+        font-size: 13px;
+        color: var(--text2);
+        line-height: 1.5;
+        margin-bottom: 10px;
+    }
+
+    .fhs-components {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .fhs-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 20px;
+    }
+
+    .fhs-chip-pass { background: rgba(29,158,117,0.12); color: var(--acc); }
+    .fhs-chip-fail { background: rgba(136,135,128,0.10); color: var(--text2); }
+
+    /* ── 3C.6 Insight cards with urgency border ──────────────────────────────── */
+    .insight-card {
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 14px 16px 14px 18px;
+        margin-bottom: 10px;
+        display: flex;
+        gap: 12px;
+        border-left: 3px solid transparent;
+        transition: border-color 0.15s;
+    }
+
+    .insight-card.urgency-red    { border-left-color: var(--red);   }
+    .insight-card.urgency-amber  { border-left-color: var(--amber); }
+    .insight-card.urgency-green  { border-left-color: var(--acc);   }
+    .insight-card.urgency-blue   { border-left-color: var(--blue);  }
+
+    .insight-icon { font-size: 22px; flex-shrink: 0; line-height: 1.4; }
+
+    .insight-body { flex: 1; min-width: 0; }
+
+    .insight-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .insight-text {
+        font-size: 12px;
+        color: var(--text2);
+        line-height: 1.6;
+    }
+
+    .insight-cta {
+        margin-top: 6px;
+    }
+
+    .insight-cta button {
+        background: none;
+        border: 0.5px solid var(--border2);
+        border-radius: 5px;
+        padding: 3px 10px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: var(--font);
+        cursor: pointer;
+        color: var(--text2);
+        transition: border-color .12s, color .12s, background .12s;
+    }
+
+    .insight-cta button:hover {
+        border-color: var(--acc);
+        color: var(--acc);
+        background: rgba(29,158,117,0.06);
+    }
+
+    /* Unlock placeholder */
+    .insight-unlock {
+        background: var(--bg2);
+        border: 0.5px dashed var(--border2);
+        border-radius: var(--radius-lg);
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        opacity: 0.65;
+    }
+
+    .insight-unlock-icon { font-size: 18px; flex-shrink: 0; }
+
+    .insight-unlock-text { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+    .insight-unlock-text strong { color: var(--text); }
+</style>
 
 
 <script>
     // =============================================================================
-    // Insights screen
+    // Insights screen — Phase 3C complete
     // =============================================================================
 
     function renderInsights() {
-        var bodyEl = document.getElementById('insights-body');
-        if (!bodyEl) return;
+        _renderFinancialHealthScore();   // 3C.1
+        _renderInsightCards();           // 3C.2-3C.6
+    }
 
-        // ── Gather up to last 3 months with transaction data ─────────────────────
+
+    // ─── 3C.1 FINANCIAL HEALTH SCORE ─────────────────────────────────────────────
+
+    function _renderFinancialHealthScore() {
+        var sectionEl = document.getElementById('insights-health-section');
+        if (!sectionEl) return;
+
         var allKeys = Object.keys(AppState.transactions || {})
             .filter(function(k) {
                 var txs = AppState.transactions[k];
-                // FIX 1.5: explicit Array.isArray check — null sentinel returns false
+                return Array.isArray(txs) && txs.length > 0;
+            }).sort();
+
+        // Need at least 1 month for a score
+        if (allKeys.length === 0) {
+            sectionEl.innerHTML = '';
+            return;
+        }
+
+        var recentKey = allKeys[allKeys.length - 1];
+        var rs        = getMonthStats(recentKey);
+
+        // ── 5 components ─────────────────────────────────────────────────────────
+
+        // 1. Savings rate ≥ 20% → 25pts
+        var savRate   = rs.inc > 0 ? (rs.sav / rs.inc) : 0;
+        var c1Pass    = savRate >= 0.20;
+        var c1Score   = c1Pass ? 25 : Math.round(savRate / 0.20 * 25);
+
+        // 2. DTI ratio < 36% → 20pts
+        var dti       = AppState.debtToIncomeRatio || 0;
+        var c2Pass    = dti > 0 && dti < 36;
+        var c2Score   = dti === 0 ? 20 : (dti < 36 ? 20 : Math.round(Math.max(0, (72 - dti) / 72 * 20)));
+
+        // 3. Emergency fund > 0 → 20pts
+        var savingsGoals = AppState.savingsGoals || [];
+        var efGoal = savingsGoals.find(function(g) {
+            return g.name.toLowerCase().indexOf('emergency') !== -1;
+        });
+        var c3Pass  = efGoal && (parseFloat(efGoal.saved_amount) || 0) > 0;
+        var c3Score = c3Pass ? 20 : 0;
+
+        // 4. No over-budget categories → 20pts
+        var goals    = (AppState.goals && AppState.goals[curKey()]) || [];
+        var catMap   = {};
+        var txs      = curTxs();
+        if (Array.isArray(txs)) {
+            txs.forEach(function(tx) {
+                if (tx.type !== 'expense') return;
+                catMap[tx.category || 'Other'] = (catMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
+            });
+        }
+        var overCount = goals.filter(function(g) {
+            return g.monthly_limit > 0 && (catMap[g.category] || 0) > g.monthly_limit;
+        }).length;
+        var c4Pass  = goals.length > 0 && overCount === 0;
+        var c4Score = goals.length === 0 ? 10 : Math.round(Math.max(0, (1 - overCount / Math.max(goals.length, 1))) * 20);
+
+        // 5. Net worth positive → 15pts
+        var nwSummary = AppState.netWorthSummary;
+        var nw        = nwSummary ? nwSummary.net_worth : 0;
+        var c5Pass    = nw > 0;
+        var c5Score   = c5Pass ? 15 : 0;
+
+        var totalScore = Math.max(0, Math.min(100, c1Score + c2Score + c3Score + c4Score + c5Score));
+
+        // Letter grade
+        var grade = totalScore >= 90 ? 'A' : totalScore >= 75 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 45 ? 'D' : 'F';
+        var gradeColor = totalScore >= 75 ? 'var(--acc)' : totalScore >= 60 ? 'var(--amber)' : 'var(--red)';
+
+        // Circular ring SVG
+        var R = 34, CX = 40, CY = 40;
+        var circumference = 2 * Math.PI * R;
+        var dashOffset    = circumference * (1 - totalScore / 100);
+
+        var summary = totalScore >= 90 ? 'Excellent — your finances are in great shape.'
+            : totalScore >= 75  ? 'Good — strong foundations with room to improve.'
+                : totalScore >= 60  ? 'Fair — some areas need attention.'
+                    : totalScore >= 45  ? 'Needs work — focus on the failing components.'
+                        :                     'At risk — take action on multiple areas.';
+
+        var components = [
+            { label: 'Savings ≥20%',  pass: c1Pass, score: c1Score, max: 25 },
+            { label: 'DTI <36%',      pass: c2Pass, score: c2Score, max: 20 },
+            { label: 'Emergency fund', pass: c3Pass, score: c3Score, max: 20 },
+            { label: 'On budget',     pass: c4Pass, score: c4Score, max: 20 },
+            { label: '+ve net worth', pass: c5Pass, score: c5Score, max: 15 }
+        ];
+
+        var chipsHtml = components.map(function(c) {
+            return (
+                '<span class="fhs-chip ' + (c.pass ? 'fhs-chip-pass' : 'fhs-chip-fail') + '">' +
+                (c.pass ? '✓' : '○') + ' ' + c.label +
+                '</span>'
+            );
+        }).join('');
+
+        sectionEl.innerHTML = (
+            '<div class="fhs-card">' +
+
+            // Ring
+            '<div class="fhs-ring-wrap">' +
+            '<svg width="80" height="80" viewBox="0 0 80 80">' +
+            '<circle cx="' + CX + '" cy="' + CY + '" r="' + R + '" fill="none" stroke="var(--border)" stroke-width="7"/>' +
+            '<circle cx="' + CX + '" cy="' + CY + '" r="' + R + '" fill="none" stroke="' + gradeColor + '" ' +
+            'stroke-width="7" stroke-linecap="round" ' +
+            'stroke-dasharray="' + circumference + '" stroke-dashoffset="' + dashOffset + '"/>' +
+            '</svg>' +
+            '<div class="fhs-grade">' +
+            '<span class="fhs-grade-letter" style="color:' + gradeColor + ';">' + grade + '</span>' +
+            '<span class="fhs-grade-score">' + totalScore + '/100</span>' +
+            '</div>' +
+            '</div>' +
+
+            // Meta
+            '<div class="fhs-meta">' +
+            '<div class="fhs-title">Financial Health Score</div>' +
+            '<div class="fhs-summary">' + summary + '</div>' +
+            '<div class="fhs-components">' + chipsHtml + '</div>' +
+            '</div>' +
+
+            '</div>'
+        );
+    }
+
+
+    // ─── 3C.2–3C.6 INSIGHT CARDS ─────────────────────────────────────────────────
+
+    function _renderInsightCards() {
+        var bodyEl = document.getElementById('insights-body');
+        if (!bodyEl) return;
+
+        // FIX 1.5: guard Array
+        var allKeys = Object.keys(AppState.transactions || {})
+            .filter(function(k) {
+                var txs = AppState.transactions[k];
                 return Array.isArray(txs) && txs.length > 0;
             })
             .sort()
-            .slice(-3);
+            .slice(-12); // cap at 12 months
 
         if (allKeys.length === 0) {
             bodyEl.innerHTML = (
@@ -48,151 +348,253 @@
         }
 
         var recentKey = allKeys[allKeys.length - 1];
-        var prevKey   = allKeys.length >= 2 ? allKeys[allKeys.length - 2] : null;
+        var rs        = getMonthStats(recentKey);
 
-        var rs = getMonthStats(recentKey);
-        var ps = prevKey ? getMonthStats(prevKey) : { inc: 0, exp: 0, sav: 0, bal: 0 };
-
-        // ── Derived metrics ───────────────────────────────────────────────────────
-
-        // 1. Savings rate — FIX 1.5: guard against inc=0 to avoid NaN
-        var savRate = (rs.inc > 0) ? Math.round((rs.sav / rs.inc) * 100) : 0;
-
-        // 2. Month-over-month expense change %
-        // FIX 1.5: guard against ps.exp=0 to avoid division by zero
-        var expChange = (prevKey && ps.exp > 0)
-            ? Math.round(((rs.exp - ps.exp) / ps.exp) * 100)
-            : 0;
-
-        // 3. Average monthly expenses across loaded months
-        var avgExp = Math.round(
-            allKeys.reduce(function(sum, k) { return sum + getMonthStats(k).exp; }, 0) /
-            allKeys.length
-        );
-
-        // 4. Top spending category this month
-        // FIX 1.5: guard curTxs() with Array.isArray before iterating
-        var txsThisMonth = curTxs();
-        if (!Array.isArray(txsThisMonth)) txsThisMonth = [];
-
-        var catMap = {};
-        txsThisMonth.forEach(function(tx) {
-            if (tx.type !== 'expense') return;
-            catMap[tx.category] = (catMap[tx.category] || 0) + (parseFloat(tx.amount) || 0);
-        });
-        var topCatEntry = Object.keys(catMap)
-            .map(function(c) { return [c, catMap[c]]; })
-            .sort(function(a, b) { return b[1] - a[1]; })[0] || null;
-
-        // 5. Debt totals
-        var debts        = AppState.debts || [];
-        var totalDebt    = debts.reduce(function(sum, d) {
-            return sum + (parseFloat(d.amount_owed) ||
-                Math.max(0, (parseFloat(d.total) || 0) - (parseFloat(d.paid) || 0)));
-        }, 0);
-        var totalMonthly = debts.reduce(function(sum, d) {
-            return sum + (parseFloat(d.monthly_payment) || 0);
-        }, 0);
-
-        // ── Build insight cards ───────────────────────────────────────────────────
+        // All generated insights
         var insights = [];
+        var unlocks  = []; // data-insufficient placeholders
 
-        // 1. Savings rate
-        var savBody = savRate >= 20
-            ? 'Your savings rate is <strong>' + savRate + '%</strong> — hitting the 20% benchmark!'
-            : savRate >= 10
-                ? 'Your savings rate is <strong>' + savRate + '%</strong>. Good progress — aim for 20% for stronger financial health.'
-                : 'Your savings rate is <strong>' + savRate + '%</strong>. Consider increasing savings — the 50/30/20 rule suggests 20% of income.';
-
+        // ── Insight 1: Savings rate ─────────────────────────────────────────────
+        // Req: ≥ 1 month (3C.2)
+        var savRate = rs.inc > 0 ? Math.round((rs.sav / rs.inc) * 100) : 0;
+        var savBody;
+        if (savRate >= 20) {
+            savBody = 'Your savings rate is <strong>' + savRate + '%</strong> — hitting the 20% benchmark! Keep it up.';
+        } else if (savRate >= 10) {
+            savBody = 'Your savings rate is <strong>' + savRate + '%</strong>. Good progress — aim for 20% for stronger financial health.';
+        } else if (rs.inc > 0) {
+            savBody = 'Your savings rate is <strong>' + savRate + '%</strong>. Consider automating a savings transfer — even 5% makes a difference over time.';
+        } else {
+            savBody = 'No income recorded for this month. Record your income to see your savings rate.';
+        }
         insights.push({
-            icon:  '📈',
-            title: 'Savings rate',
-            body:  savBody,
-            color: 'var(--acc)'
+            icon:     '📈',
+            title:    'Savings rate',
+            body:     savBody,
+            urgency:  savRate >= 20 ? 'green' : savRate >= 10 ? 'amber' : 'red',
+            score:    savRate >= 20 ? 0 : savRate >= 10 ? 2 : 5,   // lower = more urgent
+            cta:      null
         });
 
-        // 2. Expense trend (only if previous month exists and has expenses)
-        if (prevKey && ps.exp > 0 && expChange !== 0) {
-            var dir       = expChange > 0 ? 'increased' : 'decreased';
-            var trendNote = expChange > 10  ? 'Worth reviewing your spending this month.'
-                : expChange < -10 ? 'Great work cutting costs!'
-                    :                   'Spending is fairly stable.';
-            insights.push({
-                icon:  '💸',
-                title: 'Expense trend',
-                body:  'Expenses <strong>' + dir + '</strong> by <strong>' + Math.abs(expChange) + '%</strong> vs last month. ' + trendNote,
-                color: expChange > 10 ? 'var(--red)' : 'var(--acc)'
-            });
-        }
-
-        // 3. Top spending category
-        if (topCatEntry) {
-            var topCatName = topCatEntry[0];
-            var topCatAmt  = topCatEntry[1];
-            var curGoals   = (AppState.goals && AppState.goals[curKey()]) || [];
-            var hasGoal    = curGoals.some(function(g) {
-                return g.category && g.category.toLowerCase() === topCatName.toLowerCase();
-            });
-            var goalNote = hasGoal
-                ? 'A budget limit is set for this category.'
-                : 'Consider setting a spending limit to track this.';
-
-            insights.push({
-                icon:  '🏷️',
-                title: 'Top spending category',
-                body:  'Biggest expense: <strong>' + _escIns(topCatName) + '</strong> at ' + fmt(topCatAmt) + '. ' + goalNote,
-                color: 'var(--amber)'
-            });
-        }
-
-        // 4. Average monthly spend
-        // FIX 1.5: only show this insight when allKeys.length >= 2;
-        // with a single month the "average" IS the actual and is misleading.
+        // ── Insight 2: 3-month expense trend (3C.4, replaces 2-month compare) ──
+        // Req: ≥ 2 months (3C.2)
         if (allKeys.length >= 2) {
-            var avgNote = rs.exp > avgExp
-                ? 'Spending is above your ' + allKeys.length + '-month average this month.'
-                : 'Spending is below your ' + allKeys.length + '-month average — good discipline!';
+            var trendKeys   = allKeys.slice(-Math.min(3, allKeys.length));
+            var trendExpArr = trendKeys.map(function(k) { return getMonthStats(k).exp; });
+
+            var trendBody;
+            if (trendKeys.length >= 3) {
+                // Simple linear regression slope
+                var n      = trendExpArr.length;
+                var xMean  = (n - 1) / 2;
+                var yMean  = trendExpArr.reduce(function(s, v) { return s + v; }, 0) / n;
+                var num    = 0, den = 0;
+                trendExpArr.forEach(function(y, x) {
+                    num += (x - xMean) * (y - yMean);
+                    den += (x - xMean) * (x - xMean);
+                });
+                var slope = den !== 0 ? num / den : 0;
+
+                if (Math.abs(slope) < yMean * 0.03) {
+                    trendBody = 'Expenses have <strong>held steady</strong> over the last 3 months — consistent spending behaviour.';
+                } else if (slope > 0) {
+                    var pct3 = yMean > 0 ? Math.round((slope / yMean) * 100) : 0;
+                    trendBody = 'Expenses have been <strong style="color:var(--red)">rising</strong> — up roughly ' + pct3 + '% per month over the last 3 months. Worth reviewing.';
+                } else {
+                    var pct3d = yMean > 0 ? Math.round((Math.abs(slope) / yMean) * 100) : 0;
+                    trendBody = 'Expenses have been <strong style="color:var(--acc)">falling</strong> — down roughly ' + pct3d + '% per month over the last 3 months. Great discipline!';
+                }
+            } else {
+                // 2-month fallback
+                var prev2  = getMonthStats(trendKeys[0]).exp;
+                var curr2  = trendExpArr[trendExpArr.length - 1];
+                var chg    = prev2 > 0 ? Math.round(((curr2 - prev2) / prev2) * 100) : 0;
+                if (chg > 0) {
+                    trendBody = 'Expenses <strong style="color:var(--red)">increased by ' + chg + '%</strong> vs last month. Worth reviewing your spending.';
+                } else if (chg < 0) {
+                    trendBody = 'Expenses <strong style="color:var(--acc)">decreased by ' + Math.abs(chg) + '%</strong> vs last month — great work cutting costs!';
+                } else {
+                    trendBody = 'Expenses are <strong>unchanged</strong> vs last month.';
+                }
+            }
 
             insights.push({
-                icon:  '📊',
-                title: 'Average monthly spend',
-                body:  'Your ' + allKeys.length + '-month average is <strong>' + fmt(avgExp) + '</strong>/month. ' + avgNote,
-                color: 'var(--blue)'
+                icon:    '💸',
+                title:   'Expense trend',
+                body:    trendBody,
+                urgency: (trendExpArr[trendExpArr.length - 1] > trendExpArr[0] * 1.1) ? 'amber' : 'green',
+                score:   3,
+                cta:     { label: 'View Spending →', tab: 'spending' }
+            });
+        } else {
+            unlocks.push({ title: 'Expense trend', months: 2 });
+        }
+
+        // ── Insight 3: Average monthly spend ───────────────────────────────────
+        // Req: ≥ 3 months (3C.2)
+        if (allKeys.length >= 3) {
+            var avgExp = Math.round(
+                allKeys.reduce(function(sum, k) { return sum + getMonthStats(k).exp; }, 0) /
+                allKeys.length
+            );
+            var curExp   = rs.exp;
+            var avgNote  = curExp > avgExp
+                ? 'Spending is <strong style="color:var(--amber);">above</strong> your ' + allKeys.length + '-month average (' + fmt(avgExp) + '/mo) this month.'
+                : 'Spending is <strong style="color:var(--acc);">below</strong> your ' + allKeys.length + '-month average (' + fmt(avgExp) + '/mo) — good discipline!';
+
+            insights.push({
+                icon:    '📊',
+                title:   'Average monthly spend',
+                body:    'Your ' + allKeys.length + '-month average is <strong>' + fmt(avgExp) + '</strong>/mo. ' + avgNote,
+                urgency: curExp > avgExp * 1.15 ? 'amber' : 'green',
+                score:   4,
+                cta:     { label: 'View Trends →', tab: 'trends' }
+            });
+        } else {
+            unlocks.push({ title: 'Average monthly spend', months: 3 });
+        }
+
+        // ── Insight 4: Recurring commitment ratio (3C.5, replaces top-cat card) ─
+        var recurring    = (AppState.recurring || []).filter(function(r) { return r.active; });
+        var recMonthlyAmt = recurring.reduce(function(sum, r) { return sum + (parseFloat(r.amount) || 0); }, 0);
+        if (recurring.length > 0 && rs.inc > 0) {
+            var recPct = Math.round((recMonthlyAmt / rs.inc) * 100);
+            var recBody;
+            if (recPct > 70) {
+                recBody = '<strong>' + recPct + '%</strong> of your income (' + fmt(recMonthlyAmt) + ') is committed to recurring expenses. That leaves very little discretionary room — consider reviewing your subscriptions.';
+            } else if (recPct > 50) {
+                recBody = '<strong>' + recPct + '%</strong> of your income (' + fmt(recMonthlyAmt) + ') goes to recurring expenses. That\'s manageable, but leaves limited flexibility for unplanned costs.';
+            } else {
+                recBody = '<strong>' + recPct + '%</strong> of your income (' + fmt(recMonthlyAmt) + ') is committed to recurring expenses — a healthy ratio that leaves room for savings and discretionary spending.';
+            }
+            insights.push({
+                icon:    '🔄',
+                title:   'Recurring commitment ratio',
+                body:    recBody,
+                urgency: recPct > 70 ? 'red' : recPct > 50 ? 'amber' : 'green',
+                score:   recPct > 70 ? 1 : recPct > 50 ? 3 : 6,
+                cta:     { label: 'Manage Recurring →', tab: 'recurring' }
             });
         }
 
-        // 5. Debt overview (only if debts exist)
+        // ── Insight 5: Over-budget categories ─────────────────────────────────
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+        var txsCur = curTxs();
+        var catMap = {};
+        if (Array.isArray(txsCur)) {
+            txsCur.forEach(function(tx) {
+                if (tx.type !== 'expense') return;
+                catMap[tx.category || 'Other'] = (catMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
+            });
+        }
+        var overGoals = goals.filter(function(g) {
+            return g.monthly_limit > 0 && (catMap[g.category] || 0) > g.monthly_limit;
+        });
+        if (overGoals.length > 0) {
+            var overNames = overGoals.slice(0, 3).map(function(g) { return '<strong>' + _escIns(g.category) + '</strong>'; }).join(', ');
+            insights.push({
+                icon:    '⚠️',
+                title:   'Over-budget categories',
+                body:    'You\'ve exceeded your spending limit for ' + overNames +
+                    (overGoals.length > 3 ? ' and ' + (overGoals.length - 3) + ' more' : '') + ' this month.',
+                urgency: 'red',
+                score:   0, // highest urgency
+                cta:     { label: 'View Spending Limits →', tab: 'goals' }
+            });
+        }
+
+        // ── Insight 6: Debt overview ──────────────────────────────────────────
+        var debts        = AppState.debts || [];
+        var totalDebt    = debts.reduce(function(sum, d) { return sum + (parseFloat(d.amount_owed) || 0); }, 0);
+        var totalMonthly = debts.reduce(function(sum, d) { return sum + (parseFloat(d.monthly_payment) || 0); }, 0);
         if (debts.length > 0) {
+            var dtiVal  = AppState.debtToIncomeRatio || 0;
+            var dtiNote = dtiVal > 36 ? '⚠ DTI above 36% is considered high risk.'
+                : dtiVal > 20 ? 'DTI is moderate — within acceptable range.'
+                    :                'DTI is healthy.';
             insights.push({
-                icon:  '💳',
-                title: 'Debt overview',
-                body:  '<strong>' + debts.length + '</strong> active debt' + (debts.length > 1 ? 's' : '') +
+                icon:    '💳',
+                title:   'Debt overview',
+                body:    '<strong>' + debts.length + '</strong> active debt' + (debts.length > 1 ? 's' : '') +
                     ' totalling <strong>' + fmt(totalDebt) + '</strong>.' +
-                    (totalMonthly > 0 ? ' Monthly payments: ' + fmt(totalMonthly) + '.' : ''),
-                color: 'var(--red)'
+                    (totalMonthly > 0 ? ' Monthly payments: ' + fmt(totalMonthly) + '.' : '') +
+                    (dtiVal > 0 ? ' DTI: ' + dtiVal + '%. ' + dtiNote : ''),
+                urgency: dtiVal > 36 ? 'red' : dtiVal > 20 ? 'amber' : 'green',
+                score:   dtiVal > 36 ? 1 : 5,
+                cta:     { label: 'View Debt Tracker →', tab: 'debt' }
             });
         }
 
-        // ── Render cards ──────────────────────────────────────────────────────────
-        bodyEl.innerHTML = insights.map(function(ins) {
+        // ── Insight 7: Net worth ──────────────────────────────────────────────
+        var nwSummary = AppState.netWorthSummary;
+        if (nwSummary && nwSummary.item_count > 0) {
+            var nw = nwSummary.net_worth;
+            insights.push({
+                icon:    nw >= 0 ? '📈' : '📉',
+                title:   'Net worth',
+                body:    'Your net worth is <strong style="color:' + (nw >= 0 ? 'var(--acc)' : 'var(--red)') + ';">' + fmt(nw) + '</strong>. ' +
+                    (nw < 0 ? 'Liabilities exceed assets — focus on paying down debt.' :
+                        nw === 0 ? 'Exactly at zero — every payment toward debt improves this.' :
+                            'Assets exceed liabilities. Keep building!'),
+                urgency: nw < 0 ? 'red' : 'green',
+                score:   nw < 0 ? 1 : 7,
+                cta:     { label: 'View Net Worth →', tab: 'networth' }
+            });
+        }
+
+        // ── 3C.6 Sort by urgency score, cap at 5, render ─────────────────────
+        insights.sort(function(a, b) { return (a.score || 99) - (b.score || 99); });
+        var topInsights = insights.slice(0, 5);
+
+        var html = topInsights.map(function(ins) {
+            var ctaHtml = '';
+            if (ins.cta) {
+                ctaHtml = (
+                    '<div class="insight-cta">' +
+                    '<button onclick="switchTabSidebar(\'' + ins.cta.tab + '\')">' +
+                    _escIns(ins.cta.label) +
+                    '</button>' +
+                    '</div>'
+                );
+            }
+
             return (
-                '<div class="card" style="display:flex;gap:12px;margin-bottom:10px;">' +
-                '<div style="font-size:22px;flex-shrink:0;line-height:1.4;">' + ins.icon + '</div>' +
-                '<div>' +
-                '<div style="font-size:13px;font-weight:500;color:' + ins.color + ';margin-bottom:4px;">' +
-                ins.title +
-                '</div>' +
-                '<div style="font-size:12px;color:var(--text2);line-height:1.6;">' +
-                ins.body +
-                '</div>' +
+                '<div class="insight-card urgency-' + (ins.urgency || 'blue') + '">' +
+                '<div class="insight-icon">' + ins.icon + '</div>' +
+                '<div class="insight-body">' +
+                '<div class="insight-title" style="color:' + _urgencyColor(ins.urgency) + ';">' + _escIns(ins.title) + '</div>' +
+                '<div class="insight-text">' + ins.body + '</div>' +
+                ctaHtml +
                 '</div>' +
                 '</div>'
             );
         }).join('');
+
+        // 3C.2 — Unlock placeholders for insufficient data
+        var unlocksHtml = unlocks.map(function(u) {
+            return (
+                '<div class="insight-unlock">' +
+                '<div class="insight-unlock-icon">🔒</div>' +
+                '<div class="insight-unlock-text">' +
+                '<strong>' + _escIns(u.title) + '</strong><br/>' +
+                'Add at least ' + u.months + ' months of transactions to unlock this insight.' +
+                '</div>' +
+                '</div>'
+            );
+        }).join('');
+
+        bodyEl.innerHTML = html + unlocksHtml;
     }
 
 
     // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _urgencyColor(urgency) {
+        return urgency === 'red'   ? 'var(--red)'
+            : urgency === 'amber' ? 'var(--amber)'
+                : urgency === 'green' ? 'var(--acc)'
+                    :                       'var(--blue)';
+    }
 
     function _escIns(str) {
         return String(str || '')

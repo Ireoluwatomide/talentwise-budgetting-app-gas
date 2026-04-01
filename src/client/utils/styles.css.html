@@ -598,10 +598,29 @@
 
         #pane-report { display: block !important; }
 
-        #layout-root { display: block; }
-        .app { max-width: 100%; padding: 0; margin: 0; box-shadow: none; }
+        /* FIX 1.6: Reset layout container padding so the report prints
+           full-width without the web app column's horizontal padding. */
+        #layout-root {
+            display: block;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
 
-        body { background: #fff; color: #000; font-size: 12px; }
+        .app {
+            max-width: 100%;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none;
+        }
+
+        /* FIX 1.6: Reset body margin/padding for clean page edges. */
+        body {
+            background: #fff;
+            color: #000;
+            font-size: 12px;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
 
         .metric, .card { background: none; border: 0.5px solid #ccc; }
 

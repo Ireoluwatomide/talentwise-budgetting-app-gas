@@ -1,23 +1,16 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Spending.html — Spending Analytics (merged Charts + Categories)
 
-     PHASE 2 TASK 2.1: Replaces Charts.html and Categories.html.
+     PHASE 3 ENHANCEMENTS:
+       3A.1 — Donut center total label (beforeDraw plugin) ✓ (Phase 2)
+       3A.2 — Interactive donut segments → scroll + highlight ✓ (Phase 2)
+       3A.3 — Month-over-month delta chips on category rows ✓ (Phase 2)
+       3A.4 — Quick-edit limit inline: pencil icon opens compact limit editor
+       3A.5 — Category sparklines: 3-bar inline SVG per category row
+       3A.6 — CSS variable color resolution for dark mode ✓ (Phase 2)
+       3A.7 — Dark mode chart live update via renderAllCharts()
+
      Tab ID: "spending"
-
-     SECTIONS:
-       1. Income / Expenses / Savings bar chart (current month)
-       2. Spending by Category — interactive donut with HTML legend
-       3. Ranked category list with goal-relative progress bars,
-          month-over-month delta chips, and quick-edit limit links.
-
-     Phase 1 fixes carried forward:
-       - getChartDefaults() fresh copy per call (fix 1.2 via utils.js)
-       - FX null-guards on tick callbacks (fix 1.8)
-       - Category progress bars use goal limit as denominator (fix 1.4)
-       - Null-guard on curTxs() (fix 1.5)
-
-     switchTab('spending') calls renderSpending() after a 50ms delay
-     (canvas must be visible before Chart.js measures dimensions).
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-spending">
@@ -62,11 +55,74 @@
 </div>
 
 
+<!-- ══ QUICK-EDIT LIMIT MODAL (3A.4) ════════════════════════════════════ -->
+<!-- Inline compact limit editor appears below category row when pencil tapped -->
+
+
+<style>
+    /* 3A.4 — Quick edit limit */
+    .cat-quick-edit {
+        background: var(--bg2);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 10px 12px;
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .cat-quick-edit-label {
+        font-size: 11px;
+        color: var(--text2);
+        flex-shrink: 0;
+    }
+
+    .cat-quick-edit input {
+        flex: 1;
+        min-width: 100px;
+        max-width: 180px;
+    }
+
+    .cat-quick-edit .cat-qe-btns {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    /* 3A.5 — Sparkline SVG */
+    .cat-sparkline {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 20px;
+        margin-left: 8px;
+        vertical-align: middle;
+        flex-shrink: 0;
+    }
+
+    /* Highlight animation when donut segment clicked */
+    @keyframes catHighlight {
+        0%   { background: rgba(29,158,117,0.12); }
+        60%  { background: rgba(29,158,117,0.12); }
+        100% { background: transparent; }
+    }
+
+    .cat-row-highlight {
+        animation: catHighlight 1.4s ease forwards;
+        border-radius: var(--radius);
+    }
+</style>
+
+
 <script>
     // =============================================================================
-    // Spending screen — renderSpending()
-    // Merged from Charts.html + Categories.html
+    // Spending screen — Phase 3A complete
     // =============================================================================
+
+    // Track which category has its quick-edit open (3A.4)
+    var _spendingQEOpenCat = null;
 
     function renderSpending() {
         _renderSpendingBar();
@@ -90,7 +146,6 @@
         var colRed  = _resolveSpendColor('--red',  '#D85A30');
         var colBlue = _resolveSpendColor('--blue', '#185FA5');
 
-        // getChartDefaults() returns a fresh object each call (fix 1.2)
         var defaults = getChartDefaults();
         defaults.scales.x.grid = { display: false };
         defaults.scales.y.ticks.maxTicksLimit = 5;
@@ -100,27 +155,9 @@
             data: {
                 labels: [label],
                 datasets: [
-                    {
-                        label:           'Income',
-                        data:            [stats.inc],
-                        backgroundColor: colAcc,
-                        borderRadius:    4,
-                        borderSkipped:   false
-                    },
-                    {
-                        label:           'Expenses',
-                        data:            [stats.exp],
-                        backgroundColor: colRed,
-                        borderRadius:    4,
-                        borderSkipped:   false
-                    },
-                    {
-                        label:           'Savings',
-                        data:            [stats.sav],
-                        backgroundColor: colBlue,
-                        borderRadius:    4,
-                        borderSkipped:   false
-                    }
+                    { label: 'Income',   data: [stats.inc], backgroundColor: colAcc,  borderRadius: 4, borderSkipped: false },
+                    { label: 'Expenses', data: [stats.exp], backgroundColor: colRed,  borderRadius: 4, borderSkipped: false },
+                    { label: 'Savings',  data: [stats.sav], backgroundColor: colBlue, borderRadius: 4, borderSkipped: false }
                 ]
             },
             options: defaults
@@ -141,7 +178,6 @@
 
         var breakdown = _buildSpendingBreakdown();
 
-        // ── Empty state ──────────────────────────────────────────────────────────
         if (breakdown.length === 0) {
             wrapEl.innerHTML = (
                 '<div style="display:flex;align-items:center;justify-content:center;' +
@@ -153,7 +189,6 @@
             return;
         }
 
-        // Restore canvas if previously replaced with empty state
         if (!document.getElementById('spending-donut-chart')) {
             wrapEl.innerHTML = '<canvas id="spending-donut-chart"></canvas>';
         }
@@ -166,7 +201,6 @@
         var colors = breakdown.map(function(item) { return getCategoryColor(item.category); });
         var total  = data.reduce(function(sum, v) { return sum + v; }, 0);
 
-        // ── Legend ──────────────────────────────────────────────────────────────
         if (legendEl) {
             legendEl.innerHTML = breakdown.map(function(item) {
                 var color   = getCategoryColor(item.category);
@@ -181,41 +215,32 @@
             }).join('');
         }
 
-        // ── FIX 1.8: null-safe symbol/rate in tooltip ────────────────────────────
         var symbol = (typeof FX_SYMBOLS !== 'undefined' && AppState && FX_SYMBOLS[AppState.currency])
             ? FX_SYMBOLS[AppState.currency] : '₦';
 
-        // Center-total plugin — draws total spend in the donut cutout
+        // 3A.1 — Center total label plugin
         var centerTotalPlugin = {
             id: 'centerTotal',
             beforeDraw: function(chart) {
                 if (chart.config.type !== 'doughnut') return;
                 var ctx    = chart.ctx;
-                var width  = chart.width;
-                var height = chart.height;
                 var centerX = (chart.chartArea.left + chart.chartArea.right)  / 2;
                 var centerY = (chart.chartArea.top  + chart.chartArea.bottom) / 2;
 
-                // FIX 1.8: null-safe rate
                 var rate = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
                 var displayTotal = symbol + Math.round(total * rate).toLocaleString();
 
                 ctx.save();
                 ctx.textAlign    = 'center';
                 ctx.textBaseline = 'middle';
-
-                // Sub-label: "Total"
                 ctx.font      = '11px system-ui, sans-serif';
                 ctx.fillStyle = '#888';
                 ctx.fillText('Total', centerX, centerY - 12);
-
-                // Main total figure
                 ctx.font      = 'bold 14px system-ui, sans-serif';
-                ctx.fillStyle = (document.getElementById('app') || {}).classList &&
+                ctx.fillStyle = document.getElementById('app') &&
                 document.getElementById('app').classList.contains('dark')
                     ? '#e8e6e1' : '#1a1a1a';
                 ctx.fillText(displayTotal, centerX, centerY + 8);
-
                 ctx.restore();
             }
         };
@@ -224,25 +249,17 @@
             type: 'doughnut',
             data: {
                 labels:   labels,
-                datasets: [{
-                    data:            data,
-                    backgroundColor: colors,
-                    borderWidth:     0,
-                    hoverOffset:     6
-                }]
+                datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }]
             },
             plugins: [centerTotalPlugin],
             options: {
-                responsive:          true,
-                maintainAspectRatio: false,
-                cutout:              '68%',
+                responsive: true, maintainAspectRatio: false, cutout: '68%',
                 plugins: {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
                             label: function(ctx) {
                                 var val     = ctx.parsed || 0;
-                                // FIX 1.8: null-safe rate
                                 var rate    = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
                                 var percent = total > 0 ? Math.round((val / total) * 100) : 0;
                                 return ' ' + ctx.label + ': ' + symbol +
@@ -251,7 +268,7 @@
                         }
                     }
                 },
-                // Clicking a donut segment scrolls to that category in the list below
+                // 3A.2 — Click segment → scroll + highlight category row
                 onClick: function(evt, elements) {
                     if (!elements || !elements.length) return;
                     var idx     = elements[0].index;
@@ -271,7 +288,6 @@
         var listEl = document.getElementById('spending-cat-list');
         if (!listEl) return;
 
-        // FIX 1.5: null-guard before iterating
         var txs = curTxs();
         if (!Array.isArray(txs)) txs = [];
 
@@ -297,13 +313,12 @@
 
         var totalExp = entries.reduce(function(sum, e) { return sum + e.amt; }, 0);
 
-        // Goal lookup
         var goalMap = {};
         ((AppState.goals && AppState.goals[curKey()]) || []).forEach(function(g) {
             goalMap[g.category] = g;
         });
 
-        // Previous month spend lookup for delta chips
+        // 3A.3 — Previous month spend for delta chips
         var prevKey = _getPrevMonthKey();
         var prevCatMap = {};
         if (prevKey) {
@@ -311,11 +326,13 @@
             if (Array.isArray(prevTxs)) {
                 prevTxs.forEach(function(tx) {
                     if (tx.type !== 'expense') return;
-                    var cat = tx.category || 'Other';
-                    prevCatMap[cat] = (prevCatMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+                    prevCatMap[tx.category || 'Other'] = (prevCatMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
                 });
             }
         }
+
+        // 3A.5 — Build sparkline data (3 prior months)
+        var sparkData = _buildSparklineData(3);
 
         var html = '';
 
@@ -325,16 +342,13 @@
             var color = getCategoryColor(cat);
             var goal  = goalMap[cat];
 
-            // FIX 1.4: correct bar denominator and color
             var barPct, barColor, isOver, limitLabel;
 
             if (goal && goal.monthly_limit > 0) {
                 var limit = parseFloat(goal.monthly_limit);
                 barPct    = Math.min(100, Math.round((amt / limit) * 100));
                 isOver    = amt > limit;
-                barColor  = isOver        ? 'var(--red)'
-                    : barPct >= 70  ? 'var(--amber)'
-                        :                 color;
+                barColor  = isOver ? 'var(--red)' : barPct >= 70 ? 'var(--amber)' : color;
                 limitLabel = (
                     '<span style="font-size:11px;color:' + (isOver ? 'var(--red)' : 'var(--text2)') + ';">' +
                     barPct + '% of limit' +
@@ -345,17 +359,12 @@
                 barPct    = pct(amt, totalExp);
                 barColor  = color;
                 isOver    = false;
-                limitLabel = (
-                    '<span style="font-size:11px;color:var(--text2);">' +
-                    barPct + '% of spend</span>'
-                );
+                limitLabel = '<span style="font-size:11px;color:var(--text2);">' + barPct + '% of spend</span>';
             }
 
-            var overBadge = isOver
-                ? ' <span class="badge badge-red">Over limit</span>'
-                : '';
+            var overBadge = isOver ? ' <span class="badge badge-red">Over limit</span>' : '';
 
-            // Month-over-month delta chip
+            // 3A.3 — Delta chip
             var deltaHtml = '';
             if (prevKey && prevCatMap[cat] !== undefined) {
                 var prevAmt = prevCatMap[cat] || 0;
@@ -373,17 +382,25 @@
                 }
             }
 
-            // Goal sub-line
+            // 3A.5 — Sparkline SVG
+            var sparkHtml = _buildSparklineSVG(cat, sparkData, color);
+
+            // 3A.4 — Goal sub-line with pencil icon quick-edit
             var goalLabel = '';
             if (goal && goal.monthly_limit > 0) {
                 goalLabel = (
                     '<div style="font-size:11px;color:' + (isOver ? 'var(--red)' : 'var(--text2)') +
-                    ';margin-top:2px;">' +
+                    ';margin-top:2px;display:flex;align-items:center;gap:8px;">' +
                     'Limit: ' + fmt(goal.monthly_limit) + ' — ' +
                     Math.round((amt / goal.monthly_limit) * 100) + '% used' +
                     (isOver ? ' (' + fmt(amt - goal.monthly_limit) + ' over)' : '') +
-                    '&nbsp;<span style="color:var(--text2);cursor:pointer;text-decoration:underline;" ' +
-                    'onclick="openGoalModal(\'' + goal.id + '\')" title="Edit this spending limit">Edit limit</span>' +
+                    '&nbsp;<button onclick="_openQuickEdit(\'' + _escAttrSp(cat) + '\', \'' + goal.id + '\', ' + goal.monthly_limit + ', this)" ' +
+                    'class="sp-qe-trigger" title="Edit spending limit">' +
+                    '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>' +
+                    '<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>' +
+                    '</svg> Edit limit' +
+                    '</button>' +
                     '</div>'
                 );
             } else {
@@ -407,6 +424,7 @@
                 '<span style="font-size:13px;font-weight:500;">' + _escSp(cat) + '</span>' +
                 overBadge +
                 deltaHtml +
+                sparkHtml +
                 '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:6px;">' +
                 '<span style="font-family:var(--mono);font-size:13px;">' + fmt(amt) + '</span>' +
@@ -420,11 +438,175 @@
 
                 goalLabel +
 
+                // 3A.4 — Quick-edit slot (hidden until triggered)
+                '<div id="spqe-' + _catId(cat) + '" style="display:none;"></div>' +
+
                 '</div>'
             );
         });
 
         listEl.innerHTML = html;
+    }
+
+
+    // ─── 3A.4 QUICK-EDIT LIMIT ────────────────────────────────────────────────────
+
+    function _openQuickEdit(categoryName, goalId, currentLimit, triggerBtn) {
+        // Close any already-open quick-edit
+        if (_spendingQEOpenCat && _spendingQEOpenCat !== categoryName) {
+            _closeQuickEdit(_spendingQEOpenCat);
+        }
+
+        var slotEl = document.getElementById('spqe-' + _catId(categoryName));
+        if (!slotEl) return;
+
+        // Toggle: clicking again closes it
+        if (slotEl.style.display === 'block') {
+            _closeQuickEdit(categoryName);
+            return;
+        }
+
+        _spendingQEOpenCat = categoryName;
+
+        slotEl.style.display = 'block';
+        slotEl.innerHTML = (
+            '<div class="cat-quick-edit">' +
+            '<span class="cat-quick-edit-label">New limit:</span>' +
+            '<input id="spqe-input-' + _catId(categoryName) + '" class="inp amt-input" type="text" ' +
+            'inputmode="numeric" value="' + _formatNumberWithCommas(String(Math.round(currentLimit))) + '" ' +
+            'style="padding:6px 10px;font-size:13px;height:auto;" />' +
+            '<div class="cat-qe-btns">' +
+            '<button id="spqe-save-' + _catId(categoryName) + '" ' +
+            'onclick="_saveQuickEdit(\'' + _escAttrSp(categoryName) + '\', \'' + goalId + '\')" ' +
+            'class="btn-primary" style="font-size:12px;padding:6px 12px;">' +
+            '<span class="btn-label">Save</span><span class="btn-spinner"></span>' +
+            '</button>' +
+            '<button onclick="_closeQuickEdit(\'' + _escAttrSp(categoryName) + '\')" ' +
+            'class="btn-sm" style="font-size:12px;padding:6px 10px;">Cancel</button>' +
+            '</div>' +
+            '</div>'
+        );
+
+        // Wire amt-input formatting
+        if (typeof initAmountInputs === 'function') initAmountInputs();
+
+        setTimeout(function() {
+            var inp = document.getElementById('spqe-input-' + _catId(categoryName));
+            if (inp) { inp.focus(); inp.select(); }
+        }, 60);
+    }
+
+    function _closeQuickEdit(categoryName) {
+        var slotEl = document.getElementById('spqe-' + _catId(categoryName));
+        if (slotEl) { slotEl.style.display = 'none'; slotEl.innerHTML = ''; }
+        if (_spendingQEOpenCat === categoryName) _spendingQEOpenCat = null;
+    }
+
+    async function _saveQuickEdit(categoryName, goalId) {
+        var inp = document.getElementById('spqe-input-' + _catId(categoryName));
+        if (!inp) return;
+        var rawVal = String(inp.value).replace(/,/g, '');
+        var limit  = parseFloat(rawVal);
+        if (isNaN(limit) || limit <= 0) {
+            showToast('Please enter a valid limit.', 'error');
+            inp.focus();
+            return;
+        }
+
+        var btn = document.getElementById('spqe-save-' + _catId(categoryName));
+        await withButtonLoading(btn, async function() {
+            try {
+                var result = await callServer('updateGoal', goalId, limit);
+                var key = curKey();
+                if (AppState.goals[key]) {
+                    AppState.goals[key] = AppState.goals[key].map(function(g) {
+                        return g.id === goalId ? result : g;
+                    });
+                }
+                _closeQuickEdit(categoryName);
+                renderAll();
+                showToast('Spending limit updated!', 'success');
+            } catch(e) {}
+        });
+    }
+
+
+    // ─── 3A.5 SPARKLINES ──────────────────────────────────────────────────────────
+
+    /**
+     * _buildSparklineData(numMonths)
+     * Returns { 'YYYY-MM': { catName: amount } } for the N months before the current one.
+     */
+    function _buildSparklineData(numMonths) {
+        var result = {};
+        var y = AppState.curYear;
+        var m = AppState.curMonth;
+
+        for (var i = 0; i < numMonths; i++) {
+            m--;
+            if (m < 1) { m = 12; y--; }
+            var key = monthKey(y, m);
+            var txs = AppState.transactions[key];
+            if (!Array.isArray(txs)) continue;
+            var catMap = {};
+            txs.forEach(function(tx) {
+                if (tx.type !== 'expense') return;
+                var cat = tx.category || 'Other';
+                catMap[cat] = (catMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+            });
+            result[key] = catMap;
+        }
+        return result;
+    }
+
+    /**
+     * _buildSparklineSVG(catName, sparkData, color)
+     * Renders a tiny 3-bar sparkline for the last 3 months of spend for this category.
+     * Returns an HTML string (the SVG inline).
+     */
+    function _buildSparklineSVG(catName, sparkData, color) {
+        var keys = Object.keys(sparkData).sort().reverse().slice(0, 3).reverse(); // oldest → newest
+        if (keys.length === 0) return '';
+
+        var values = keys.map(function(k) {
+            return (sparkData[k] && sparkData[k][catName]) ? sparkData[k][catName] : 0;
+        });
+
+        // Pad to 3 bars
+        while (values.length < 3) values.unshift(0);
+
+        var maxVal = Math.max.apply(null, values);
+        if (maxVal === 0) return ''; // no data → no sparkline
+
+        var W = 24, H = 20, barW = 5, gap = 2;
+        var bars = '';
+        values.forEach(function(v, i) {
+            var h   = maxVal > 0 ? Math.max(2, Math.round((v / maxVal) * (H - 2))) : 2;
+            var x   = i * (barW + gap);
+            var y   = H - h;
+            var opacity = v === 0 ? '0.18' : '0.65';
+            bars += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h +
+                '" rx="1" fill="' + color + '" opacity="' + opacity + '"/>';
+        });
+
+        return (
+            '<svg class="cat-sparkline" width="' + W + '" height="' + H + '" ' +
+            'viewBox="0 0 ' + W + ' ' + H + '" title="Last 3 months">' +
+            bars +
+            '</svg>'
+        );
+    }
+
+
+    // ─── 3A.7 DARK MODE CHART UPDATE ─────────────────────────────────────────────
+    // Called from toggleDark() in utils.js after theme switch
+
+    function updateSpendingChartColors() {
+        // Re-render if spending tab is active; otherwise mark dirty
+        if (AppState.activeTab === 'spending') {
+            _renderSpendingBar();
+            _renderSpendingDonut();
+        }
     }
 
 
@@ -434,13 +616,11 @@
         var map = {};
         var txs = curTxs();
         if (!Array.isArray(txs)) return [];
-
         txs.forEach(function(tx) {
             if (tx.type !== 'expense') return;
             var cat = tx.category || 'Other';
             map[cat] = (map[cat] || 0) + (parseFloat(tx.amount) || 0);
         });
-
         return Object.keys(map)
             .map(function(cat) { return { category: cat, amount: map[cat] }; })
             .sort(function(a, b) { return b.amount - a.amount; });
@@ -453,36 +633,42 @@
     }
 
     function _getPrevMonthKey() {
-        var y = AppState.curYear;
-        var m = AppState.curMonth - 1;
+        var y = AppState.curYear, m = AppState.curMonth - 1;
         if (m < 1) { m = 12; y--; }
         return monthKey(y, m);
     }
 
-    // Scroll and briefly highlight a category row when a donut segment is clicked
+    // 3A.2 — Scroll and highlight category row
     function _scrollToCategoryRow(catName) {
         var id  = 'spcat-' + _catId(catName);
         var el  = document.getElementById(id);
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Flash highlight
-        el.style.transition = 'background 0.15s ease';
-        el.style.background = 'rgba(29,158,117,0.08)';
-        setTimeout(function() {
-            el.style.background = '';
-            setTimeout(function() { el.style.transition = ''; }, 300);
-        }, 1200);
+        el.classList.add('cat-row-highlight');
+        setTimeout(function() { el.classList.remove('cat-row-highlight'); }, 1500);
     }
 
-    // Generate a safe DOM id suffix from a category name
     function _catId(cat) {
         return String(cat || '').replace(/[^a-zA-Z0-9]/g, '_');
     }
 
     function _escSp(str) {
-        return String(str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    function _escAttrSp(str) {
+        return String(str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // Style for quick-edit trigger button
+    document.addEventListener('DOMContentLoaded', function() {
+        var style = document.createElement('style');
+        style.textContent = (
+            '.sp-qe-trigger{background:none;border:none;cursor:pointer;color:var(--text2);' +
+            'font-size:11px;font-family:var(--font);display:inline-flex;align-items:center;' +
+            'gap:3px;padding:1px 4px;border-radius:3px;transition:color .12s,background .12s;}' +
+            '.sp-qe-trigger:hover{color:var(--text);background:var(--border);}'
+        );
+        document.head.appendChild(style);
+    });
 </script>

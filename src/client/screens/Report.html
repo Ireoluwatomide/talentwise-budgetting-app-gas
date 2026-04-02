@@ -1,20 +1,19 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Report.html — Full Budget Summary Report
 
-     PHASE 3D ENHANCEMENTS:
-       3D.1 — Explicit date range in report header (earliest–latest month)
-       3D.2 — Normalize Best/Worst Month: savings rate vs absolute balance
-       3D.3 — Debt Progress section
-       3D.4 — Savings Goal Progress section
-       3D.5 — Budget Adherence summary table
-       3D.6 — Print padding fix (in styles.css.html @media print block)
+     PHASE 3D ENHANCEMENTS (all retained):
+       3D.1-3D.6 complete — date range, normalized highlights, debt progress,
+       savings goal progress, budget adherence, print fix
 
-     PHASE 1 FIX:
-       1.1 — _statCell() escapes label + value; topCatRows escapes category names
-
+     PHASE 4 ENHANCEMENTS:
+       4.4 — Data density banner at top of pane
+       4.6 — savingsRate(key) used in month-by-month table + highlights
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-report">
+
+    <!-- ── 4.4 Data Density Banner ──────────────────────────────────────────── -->
+    <div id="report-density-banner-slot"></div>
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
         <div style="font-size:12px;color:var(--text2);">Full budget summary — all loaded months.</div>
@@ -28,10 +27,15 @@
 
 <script>
     // =============================================================================
-    // Report screen — Phase 3D complete
+    // Report screen — Phase 3D + Phase 4 complete
     // =============================================================================
 
     function renderReport() {
+        // 4.4 — Data density banner
+        if (typeof renderDataQualityBanner === 'function') {
+            renderDataQualityBanner('report-density-banner-slot');
+        }
+
         var bodyEl = document.getElementById('report-body');
         if (!bodyEl) return;
 
@@ -51,18 +55,21 @@
             return;
         }
 
-        // ── Aggregate all-time totals ─────────────────────────────────────────────
         var totInc = 0, totExp = 0, totSav = 0;
         keys.forEach(function(k) {
             var s = getMonthStats(k);
             totInc += s.inc; totExp += s.exp; totSav += s.sav;
         });
 
-        var n       = keys.length;
-        var avgInc  = Math.round(totInc / n);
-        var avgExp  = Math.round(totExp / n);
-        var avgSav  = Math.round(totSav / n);
-        var savRate = totInc > 0 ? Math.round((totSav / totInc) * 100) : 0;
+        var n      = keys.length;
+        var avgInc = Math.round(totInc / n);
+        var avgExp = Math.round(totExp / n);
+        var avgSav = Math.round(totSav / n);
+
+        // 4.6: use shared savingsRate helper for all-time savings rate
+        var savRateAllTime = (typeof savingsRateAllTime === 'function')
+            ? savingsRateAllTime()
+            : (totInc > 0 ? Math.round((totSav / totInc) * 100) : 0);
 
         // 3D.1 — Date range label
         var firstParts = keys[0].split('-');
@@ -71,13 +78,10 @@
             (n > 1 ? ' – ' + MONTHS[parseInt(lastParts[1],10)-1] + ' ' + lastParts[0] : '') +
             ' (' + n + ' month' + (n > 1 ? 's' : '') + ')';
 
-        // ── 3D.2 Normalized Best/Worst Month ──────────────────────────────────────
-        // Best = highest savings rate (sav/inc), Worst = highest expense ratio (exp/inc)
+        // 3D.2 — Normalized Best/Worst Month using savingsRate()
         var bestKey  = keys.reduce(function(best, k) {
-            var bs = getMonthStats(best);
-            var ks = getMonthStats(k);
-            var bRate = bs.inc > 0 ? bs.sav / bs.inc : 0;
-            var kRate = ks.inc > 0 ? ks.sav / ks.inc : 0;
+            var bRate = (typeof savingsRate === 'function') ? savingsRate(best) : 0;
+            var kRate = (typeof savingsRate === 'function') ? savingsRate(k)    : 0;
             return kRate > bRate ? k : best;
         }, keys[0]);
 
@@ -93,10 +97,13 @@
         var worstStats = getMonthStats(worstKey);
         var bestLabel  = MONTHS[parseInt(bestKey.split('-')[1],10)-1] + ' ' + bestKey.split('-')[0];
         var worstLabel = MONTHS[parseInt(worstKey.split('-')[1],10)-1] + ' ' + worstKey.split('-')[0];
-        var bestSavRate  = bestStats.inc  > 0 ? Math.round((bestStats.sav  / bestStats.inc)  * 100) : 0;
+
+        // 4.6: use savingsRate() for best month display
+        var bestSavRatePct  = (typeof savingsRate === 'function') ? savingsRate(bestKey)
+            : (bestStats.inc > 0 ? Math.round((bestStats.sav / bestStats.inc) * 100) : 0);
         var worstExpRate = worstStats.inc > 0 ? Math.round((worstStats.exp / worstStats.inc) * 100) : 0;
 
-        // ── All-time category totals ─────────────────────────────────────────────
+        // All-time category totals
         var catTotals = {};
         keys.forEach(function(k) {
             var txs = AppState.transactions[k] || [];
@@ -111,12 +118,16 @@
             .map(function(cat) { return { cat: cat, amt: catTotals[cat] }; })
             .sort(function(a, b) { return b.amt - a.amt; });
 
-        // ── Month-by-month table ─────────────────────────────────────────────────
+        // Month-by-month table (4.6: savingsRate() for each row)
         var tableRows = keys.map(function(k) {
             var s       = getMonthStats(k);
             var parts   = k.split('-');
             var label   = MONTHS[parseInt(parts[1],10)-1].slice(0,3) + ' ' + parts[0];
-            var sp      = s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0;
+
+            // 4.6: use shared helper
+            var sp      = (typeof savingsRate === 'function') ? savingsRate(k)
+                : (s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0);
+
             var balCol  = s.bal >= 0 ? 'var(--text)' : 'var(--red)';
             var isActive = k === curKey();
 
@@ -175,26 +186,21 @@
 
         var pad = 'padding:14px 18px;border-bottom:0.5px solid var(--border);';
 
-        // ── 3D.3 Debt Progress section ───────────────────────────────────────────
-        var debtSection = _buildDebtProgressSection(keys, sec, pad);
-
-        // ── 3D.4 Savings Goal Progress section ───────────────────────────────────
-        var savingsSection = _buildSavingsProgressSection(keys, sec, pad);
-
-        // ── 3D.5 Budget Adherence section ────────────────────────────────────────
+        var debtSection     = _buildDebtProgressSection(keys, sec, pad);
+        var savingsSection  = _buildSavingsProgressSection(keys, sec, pad);
         var adherenceSection = _buildBudgetAdherenceSection(keys, sec, pad);
 
         bodyEl.innerHTML = (
             '<div style="border:0.5px solid var(--border);border-radius:12px;overflow:hidden;">' +
 
-            // ── Header with date range (3D.1)
+            // Header with date range (3D.1)
             '<div style="background:var(--bg2);' + pad + '">' +
             '<div style="font-size:10px;font-weight:500;letter-spacing:0.08em;' +
             'text-transform:uppercase;color:var(--text2);margin-bottom:3px;">Budget Summary Report</div>' +
             '<div style="font-size:17px;font-weight:500;">' + _escRpt(dateRange) + '</div>' +
             '</div>' +
 
-            // ── Totals
+            // Totals
             '<div style="' + pad + '">' +
             sec('Totals') +
             '<div class="row3">' +
@@ -204,24 +210,24 @@
             '</div>' +
             '</div>' +
 
-            // ── Averages
+            // Averages (4.6: consistent savings rate)
             '<div style="' + pad + '">' +
             sec('Monthly Averages') +
             '<div class="row3">' +
             _statCell('Avg Monthly Income', fmt(avgInc), '') +
             _statCell('Avg Monthly Spend',  fmt(avgExp), '') +
-            _statCell('Savings Rate', savRate + '%', savRate >= 20 ? 'var(--acc)' : 'var(--amber)') +
+            _statCell('Savings Rate', savRateAllTime + '%', savRateAllTime >= 20 ? 'var(--acc)' : 'var(--amber)') +
             '</div>' +
             '</div>' +
 
-            // ── 3D.2 Normalized Highlights
+            // Highlights (3D.2 + 4.6)
             '<div style="' + pad + '">' +
             sec('Highlights') +
             '<div class="row2">' +
             '<div style="background:var(--bg2);border-radius:8px;padding:12px;">' +
             '<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">Best Savings Month</div>' +
             '<div style="font-size:13px;font-weight:500;">' + bestLabel + '</div>' +
-            '<div style="font-family:var(--mono);font-size:12px;color:var(--acc);">' + bestSavRate + '% savings rate</div>' +
+            '<div style="font-family:var(--mono);font-size:12px;color:var(--acc);">' + bestSavRatePct + '% savings rate</div>' +
             '<div style="font-size:11px;color:var(--text2);">' + fmt(bestStats.sav) + ' saved of ' + fmt(bestStats.inc) + ' income</div>' +
             '</div>' +
             '<div style="background:var(--bg2);border-radius:8px;padding:12px;">' +
@@ -233,22 +239,17 @@
             '</div>' +
             '</div>' +
 
-            // ── Top categories
+            // Top categories
             '<div style="' + pad + '">' +
             sec('Top Categories') +
             topCatRows +
             '</div>' +
 
-            // ── 3D.3 Debt Progress
             debtSection +
-
-            // ── 3D.4 Savings Goal Progress
             savingsSection +
-
-            // ── 3D.5 Budget Adherence
             adherenceSection +
 
-            // ── Month-by-month table
+            // Month-by-month table
             '<div style="padding:14px 18px;">' +
             sec('Month-by-Month') +
             '<table>' +
@@ -265,14 +266,14 @@
     // ─── 3D.3 DEBT PROGRESS ──────────────────────────────────────────────────────
 
     function _buildDebtProgressSection(keys, sec, pad) {
-        var debts    = (AppState.debts || []).concat(AppState.debtArchived || []);
+        var debts = (AppState.debts || []).concat(AppState.debtArchived || []);
         if (debts.length === 0) return '';
 
         var debtRows = debts.map(function(d) {
-            var total   = parseFloat(d.total) || 0;
-            var paid    = parseFloat(d.paid)  || 0;
-            var owed    = Math.max(0, total - paid);
-            var p       = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+            var total    = parseFloat(d.total) || 0;
+            var paid     = parseFloat(d.paid)  || 0;
+            var owed     = Math.max(0, total - paid);
+            var p        = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
             var barColor = p >= 100 ? 'var(--acc)' : p >= 50 ? 'var(--amber)' : 'var(--red)';
             var status   = d.archived ? '✓ Paid off' : fmt(owed) + ' remaining';
             var statusColor = d.archived ? 'var(--acc)' : 'var(--red)';
@@ -293,12 +294,7 @@
             );
         }).join('');
 
-        return (
-            '<div style="' + pad + '">' +
-            sec('Debt Progress') +
-            debtRows +
-            '</div>'
-        );
+        return '<div style="' + pad + '">' + sec('Debt Progress') + debtRows + '</div>';
     }
 
 
@@ -312,7 +308,6 @@
         var keySet = {};
         keys.forEach(function(k) { keySet[k] = true; });
 
-        // Per-goal contributions during the report period
         var goalContribs = {};
         history.forEach(function(h) {
             if (!keySet[h.month_key]) return;
@@ -320,10 +315,10 @@
         });
 
         var goalRows = goals.map(function(g) {
-            var saved   = parseFloat(g.saved_amount)  || 0;
-            var target  = parseFloat(g.target_amount) || 0;
-            var p       = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
-            var contrib = goalContribs[g.id] || 0;
+            var saved    = parseFloat(g.saved_amount)  || 0;
+            var target   = parseFloat(g.target_amount) || 0;
+            var p        = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+            var contrib  = goalContribs[g.id] || 0;
             var barColor = p >= 100 ? 'var(--acc)' : 'var(--blue)';
 
             return (
@@ -343,19 +338,13 @@
             );
         }).join('');
 
-        return (
-            '<div style="' + pad + '">' +
-            sec('Savings Goal Progress') +
-            goalRows +
-            '</div>'
-        );
+        return '<div style="' + pad + '">' + sec('Savings Goal Progress') + goalRows + '</div>';
     }
 
 
     // ─── 3D.5 BUDGET ADHERENCE ───────────────────────────────────────────────────
 
     function _buildBudgetAdherenceSection(keys, sec, pad) {
-        // Use current month goals and spend for adherence snapshot
         var goals = (AppState.goals && AppState.goals[curKey()]) || [];
         if (goals.length === 0) return '';
 

@@ -1,19 +1,23 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Spending.html — Spending Analytics (merged Charts + Categories)
 
-     PHASE 3 ENHANCEMENTS:
-       3A.1 — Donut center total label (beforeDraw plugin) ✓ (Phase 2)
-       3A.2 — Interactive donut segments → scroll + highlight ✓ (Phase 2)
-       3A.3 — Month-over-month delta chips on category rows ✓ (Phase 2)
-       3A.4 — Quick-edit limit inline: pencil icon opens compact limit editor
-       3A.5 — Category sparklines: 3-bar inline SVG per category row
-       3A.6 — CSS variable color resolution for dark mode ✓ (Phase 2)
-       3A.7 — Dark mode chart live update via renderAllCharts()
+     PHASE 3 ENHANCEMENTS (all retained):
+       3A.1-3A.7 complete — donut center, interactive segments, delta chips,
+       quick-edit limit, sparklines, CSS variable colors, dark mode update
+
+     PHASE 4 ENHANCEMENTS:
+       4.1 — Charts rebuilt on currency switch via renderAllCharts()
+       4.3 — Charts rebuilt on dark mode toggle via renderAllCharts()
+       4.4 — Data density banner at top of pane
+       4.5 — Category rows & "Add limit" use navigateTo() for cross-tab nav
 
      Tab ID: "spending"
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-spending">
+
+    <!-- ── 4.4 Data Density Banner (injected by renderDataQualityBanner) ──── -->
+    <div id="spending-density-banner-slot"></div>
 
     <!-- ── 1. Bar Chart: Income vs Expenses vs Savings ───────────────────────── -->
     <div class="sec" style="margin-top:0;">Income vs Expenses vs Savings</div>
@@ -53,10 +57,6 @@
     </div>
 
 </div>
-
-
-<!-- ══ QUICK-EDIT LIMIT MODAL (3A.4) ════════════════════════════════════ -->
-<!-- Inline compact limit editor appears below category row when pencil tapped -->
 
 
 <style>
@@ -118,20 +118,33 @@
 
 <script>
     // =============================================================================
-    // Spending screen — Phase 3A complete
+    // Spending screen — Phase 3A + Phase 4 complete
     // =============================================================================
 
     // Track which category has its quick-edit open (3A.4)
     var _spendingQEOpenCat = null;
 
     function renderSpending() {
+        // 4.4 — Data density banner
+        if (typeof renderDataQualityBanner === 'function') {
+            renderDataQualityBanner('spending-density-banner-slot');
+        }
+
         _renderSpendingBar();
         _renderSpendingDonut();
         _renderSpendingCatList();
+
+        // 4.5 — Check for incoming nav context (e.g. from Insights card click)
+        var ctx = (typeof consumeNavContext === 'function') ? consumeNavContext() : null;
+        if (ctx && ctx.categoryName) {
+            setTimeout(function() { _scrollToCategoryRow(ctx.categoryName); }, 100);
+        }
     }
 
 
     // ─── 1. BAR CHART ─────────────────────────────────────────────────────────────
+    // 4.1: dataset values are in base NGN; fmt() applies FX at display time.
+    // Tick callback also uses FX. Both are kept in sync automatically.
 
     function _renderSpendingBar() {
         destroyChart('spending-bar-chart');
@@ -150,20 +163,23 @@
         defaults.scales.x.grid = { display: false };
         defaults.scales.y.ticks.maxTicksLimit = 5;
 
+        // 4.1: convert to display currency for dataset values
+        var rate = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
+
         var chart = new Chart(canvas, {
             type: 'bar',
             data: {
                 labels: [label],
                 datasets: [
-                    { label: 'Income',   data: [stats.inc], backgroundColor: colAcc,  borderRadius: 4, borderSkipped: false },
-                    { label: 'Expenses', data: [stats.exp], backgroundColor: colRed,  borderRadius: 4, borderSkipped: false },
-                    { label: 'Savings',  data: [stats.sav], backgroundColor: colBlue, borderRadius: 4, borderSkipped: false }
+                    { label: 'Income',   data: [Math.round(stats.inc * rate)], backgroundColor: colAcc,  borderRadius: 4, borderSkipped: false },
+                    { label: 'Expenses', data: [Math.round(stats.exp * rate)], backgroundColor: colRed,  borderRadius: 4, borderSkipped: false },
+                    { label: 'Savings',  data: [Math.round(stats.sav * rate)], backgroundColor: colBlue, borderRadius: 4, borderSkipped: false }
                 ]
             },
             options: defaults
         });
 
-        registerChart('spending-bar-chart', chart);
+        registerChart('spending-bar-chart', chart, function() { _renderSpendingBar(); });
     }
 
 
@@ -201,6 +217,11 @@
         var colors = breakdown.map(function(item) { return getCategoryColor(item.category); });
         var total  = data.reduce(function(sum, v) { return sum + v; }, 0);
 
+        // 4.1: convert to display currency
+        var rate   = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
+        var symbol = (typeof FX_SYMBOLS !== 'undefined' && AppState && FX_SYMBOLS[AppState.currency]) || '₦';
+        var displayData = data.map(function(v) { return Math.round(v * rate); });
+
         if (legendEl) {
             legendEl.innerHTML = breakdown.map(function(item) {
                 var color   = getCategoryColor(item.category);
@@ -215,9 +236,6 @@
             }).join('');
         }
 
-        var symbol = (typeof FX_SYMBOLS !== 'undefined' && AppState && FX_SYMBOLS[AppState.currency])
-            ? FX_SYMBOLS[AppState.currency] : '₦';
-
         // 3A.1 — Center total label plugin
         var centerTotalPlugin = {
             id: 'centerTotal',
@@ -227,7 +245,6 @@
                 var centerX = (chart.chartArea.left + chart.chartArea.right)  / 2;
                 var centerY = (chart.chartArea.top  + chart.chartArea.bottom) / 2;
 
-                var rate = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
                 var displayTotal = symbol + Math.round(total * rate).toLocaleString();
 
                 ctx.save();
@@ -249,7 +266,7 @@
             type: 'doughnut',
             data: {
                 labels:   labels,
-                datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }]
+                datasets: [{ data: displayData, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }]
             },
             plugins: [centerTotalPlugin],
             options: {
@@ -259,16 +276,16 @@
                     tooltip: {
                         callbacks: {
                             label: function(ctx) {
-                                var val     = ctx.parsed || 0;
-                                var rate    = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
-                                var percent = total > 0 ? Math.round((val / total) * 100) : 0;
+                                var rawVal  = data[ctx.dataIndex] || 0;
+                                var percent = total > 0 ? Math.round((rawVal / total) * 100) : 0;
                                 return ' ' + ctx.label + ': ' + symbol +
-                                    Math.round(val * rate).toLocaleString() + ' (' + percent + '%)';
+                                    Math.round(rawVal * rate).toLocaleString() + ' (' + percent + '%)';
                             }
                         }
                     }
                 },
                 // 3A.2 — Click segment → scroll + highlight category row
+                // 4.5 — Also uses navigateTo context pattern
                 onClick: function(evt, elements) {
                     if (!elements || !elements.length) return;
                     var idx     = elements[0].index;
@@ -278,7 +295,7 @@
             }
         });
 
-        registerChart('spending-donut-chart', chart);
+        registerChart('spending-donut-chart', chart, function() { _renderSpendingDonut(); });
     }
 
 
@@ -385,7 +402,8 @@
             // 3A.5 — Sparkline SVG
             var sparkHtml = _buildSparklineSVG(cat, sparkData, color);
 
-            // 3A.4 — Goal sub-line with pencil icon quick-edit
+            // 3A.4 + 4.5 — Goal sub-line with pencil icon quick-edit
+            // "Add limit" now uses navigateTo for cross-tab context navigation
             var goalLabel = '';
             if (goal && goal.monthly_limit > 0) {
                 goalLabel = (
@@ -404,11 +422,13 @@
                     '</div>'
                 );
             } else {
+                // 4.5 — navigateTo('goals', { categoryName }) for context-aware nav
                 goalLabel = (
                     '<div style="font-size:11px;color:var(--text2);margin-top:2px;">' +
                     'No limit set — ' +
                     '<span style="cursor:pointer;color:var(--text2);text-decoration:underline;" ' +
-                    'onclick="switchTabSidebar(\'goals\')" title="Add a spending limit for this category">' +
+                    'onclick="typeof navigateTo === \'function\' ? navigateTo(\'goals\', { categoryName: \'' + _escAttrSp(cat) + '\' }) : switchTabSidebar(\'goals\')" ' +
+                    'title="Add a spending limit for this category">' +
                     'Add limit</span>' +
                     '</div>'
                 );
@@ -452,7 +472,6 @@
     // ─── 3A.4 QUICK-EDIT LIMIT ────────────────────────────────────────────────────
 
     function _openQuickEdit(categoryName, goalId, currentLimit, triggerBtn) {
-        // Close any already-open quick-edit
         if (_spendingQEOpenCat && _spendingQEOpenCat !== categoryName) {
             _closeQuickEdit(_spendingQEOpenCat);
         }
@@ -460,7 +479,6 @@
         var slotEl = document.getElementById('spqe-' + _catId(categoryName));
         if (!slotEl) return;
 
-        // Toggle: clicking again closes it
         if (slotEl.style.display === 'block') {
             _closeQuickEdit(categoryName);
             return;
@@ -487,7 +505,6 @@
             '</div>'
         );
 
-        // Wire amt-input formatting
         if (typeof initAmountInputs === 'function') initAmountInputs();
 
         setTimeout(function() {
@@ -533,10 +550,6 @@
 
     // ─── 3A.5 SPARKLINES ──────────────────────────────────────────────────────────
 
-    /**
-     * _buildSparklineData(numMonths)
-     * Returns { 'YYYY-MM': { catName: amount } } for the N months before the current one.
-     */
     function _buildSparklineData(numMonths) {
         var result = {};
         var y = AppState.curYear;
@@ -559,24 +572,18 @@
         return result;
     }
 
-    /**
-     * _buildSparklineSVG(catName, sparkData, color)
-     * Renders a tiny 3-bar sparkline for the last 3 months of spend for this category.
-     * Returns an HTML string (the SVG inline).
-     */
     function _buildSparklineSVG(catName, sparkData, color) {
-        var keys = Object.keys(sparkData).sort().reverse().slice(0, 3).reverse(); // oldest → newest
+        var keys = Object.keys(sparkData).sort().reverse().slice(0, 3).reverse();
         if (keys.length === 0) return '';
 
         var values = keys.map(function(k) {
             return (sparkData[k] && sparkData[k][catName]) ? sparkData[k][catName] : 0;
         });
 
-        // Pad to 3 bars
         while (values.length < 3) values.unshift(0);
 
         var maxVal = Math.max.apply(null, values);
-        if (maxVal === 0) return ''; // no data → no sparkline
+        if (maxVal === 0) return '';
 
         var W = 24, H = 20, barW = 5, gap = 2;
         var bars = '';
@@ -595,18 +602,6 @@
             bars +
             '</svg>'
         );
-    }
-
-
-    // ─── 3A.7 DARK MODE CHART UPDATE ─────────────────────────────────────────────
-    // Called from toggleDark() in utils.js after theme switch
-
-    function updateSpendingChartColors() {
-        // Re-render if spending tab is active; otherwise mark dirty
-        if (AppState.activeTab === 'spending') {
-            _renderSpendingBar();
-            _renderSpendingDonut();
-        }
     }
 
 
@@ -638,7 +633,7 @@
         return monthKey(y, m);
     }
 
-    // 3A.2 — Scroll and highlight category row
+    // 3A.2 + 4.5 — Scroll and highlight category row
     function _scrollToCategoryRow(catName) {
         var id  = 'spcat-' + _catId(catName);
         var el  = document.getElementById(id);

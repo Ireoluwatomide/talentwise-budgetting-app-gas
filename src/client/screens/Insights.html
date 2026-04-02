@@ -1,35 +1,32 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Insights.html — Auto-Generated Spending Insights
 
-     PHASE 3C ENHANCEMENTS:
-       3C.1 — Financial Health Score: circular indicator, letter grade, 5-component
-       3C.2 — Data minimum enforcement per insight (unlock placeholders)
-       3C.3 — Actionable CTA links on every relevant insight card
-       3C.4 — Multi-month expense trend: 3-month rolling linear regression
-       3C.5 — Remove duplicate top-category card; add recurring commitment ratio
-       3C.6 — Insight prioritization + capping at 5 + colored left borders
+     PHASE 3C ENHANCEMENTS (all retained):
+       Financial Health Score, data minimums, CTAs, multi-month trend,
+       recurring commitment ratio, insight prioritization (top 5)
 
-     Phase 1 fixes:
-       1.5 — Null-guards on curTxs() and getMonthStats() before iteration
+     PHASE 4 ENHANCEMENTS:
+       4.4 — Data density banner at top of pane
+       4.5 — All CTA buttons use navigateTo() for context-aware cross-tab nav
+       4.6 — savingsRate(key) used for savings rate component in health score
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-insights">
 
+    <!-- ── 4.4 Data Density Banner ──────────────────────────────────────────── -->
+    <div id="insights-density-banner-slot"></div>
+
     <!-- ── Financial Health Score (3C.1) ─────────────────────────────────────── -->
-    <div id="insights-health-section" style="margin-bottom:1.5rem;">
-        <!-- populated by renderInsights() -->
-    </div>
+    <div id="insights-health-section" style="margin-bottom:1.5rem;"></div>
 
     <!-- ── Insight Cards ──────────────────────────────────────────────────────── -->
-    <div id="insights-body">
-        <!-- populated by renderInsights() -->
-    </div>
+    <div id="insights-body"></div>
 
 </div>
 
 
 <style>
-    /* ── 3C.1 Financial Health Score ────────────────────────────────────────── */
+    /* 3C.1 Financial Health Score */
     .fhs-card {
         background: var(--bg2);
         border: 0.5px solid var(--border);
@@ -48,9 +45,7 @@
         height: 80px;
     }
 
-    .fhs-ring-wrap svg {
-        transform: rotate(-90deg);
-    }
+    .fhs-ring-wrap svg { transform: rotate(-90deg); }
 
     .fhs-grade {
         position: absolute;
@@ -63,38 +58,12 @@
         line-height: 1;
     }
 
-    .fhs-grade-letter {
-        font-size: 26px;
-    }
-
-    .fhs-grade-score {
-        font-size: 11px;
-        color: var(--text2);
-        margin-top: 2px;
-        font-weight: 500;
-    }
-
-    .fhs-meta { flex: 1; min-width: 0; }
-
-    .fhs-title {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--text);
-        margin-bottom: 4px;
-    }
-
-    .fhs-summary {
-        font-size: 13px;
-        color: var(--text2);
-        line-height: 1.5;
-        margin-bottom: 10px;
-    }
-
-    .fhs-components {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-    }
+    .fhs-grade-letter { font-size: 26px; }
+    .fhs-grade-score  { font-size: 11px; color: var(--text2); margin-top: 2px; font-weight: 500; }
+    .fhs-meta         { flex: 1; min-width: 0; }
+    .fhs-title        { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .fhs-summary      { font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
+    .fhs-components   { display: flex; flex-wrap: wrap; gap: 5px; }
 
     .fhs-chip {
         display: inline-flex;
@@ -109,7 +78,7 @@
     .fhs-chip-pass { background: rgba(29,158,117,0.12); color: var(--acc); }
     .fhs-chip-fail { background: rgba(136,135,128,0.10); color: var(--text2); }
 
-    /* ── 3C.6 Insight cards with urgency border ──────────────────────────────── */
+    /* 3C.6 Insight cards with urgency border */
     .insight-card {
         background: var(--bg2);
         border: 0.5px solid var(--border);
@@ -127,25 +96,11 @@
     .insight-card.urgency-green  { border-left-color: var(--acc);   }
     .insight-card.urgency-blue   { border-left-color: var(--blue);  }
 
-    .insight-icon { font-size: 22px; flex-shrink: 0; line-height: 1.4; }
-
-    .insight-body { flex: 1; min-width: 0; }
-
-    .insight-title {
-        font-size: 13px;
-        font-weight: 600;
-        margin-bottom: 4px;
-    }
-
-    .insight-text {
-        font-size: 12px;
-        color: var(--text2);
-        line-height: 1.6;
-    }
-
-    .insight-cta {
-        margin-top: 6px;
-    }
+    .insight-icon  { font-size: 22px; flex-shrink: 0; line-height: 1.4; }
+    .insight-body  { flex: 1; min-width: 0; }
+    .insight-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .insight-text  { font-size: 12px; color: var(--text2); line-height: 1.6; }
+    .insight-cta   { margin-top: 6px; }
 
     .insight-cta button {
         background: none;
@@ -180,25 +135,28 @@
     }
 
     .insight-unlock-icon { font-size: 18px; flex-shrink: 0; }
-
     .insight-unlock-text { font-size: 12px; color: var(--text2); line-height: 1.5; }
-
     .insight-unlock-text strong { color: var(--text); }
 </style>
 
 
 <script>
     // =============================================================================
-    // Insights screen — Phase 3C complete
+    // Insights screen — Phase 3C + Phase 4 complete
     // =============================================================================
 
     function renderInsights() {
-        _renderFinancialHealthScore();   // 3C.1
-        _renderInsightCards();           // 3C.2-3C.6
+        // 4.4 — Data density banner
+        if (typeof renderDataQualityBanner === 'function') {
+            renderDataQualityBanner('insights-density-banner-slot');
+        }
+
+        _renderFinancialHealthScore();
+        _renderInsightCards();
     }
 
 
-    // ─── 3C.1 FINANCIAL HEALTH SCORE ─────────────────────────────────────────────
+    // ─── 3C.1 FINANCIAL HEALTH SCORE (4.6: uses savingsRate()) ──────────────────
 
     function _renderFinancialHealthScore() {
         var sectionEl = document.getElementById('insights-health-section');
@@ -208,43 +166,41 @@
             .filter(function(k) {
                 var txs = AppState.transactions[k];
                 return Array.isArray(txs) && txs.length > 0;
-            }).sort();
+            });
 
-        // Need at least 1 month for a score
         if (allKeys.length === 0) {
             sectionEl.innerHTML = '';
             return;
         }
 
-        var recentKey = allKeys[allKeys.length - 1];
+        var recentKey = allKeys.sort()[allKeys.length - 1];
         var rs        = getMonthStats(recentKey);
 
-        // ── 5 components ─────────────────────────────────────────────────────────
-
-        // 1. Savings rate ≥ 20% → 25pts
-        var savRate   = rs.inc > 0 ? (rs.sav / rs.inc) : 0;
-        var c1Pass    = savRate >= 0.20;
-        var c1Score   = c1Pass ? 25 : Math.round(savRate / 0.20 * 25);
+        // 1. Savings rate ≥ 20% → 25pts — 4.6: use savingsRate()
+        var savRatePct = (typeof savingsRate === 'function') ? savingsRate(recentKey)
+            : (rs.inc > 0 ? Math.round((rs.sav / rs.inc) * 100) : 0);
+        var c1Pass    = savRatePct >= 20;
+        var c1Score   = c1Pass ? 25 : Math.round(savRatePct / 20 * 25);
 
         // 2. DTI ratio < 36% → 20pts
-        var dti       = AppState.debtToIncomeRatio || 0;
-        var c2Pass    = dti > 0 && dti < 36;
-        var c2Score   = dti === 0 ? 20 : (dti < 36 ? 20 : Math.round(Math.max(0, (72 - dti) / 72 * 20)));
+        var dti    = AppState.debtToIncomeRatio || 0;
+        var c2Pass = dti > 0 && dti < 36;
+        var c2Score = dti === 0 ? 20 : (dti < 36 ? 20 : Math.round(Math.max(0, (72 - dti) / 72 * 20)));
 
         // 3. Emergency fund > 0 → 20pts
         var savingsGoals = AppState.savingsGoals || [];
-        var efGoal = savingsGoals.find(function(g) {
+        var efGoal  = savingsGoals.find(function(g) {
             return g.name.toLowerCase().indexOf('emergency') !== -1;
         });
         var c3Pass  = efGoal && (parseFloat(efGoal.saved_amount) || 0) > 0;
         var c3Score = c3Pass ? 20 : 0;
 
         // 4. No over-budget categories → 20pts
-        var goals    = (AppState.goals && AppState.goals[curKey()]) || [];
-        var catMap   = {};
-        var txs      = curTxs();
-        if (Array.isArray(txs)) {
-            txs.forEach(function(tx) {
+        var goals   = (AppState.goals && AppState.goals[curKey()]) || [];
+        var catMap  = {};
+        var txsCur  = curTxs();
+        if (Array.isArray(txsCur)) {
+            txsCur.forEach(function(tx) {
                 if (tx.type !== 'expense') return;
                 catMap[tx.category || 'Other'] = (catMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
             });
@@ -263,11 +219,9 @@
 
         var totalScore = Math.max(0, Math.min(100, c1Score + c2Score + c3Score + c4Score + c5Score));
 
-        // Letter grade
-        var grade = totalScore >= 90 ? 'A' : totalScore >= 75 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 45 ? 'D' : 'F';
+        var grade      = totalScore >= 90 ? 'A' : totalScore >= 75 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 45 ? 'D' : 'F';
         var gradeColor = totalScore >= 75 ? 'var(--acc)' : totalScore >= 60 ? 'var(--amber)' : 'var(--red)';
 
-        // Circular ring SVG
         var R = 34, CX = 40, CY = 40;
         var circumference = 2 * Math.PI * R;
         var dashOffset    = circumference * (1 - totalScore / 100);
@@ -279,11 +233,11 @@
                         :                     'At risk — take action on multiple areas.';
 
         var components = [
-            { label: 'Savings ≥20%',  pass: c1Pass, score: c1Score, max: 25 },
-            { label: 'DTI <36%',      pass: c2Pass, score: c2Score, max: 20 },
+            { label: 'Savings ≥20%',   pass: c1Pass, score: c1Score, max: 25 },
+            { label: 'DTI <36%',       pass: c2Pass, score: c2Score, max: 20 },
             { label: 'Emergency fund', pass: c3Pass, score: c3Score, max: 20 },
-            { label: 'On budget',     pass: c4Pass, score: c4Score, max: 20 },
-            { label: '+ve net worth', pass: c5Pass, score: c5Score, max: 15 }
+            { label: 'On budget',      pass: c4Pass, score: c4Score, max: 20 },
+            { label: '+ve net worth',  pass: c5Pass, score: c5Score, max: 15 }
         ];
 
         var chipsHtml = components.map(function(c) {
@@ -296,8 +250,6 @@
 
         sectionEl.innerHTML = (
             '<div class="fhs-card">' +
-
-            // Ring
             '<div class="fhs-ring-wrap">' +
             '<svg width="80" height="80" viewBox="0 0 80 80">' +
             '<circle cx="' + CX + '" cy="' + CY + '" r="' + R + '" fill="none" stroke="var(--border)" stroke-width="7"/>' +
@@ -310,33 +262,29 @@
             '<span class="fhs-grade-score">' + totalScore + '/100</span>' +
             '</div>' +
             '</div>' +
-
-            // Meta
             '<div class="fhs-meta">' +
             '<div class="fhs-title">Financial Health Score</div>' +
             '<div class="fhs-summary">' + summary + '</div>' +
             '<div class="fhs-components">' + chipsHtml + '</div>' +
             '</div>' +
-
             '</div>'
         );
     }
 
 
-    // ─── 3C.2–3C.6 INSIGHT CARDS ─────────────────────────────────────────────────
+    // ─── 3C.2–3C.6 INSIGHT CARDS (4.5: navigateTo for all CTAs) ─────────────────
 
     function _renderInsightCards() {
         var bodyEl = document.getElementById('insights-body');
         if (!bodyEl) return;
 
-        // FIX 1.5: guard Array
         var allKeys = Object.keys(AppState.transactions || {})
             .filter(function(k) {
                 var txs = AppState.transactions[k];
                 return Array.isArray(txs) && txs.length > 0;
             })
             .sort()
-            .slice(-12); // cap at 12 months
+            .slice(-12);
 
         if (allKeys.length === 0) {
             bodyEl.innerHTML = (
@@ -350,20 +298,19 @@
         var recentKey = allKeys[allKeys.length - 1];
         var rs        = getMonthStats(recentKey);
 
-        // All generated insights
         var insights = [];
-        var unlocks  = []; // data-insufficient placeholders
+        var unlocks  = [];
 
-        // ── Insight 1: Savings rate ─────────────────────────────────────────────
-        // Req: ≥ 1 month (3C.2)
-        var savRate = rs.inc > 0 ? Math.round((rs.sav / rs.inc) * 100) : 0;
+        // ── Insight 1: Savings rate (4.6: use savingsRate()) ─────────────────────
+        var savRatePct = (typeof savingsRate === 'function') ? savingsRate(recentKey)
+            : (rs.inc > 0 ? Math.round((rs.sav / rs.inc) * 100) : 0);
         var savBody;
-        if (savRate >= 20) {
-            savBody = 'Your savings rate is <strong>' + savRate + '%</strong> — hitting the 20% benchmark! Keep it up.';
-        } else if (savRate >= 10) {
-            savBody = 'Your savings rate is <strong>' + savRate + '%</strong>. Good progress — aim for 20% for stronger financial health.';
+        if (savRatePct >= 20) {
+            savBody = 'Your savings rate is <strong>' + savRatePct + '%</strong> — hitting the 20% benchmark! Keep it up.';
+        } else if (savRatePct >= 10) {
+            savBody = 'Your savings rate is <strong>' + savRatePct + '%</strong>. Good progress — aim for 20% for stronger financial health.';
         } else if (rs.inc > 0) {
-            savBody = 'Your savings rate is <strong>' + savRate + '%</strong>. Consider automating a savings transfer — even 5% makes a difference over time.';
+            savBody = 'Your savings rate is <strong>' + savRatePct + '%</strong>. Consider automating a savings transfer — even 5% makes a difference over time.';
         } else {
             savBody = 'No income recorded for this month. Record your income to see your savings rate.';
         }
@@ -371,24 +318,22 @@
             icon:     '📈',
             title:    'Savings rate',
             body:     savBody,
-            urgency:  savRate >= 20 ? 'green' : savRate >= 10 ? 'amber' : 'red',
-            score:    savRate >= 20 ? 0 : savRate >= 10 ? 2 : 5,   // lower = more urgent
+            urgency:  savRatePct >= 20 ? 'green' : savRatePct >= 10 ? 'amber' : 'red',
+            score:    savRatePct >= 20 ? 0 : savRatePct >= 10 ? 2 : 5,
             cta:      null
         });
 
-        // ── Insight 2: 3-month expense trend (3C.4, replaces 2-month compare) ──
-        // Req: ≥ 2 months (3C.2)
+        // ── Insight 2: 3-month expense trend ─────────────────────────────────────
         if (allKeys.length >= 2) {
             var trendKeys   = allKeys.slice(-Math.min(3, allKeys.length));
             var trendExpArr = trendKeys.map(function(k) { return getMonthStats(k).exp; });
-
             var trendBody;
+
             if (trendKeys.length >= 3) {
-                // Simple linear regression slope
-                var n      = trendExpArr.length;
-                var xMean  = (n - 1) / 2;
-                var yMean  = trendExpArr.reduce(function(s, v) { return s + v; }, 0) / n;
-                var num    = 0, den = 0;
+                var n = trendExpArr.length;
+                var xMean = (n - 1) / 2;
+                var yMean = trendExpArr.reduce(function(s, v) { return s + v; }, 0) / n;
+                var num = 0, den = 0;
                 trendExpArr.forEach(function(y, x) {
                     num += (x - xMean) * (y - yMean);
                     den += (x - xMean) * (x - xMean);
@@ -405,14 +350,13 @@
                     trendBody = 'Expenses have been <strong style="color:var(--acc)">falling</strong> — down roughly ' + pct3d + '% per month over the last 3 months. Great discipline!';
                 }
             } else {
-                // 2-month fallback
-                var prev2  = getMonthStats(trendKeys[0]).exp;
-                var curr2  = trendExpArr[trendExpArr.length - 1];
-                var chg    = prev2 > 0 ? Math.round(((curr2 - prev2) / prev2) * 100) : 0;
+                var prev2 = getMonthStats(trendKeys[0]).exp;
+                var curr2 = trendExpArr[trendExpArr.length - 1];
+                var chg   = prev2 > 0 ? Math.round(((curr2 - prev2) / prev2) * 100) : 0;
                 if (chg > 0) {
-                    trendBody = 'Expenses <strong style="color:var(--red)">increased by ' + chg + '%</strong> vs last month. Worth reviewing your spending.';
+                    trendBody = 'Expenses <strong style="color:var(--red)">increased by ' + chg + '%</strong> vs last month.';
                 } else if (chg < 0) {
-                    trendBody = 'Expenses <strong style="color:var(--acc)">decreased by ' + Math.abs(chg) + '%</strong> vs last month — great work cutting costs!';
+                    trendBody = 'Expenses <strong style="color:var(--acc)">decreased by ' + Math.abs(chg) + '%</strong> vs last month — great work!';
                 } else {
                     trendBody = 'Expenses are <strong>unchanged</strong> vs last month.';
                 }
@@ -424,14 +368,14 @@
                 body:    trendBody,
                 urgency: (trendExpArr[trendExpArr.length - 1] > trendExpArr[0] * 1.1) ? 'amber' : 'green',
                 score:   3,
-                cta:     { label: 'View Spending →', tab: 'spending' }
+                // 4.5: navigateTo with context
+                cta:     { label: 'View Spending →', tab: 'spending', context: null }
             });
         } else {
             unlocks.push({ title: 'Expense trend', months: 2 });
         }
 
-        // ── Insight 3: Average monthly spend ───────────────────────────────────
-        // Req: ≥ 3 months (3C.2)
+        // ── Insight 3: Average monthly spend ─────────────────────────────────────
         if (allKeys.length >= 3) {
             var avgExp = Math.round(
                 allKeys.reduce(function(sum, k) { return sum + getMonthStats(k).exp; }, 0) /
@@ -448,14 +392,14 @@
                 body:    'Your ' + allKeys.length + '-month average is <strong>' + fmt(avgExp) + '</strong>/mo. ' + avgNote,
                 urgency: curExp > avgExp * 1.15 ? 'amber' : 'green',
                 score:   4,
-                cta:     { label: 'View Trends →', tab: 'trends' }
+                cta:     { label: 'View Trends →', tab: 'trends', context: null }
             });
         } else {
             unlocks.push({ title: 'Average monthly spend', months: 3 });
         }
 
-        // ── Insight 4: Recurring commitment ratio (3C.5, replaces top-cat card) ─
-        var recurring    = (AppState.recurring || []).filter(function(r) { return r.active; });
+        // ── Insight 4: Recurring commitment ratio ─────────────────────────────────
+        var recurring     = (AppState.recurring || []).filter(function(r) { return r.active; });
         var recMonthlyAmt = recurring.reduce(function(sum, r) { return sum + (parseFloat(r.amount) || 0); }, 0);
         if (recurring.length > 0 && rs.inc > 0) {
             var recPct = Math.round((recMonthlyAmt / rs.inc) * 100);
@@ -473,37 +417,39 @@
                 body:    recBody,
                 urgency: recPct > 70 ? 'red' : recPct > 50 ? 'amber' : 'green',
                 score:   recPct > 70 ? 1 : recPct > 50 ? 3 : 6,
-                cta:     { label: 'Manage Recurring →', tab: 'recurring' }
+                cta:     { label: 'Manage Recurring →', tab: 'recurring', context: null }
             });
         }
 
-        // ── Insight 5: Over-budget categories ─────────────────────────────────
-        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
-        var txsCur = curTxs();
-        var catMap = {};
+        // ── Insight 5: Over-budget categories (4.5: navigateTo with category context) ─
+        var goals   = (AppState.goals && AppState.goals[curKey()]) || [];
+        var catMap2 = {};
+        var txsCur  = curTxs();
         if (Array.isArray(txsCur)) {
             txsCur.forEach(function(tx) {
                 if (tx.type !== 'expense') return;
-                catMap[tx.category || 'Other'] = (catMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
+                catMap2[tx.category || 'Other'] = (catMap2[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
             });
         }
         var overGoals = goals.filter(function(g) {
-            return g.monthly_limit > 0 && (catMap[g.category] || 0) > g.monthly_limit;
+            return g.monthly_limit > 0 && (catMap2[g.category] || 0) > g.monthly_limit;
         });
         if (overGoals.length > 0) {
             var overNames = overGoals.slice(0, 3).map(function(g) { return '<strong>' + _escIns(g.category) + '</strong>'; }).join(', ');
+            var firstOverCat = overGoals[0].category;
             insights.push({
                 icon:    '⚠️',
                 title:   'Over-budget categories',
                 body:    'You\'ve exceeded your spending limit for ' + overNames +
                     (overGoals.length > 3 ? ' and ' + (overGoals.length - 3) + ' more' : '') + ' this month.',
                 urgency: 'red',
-                score:   0, // highest urgency
-                cta:     { label: 'View Spending Limits →', tab: 'goals' }
+                score:   0,
+                // 4.5: navigate to spending tab with category context to highlight it
+                cta:     { label: 'View in Spending →', tab: 'spending', context: { categoryName: firstOverCat } }
             });
         }
 
-        // ── Insight 6: Debt overview ──────────────────────────────────────────
+        // ── Insight 6: Debt overview ──────────────────────────────────────────────
         var debts        = AppState.debts || [];
         var totalDebt    = debts.reduce(function(sum, d) { return sum + (parseFloat(d.amount_owed) || 0); }, 0);
         var totalMonthly = debts.reduce(function(sum, d) { return sum + (parseFloat(d.monthly_payment) || 0); }, 0);
@@ -521,11 +467,11 @@
                     (dtiVal > 0 ? ' DTI: ' + dtiVal + '%. ' + dtiNote : ''),
                 urgency: dtiVal > 36 ? 'red' : dtiVal > 20 ? 'amber' : 'green',
                 score:   dtiVal > 36 ? 1 : 5,
-                cta:     { label: 'View Debt Tracker →', tab: 'debt' }
+                cta:     { label: 'View Debt Tracker →', tab: 'debt', context: null }
             });
         }
 
-        // ── Insight 7: Net worth ──────────────────────────────────────────────
+        // ── Insight 7: Net worth ──────────────────────────────────────────────────
         var nwSummary = AppState.netWorthSummary;
         if (nwSummary && nwSummary.item_count > 0) {
             var nw = nwSummary.net_worth;
@@ -538,20 +484,30 @@
                             'Assets exceed liabilities. Keep building!'),
                 urgency: nw < 0 ? 'red' : 'green',
                 score:   nw < 0 ? 1 : 7,
-                cta:     { label: 'View Net Worth →', tab: 'networth' }
+                cta:     { label: 'View Net Worth →', tab: 'networth', context: null }
             });
         }
 
-        // ── 3C.6 Sort by urgency score, cap at 5, render ─────────────────────
+        // 3C.6: sort by urgency score, cap at 5
         insights.sort(function(a, b) { return (a.score || 99) - (b.score || 99); });
         var topInsights = insights.slice(0, 5);
 
+        // 4.5: Build CTA using navigateTo()
         var html = topInsights.map(function(ins) {
             var ctaHtml = '';
             if (ins.cta) {
+                var navCall;
+                if (ins.cta.context) {
+                    navCall = 'typeof navigateTo === \'function\' ? navigateTo(\'' +
+                        ins.cta.tab + '\', ' + JSON.stringify(ins.cta.context) + ') : switchTabSidebar(\'' + ins.cta.tab + '\')';
+                } else {
+                    navCall = 'typeof navigateTo === \'function\' ? navigateTo(\'' +
+                        ins.cta.tab + '\') : switchTabSidebar(\'' + ins.cta.tab + '\')';
+                }
+
                 ctaHtml = (
                     '<div class="insight-cta">' +
-                    '<button onclick="switchTabSidebar(\'' + ins.cta.tab + '\')">' +
+                    '<button onclick="' + navCall + '">' +
                     _escIns(ins.cta.label) +
                     '</button>' +
                     '</div>'
@@ -570,7 +526,7 @@
             );
         }).join('');
 
-        // 3C.2 — Unlock placeholders for insufficient data
+        // 3C.2 — Unlock placeholders
         var unlocksHtml = unlocks.map(function(u) {
             return (
                 '<div class="insight-unlock">' +

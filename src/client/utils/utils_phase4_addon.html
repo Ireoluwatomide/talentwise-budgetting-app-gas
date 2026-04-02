@@ -1,0 +1,239 @@
+<script>
+    // =============================================================================
+    // utils_phase4_addon.html — Phase 4 Analytics Infrastructure
+    //
+    // Include AFTER utils.js, utils_darkmode_charts_addon.html in Index.html.
+    //
+    // Implements:
+    //   4.6 — savingsRate(key) shared helper (standardized sav/inc × 100)
+    //   4.1 — Currency-aware chart rendering (renderAllCharts on setCurrency)
+    //   4.3 — Full dark mode chart rebuild (destroy + recreate with stored config)
+    //   4.4 — AppState.dataQuality computed property + analytics density banner
+    //   4.5 — navigateTo(tabId, context) + context-aware rendering
+    // =============================================================================
+
+
+    // ─── 4.6 SHARED SAVINGS RATE HELPER ─────────────────────────────────────────
+    //
+    // Single source of truth: sav / inc × 100, clamped 0–100.
+    // All analytics screens (Report, Insights, Trends, Templates) call this.
+    // Returns 0 if no income recorded (not NaN).
+
+    function savingsRate(key) {
+        var s = getMonthStats(key || curKey());
+        if (!s || s.inc <= 0) return 0;
+        return Math.min(100, Math.round((s.sav / s.inc) * 100));
+    }
+
+    // All-time savings rate across all loaded months
+    function savingsRateAllTime() {
+        var totInc = 0, totSav = 0;
+        Object.keys(AppState.transactions || {}).forEach(function(k) {
+            var s = getMonthStats(k);
+            totInc += s.inc;
+            totSav += s.sav;
+        });
+        if (totInc <= 0) return 0;
+        return Math.min(100, Math.round((totSav / totInc) * 100));
+    }
+
+
+    // ─── 4.4 DATA QUALITY ────────────────────────────────────────────────────────
+    //
+    // AppState.dataQuality = { months: N, isReliable: bool, warning: string }
+    // Updated in computeDataQuality(), called from renderAll() and on month nav.
+
+    function computeDataQuality() {
+        var allKeys = Object.keys(AppState.transactions || {}).filter(function(k) {
+            var txs = AppState.transactions[k];
+            return Array.isArray(txs) && txs.length > 0;
+        });
+
+        var n   = allKeys.length;
+        var rel = n >= 3;
+
+        var warning = '';
+        if (n === 0) {
+            warning = 'No transaction data yet. Add transactions to unlock analytics.';
+        } else if (n === 1) {
+            warning = 'Only 1 month of data — analytics require at least 3 months for reliable trends and projections.';
+        } else if (n === 2) {
+            warning = '2 months of data — some analytics may be misleading. Add 1 more month for reliable insights.';
+        }
+
+        AppState.dataQuality = { months: n, isReliable: rel, warning: warning };
+        return AppState.dataQuality;
+    }
+
+    // Render the data density banner for an analytics pane.
+    // bannerContainerId: id of the element to inject the banner into (or prepend).
+    function renderDataQualityBanner(bannerContainerId) {
+        var el = document.getElementById(bannerContainerId);
+        if (!el) return;
+
+        var dq = AppState.dataQuality || computeDataQuality();
+
+        // Always remove old banner first
+        var existing = el.querySelector('.analytics-density-banner');
+        if (existing) existing.remove();
+
+        if (dq.isReliable || !dq.warning) return; // no banner needed
+
+        var banner = document.createElement('div');
+        banner.className = 'analytics-density-banner';
+        banner.style.cssText = [
+            'background:rgba(186,117,23,0.08)',
+            'border:0.5px solid rgba(186,117,23,0.3)',
+            'border-radius:var(--radius)',
+            'padding:10px 14px',
+            'margin-bottom:1rem',
+            'font-size:12px',
+            'line-height:1.6',
+            'display:flex',
+            'align-items:flex-start',
+            'gap:10px'
+        ].join(';');
+
+        banner.innerHTML = (
+            '<span style="font-size:16px;flex-shrink:0;line-height:1.4;">📊</span>' +
+            '<span style="color:var(--text);">' +
+            '<strong style="color:var(--amber);">Limited data:</strong> ' +
+            dq.warning +
+            '</span>'
+        );
+
+        // Prepend into the container
+        el.insertBefore(banner, el.firstChild);
+    }
+
+
+    // ─── 4.1 + 4.3 CURRENCY-AWARE + DARK MODE CHART REBUILD ─────────────────────
+    //
+    // chartRegistry now stores { instance, createFn } pairs.
+    // registerChart(id, instance, createFn?) — createFn is optional; existing
+    // charts that don't store a createFn still get destroyed on rebuild.
+    //
+    // renderAllCharts() destroys all registered instances and calls createFn()
+    // on those that have one, which re-renders with current currency + theme.
+
+    // Override registerChart from utils.js to also store the create function
+    var _originalRegisterChart = (typeof registerChart !== 'undefined') ? registerChart : function() {};
+
+    // Extended registry: { id: { instance: Chart, createFn: Function|null } }
+    var _chartRegistryV2 = {};
+
+    window.registerChart = function(canvasId, chartInstance, createFn) {
+        // Also call original (maintains backward compat with chartRegistry)
+        _originalRegisterChart(canvasId, chartInstance);
+        _chartRegistryV2[canvasId] = {
+            instance: chartInstance,
+            createFn: createFn || null
+        };
+    };
+
+    window.destroyChart = function(canvasId) {
+        if (_chartRegistryV2[canvasId]) {
+            try { _chartRegistryV2[canvasId].instance.destroy(); } catch(e) {}
+            delete _chartRegistryV2[canvasId];
+        }
+        // Also clean up original registry
+        if (typeof chartRegistry !== 'undefined' && chartRegistry[canvasId]) {
+            try { chartRegistry[canvasId].destroy(); } catch(e) {}
+            delete chartRegistry[canvasId];
+        }
+    };
+
+    // 4.1 + 4.3: Full rebuild of all chart tabs
+    window.renderAllCharts = function() {
+        var activeTab = AppState.activeTab || 'overview';
+
+        if (activeTab === 'spending') {
+            setTimeout(function() {
+                if (typeof renderSpending === 'function') renderSpending();
+            }, 50);
+        } else {
+            _chartTabsDirty.spending = true;
+        }
+
+        if (activeTab === 'trends') {
+            setTimeout(function() {
+                if (typeof renderTrends === 'function') renderTrends();
+            }, 50);
+        } else {
+            _chartTabsDirty.trends = true;
+        }
+
+        // NetWorth charts
+        if (activeTab === 'networth') {
+            setTimeout(function() {
+                if (typeof renderNetWorth === 'function') renderNetWorth();
+            }, 50);
+        }
+    };
+
+    // Patch setCurrency to trigger chart rebuild (4.1)
+    var _originalSetCurrency = (typeof setCurrency !== 'undefined') ? setCurrency : function() {};
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof setCurrency === 'function') {
+            var _orig = setCurrency;
+            window.setCurrency = function(value) {
+                _orig(value);
+                // renderAll() is already called inside _orig, which calls renderAllCharts
+                // for active chart tab. For inactive tabs, _chartTabsDirty handles it.
+                // Explicit call ensures it's always triggered:
+                renderAllCharts();
+            };
+        }
+    });
+
+    // Patch toggleDark to also trigger chart rebuild (4.3)
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof toggleDark === 'function') {
+            var _origDark = toggleDark;
+            window.toggleDark = function() {
+                _origDark();
+                renderAllCharts();
+            };
+        }
+    });
+
+
+    // ─── 4.5 CROSS-TAB NAVIGATION WITH CONTEXT ───────────────────────────────────
+    //
+    // navigateTo(tabId, context) — navigate to a tab and pass context for
+    // the target to use on render. Context is stored in AppState.navContext.
+    //
+    // Example: navigateTo('goals', { categoryName: 'Housing' })
+    // Goals.html renderGoals() reads AppState.navContext and pre-highlights.
+    //
+    // Context is consumed once (cleared after first read).
+
+    AppState.navContext = null;
+
+    window.navigateTo = function(tabId, context) {
+        AppState.navContext = context || null;
+        if (typeof switchTabSidebar === 'function') {
+            switchTabSidebar(tabId);
+        } else if (typeof switchTab === 'function') {
+            switchTab(tabId);
+        }
+    };
+
+    // Helper for analytics screens to consume context
+    window.consumeNavContext = function() {
+        var ctx = AppState.navContext;
+        AppState.navContext = null;
+        return ctx;
+    };
+
+    // ─── PATCH renderAll() TO COMPUTE DATA QUALITY ───────────────────────────────
+    // We extend renderAll() to always call computeDataQuality() first.
+    document.addEventListener('DOMContentLoaded', function() {
+        var _origRenderAll = (typeof renderAll === 'function') ? renderAll : function() {};
+        window.renderAll = function() {
+            computeDataQuality();
+            _origRenderAll();
+        };
+    });
+
+</script>

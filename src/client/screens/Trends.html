@@ -1,26 +1,21 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Trends.html — Monthly Trends & Forecast (merged MultiMonth + Forecast)
 
-     PHASE 2 TASK 2.2: Replaces MultiMonth.html and Forecast.html.
-     Tab ID: "trends"
+     PHASE 3 ENHANCEMENTS (all retained):
+       Window toggle, today line, density warning, weighted averages, totals row
 
-     SECTIONS:
-       1. Window toggle: 3 / 6 / 12 months
-       2. Combined bar chart — actuals (solid) + projected (faded)
-          with a vertical "Today" annotation line between them
-       3. Summary table with actuals/projected rows distinguished visually
-          and a totals row at the bottom
-       4. Data density warning when fewer than 3 months of data
-
-     Phase 1 fixes carried forward:
-       - FIX 1.3: past vs future determined by today's date, not curKey()
-       - FIX 1.8: null-safe FX reads in all tick callbacks
-       - FIX 1.2: getChartDefaults() returns fresh copy each call (via utils.js)
+     PHASE 4 ENHANCEMENTS:
+       4.1 — Dataset values in display currency; rebuilt on setCurrency
+       4.4 — Data density banner (shared renderDataQualityBanner)
+       4.6 — savingsRate(key) helper used in table save% column
 
      switchTab('trends') calls renderTrends() after a 50ms delay.
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-trends">
+
+    <!-- ── 4.4 Data Density Banner ──────────────────────────────────────────── -->
+    <div id="trends-density-banner-slot"></div>
 
     <!-- ── Legend ─────────────────────────────────────────────────────────────── -->
     <div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:var(--text2);">
@@ -49,7 +44,7 @@
         </div>
     </div>
 
-    <!-- ── Data density warning ───────────────────────────────────────────────── -->
+    <!-- ── Data density warning (legacy inline, now also via shared banner) ─── -->
     <div id="trends-density-warn" style="display:none;margin-bottom:12px;">
         <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
                     border-radius:var(--radius);padding:10px 14px;font-size:12px;
@@ -83,7 +78,6 @@
     .trends-win-btn:hover  { background: var(--bg2); color: var(--text); }
     .trends-win-btn.active { background: var(--text); color: var(--bg);  }
 
-    /* Projected table rows — italic + dashed border */
     .trends-row-projected td {
         font-style: italic;
         color: var(--text2) !important;
@@ -96,7 +90,6 @@
         font-style: normal;
     }
 
-    /* Totals row */
     .trends-row-totals td {
         font-weight: 600 !important;
         border-top: 1px solid var(--border2) !important;
@@ -112,10 +105,10 @@
 
 <script>
     // =============================================================================
-    // Trends screen — merged MultiMonth + Forecast
+    // Trends screen — Phase 3B + Phase 4 complete
     // =============================================================================
 
-    var _trendsWindow = 6; // default window size in months
+    var _trendsWindow = 6;
 
     function setTrendsWindow(n) {
         _trendsWindow = n;
@@ -126,19 +119,12 @@
         renderTrends();
     }
 
-    /**
-     * renderTrends()
-     *
-     * Builds a window of months centred on today:
-     *   - Past side: actual months working backwards from today
-     *   - Future side: projected months working forwards from today
-     *
-     * The window always includes today's month. Past months to the left,
-     * future months to the right, up to _trendsWindow total slots.
-     *
-     * FIX 1.3: "past vs future" determined by today's real date, not curKey().
-     */
     function renderTrends() {
+        // 4.4 — Data density banner
+        if (typeof renderDataQualityBanner === 'function') {
+            renderDataQualityBanner('trends-density-banner-slot');
+        }
+
         var keys = _buildTrendsKeys();
         _renderTrendsDensityWarning(keys);
         _renderTrendsChart(keys);
@@ -146,29 +132,17 @@
         _renderTrendsPeriodLabel(keys);
     }
 
-    /**
-     * _buildTrendsKeys()
-     *
-     * Returns an array of YYYY-MM keys of length _trendsWindow,
-     * starting roughly (_trendsWindow - 1) months before today and
-     * ending roughly 2 months into the future (or fewer if window is small).
-     *
-     * Strategy: show past N-2 months of actuals + 2 months of projection,
-     * capped to the window size. Adjusts dynamically.
-     */
     function _buildTrendsKeys() {
         var today    = new Date();
         var todayKey = today.getFullYear() + '-' +
             (today.getMonth() + 1 < 10 ? '0' : '') + (today.getMonth() + 1);
 
-        // Start from (_trendsWindow - 2) months before today, show 2 future months
         var futureMos = Math.min(2, _trendsWindow - 1);
-        var pastMos   = _trendsWindow - futureMos - 1; // months before today
+        var pastMos   = _trendsWindow - futureMos - 1;
 
         var y = today.getFullYear();
         var m = today.getMonth() + 1;
 
-        // Step back to the start month
         for (var i = 0; i < pastMos; i++) {
             m--;
             if (m < 1) { m = 12; y--; }
@@ -194,8 +168,6 @@
         el.textContent = fLabel + ' – ' + lLabel;
     }
 
-    // ─── DATA DENSITY WARNING ─────────────────────────────────────────────────────
-
     function _renderTrendsDensityWarning(keys) {
         var warnEl = document.getElementById('trends-density-warn');
         var textEl = document.getElementById('trends-density-text');
@@ -219,7 +191,8 @@
         }
     }
 
-    // ─── BAR CHART ───────────────────────────────────────────────────────────────
+
+    // ─── BAR CHART (4.1: currency-aware dataset values) ──────────────────────────
 
     function _renderTrendsChart(keys) {
         destroyChart('trends-chart');
@@ -231,8 +204,9 @@
         var todayKey = today.getFullYear() + '-' +
             (today.getMonth() + 1 < 10 ? '0' : '') + (today.getMonth() + 1);
 
-        // Compute weighted averages from actual months for projections
-        var avg = _computeWeightedAverages();
+        var avg  = _computeWeightedAverages();
+        // 4.1: apply FX rate to dataset values
+        var rate = (typeof FX_RATES !== 'undefined' && AppState && FX_RATES[AppState.currency]) || 1;
 
         var labels      = [];
         var incData     = [];
@@ -244,31 +218,29 @@
             var parts = k.split('-');
             labels.push(MONTHS[parseInt(parts[1],10)-1].slice(0,3) + ' ' + parts[0].slice(2));
 
-            var isPast = k <= todayKey;
+            var isPast  = k <= todayKey;
             var hasData = Array.isArray(AppState.transactions[k]) &&
                 AppState.transactions[k].length > 0;
 
+            var s;
             if (isPast && hasData) {
-                var s = getMonthStats(k);
-                incData.push(s.inc);
-                expData.push(s.exp);
-                savData.push(s.sav);
+                s = getMonthStats(k);
                 isProjected.push(false);
             } else {
-                incData.push(avg.inc);
-                expData.push(avg.exp);
-                savData.push(avg.sav);
+                s = { inc: avg.inc, exp: avg.exp, sav: avg.sav };
                 isProjected.push(true);
             }
+            // Store in display currency
+            incData.push(Math.round(s.inc * rate));
+            expData.push(Math.round(s.exp * rate));
+            savData.push(Math.round(s.sav * rate));
         });
 
-        // Find the index where projection starts (first projected month)
         var todayIdx = -1;
         keys.forEach(function(k, i) {
             if (k === todayKey) todayIdx = i;
         });
 
-        // "Today" vertical line plugin
         var todayLinePlugin = {
             id: 'todayLine',
             afterDraw: function(chart) {
@@ -287,7 +259,6 @@
                 ctx.lineTo(x, chart.chartArea.bottom);
                 ctx.stroke();
 
-                // "Today" label
                 ctx.setLineDash([]);
                 ctx.font      = '10px system-ui, sans-serif';
                 ctx.fillStyle = 'rgba(128,128,128,0.8)';
@@ -297,7 +268,6 @@
             }
         };
 
-        // Build per-bar colors — faded for projected bars
         var incColors = isProjected.map(function(p) {
             return p ? 'rgba(29,158,117,0.30)' : 'rgba(29,158,117,0.85)';
         });
@@ -308,7 +278,7 @@
             return p ? 'rgba(24,95,165,0.30)'  : 'rgba(24,95,165,0.85)';
         });
 
-        var defaults = getChartDefaults(); // fresh copy each call (fix 1.2)
+        var defaults = getChartDefaults();
         defaults.scales.y.ticks.maxTicksLimit = 5;
 
         var chart = new Chart(canvas, {
@@ -316,37 +286,20 @@
             data: {
                 labels: labels,
                 datasets: [
-                    {
-                        label:           'Income',
-                        data:            incData,
-                        backgroundColor: incColors,
-                        borderRadius:    3,
-                        borderSkipped:   false
-                    },
-                    {
-                        label:           'Expenses',
-                        data:            expData,
-                        backgroundColor: expColors,
-                        borderRadius:    3,
-                        borderSkipped:   false
-                    },
-                    {
-                        label:           'Savings',
-                        data:            savData,
-                        backgroundColor: savColors,
-                        borderRadius:    3,
-                        borderSkipped:   false
-                    }
+                    { label: 'Income',   data: incData, backgroundColor: incColors, borderRadius: 3, borderSkipped: false },
+                    { label: 'Expenses', data: expData, backgroundColor: expColors, borderRadius: 3, borderSkipped: false },
+                    { label: 'Savings',  data: savData, backgroundColor: savColors, borderRadius: 3, borderSkipped: false }
                 ]
             },
             plugins: [todayLinePlugin],
             options: defaults
         });
 
-        registerChart('trends-chart', chart);
+        registerChart('trends-chart', chart, function() { _renderTrendsChart(keys); });
     }
 
-    // ─── SUMMARY TABLE ────────────────────────────────────────────────────────────
+
+    // ─── SUMMARY TABLE (4.6: use savingsRate() helper) ───────────────────────────
 
     function _renderTrendsTable(keys) {
         var tableEl = document.getElementById('trends-table');
@@ -368,7 +321,6 @@
             );
         }).join('');
 
-        // Accumulate totals for the totals row
         var totals = { inc: 0, exp: 0, sav: 0, bal: 0 };
 
         var rowsHtml = keys.map(function(k) {
@@ -393,11 +345,12 @@
             totals.sav += s.sav;
             totals.bal += s.bal;
 
-            var savRate  = s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0;
+            // 4.6: use shared savingsRate() helper
+            var sp       = isProj
+                ? (s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0)
+                : savingsRate(k);
             var isActive = k === monthKey(AppState.curYear, AppState.curMonth);
             var rowClass = isProj ? 'trends-row-projected' : (isActive ? 'row-active' : '');
-
-            var dash = isProj ? '—' : null;
 
             var td = function(val, color) {
                 return '<td style="padding:7px 8px;text-align:right;font-family:var(--mono);' +
@@ -416,13 +369,13 @@
                 td(fmt(s.exp), 'var(--red)') +
                 td(fmt(s.sav), 'var(--blue)') +
                 td(fmt(s.bal), balColor) +
-                td(savRate + '%', '') +
+                td(sp + '%', '') +
                 '</tr>'
             );
         }).join('');
 
-        // Totals row
-        var totalSavRate = totals.inc > 0 ? Math.round((totals.sav / totals.inc) * 100) : 0;
+        // 4.6: totals savings rate via shared helper
+        var totalSavRate  = totals.inc > 0 ? Math.round((totals.sav / totals.inc) * 100) : 0;
         var totalBalColor = totals.bal >= 0 ? 'var(--acc)' : 'var(--red)';
 
         var totalsRow = (
@@ -444,19 +397,9 @@
         );
     }
 
+
     // ─── WEIGHTED AVERAGES ────────────────────────────────────────────────────────
 
-    /**
-     * _computeWeightedAverages()
-     *
-     * Phase 3B task 3B.4 implementation brought forward:
-     * Uses recency-weighted average for projections — recent months weighted
-     * more heavily than older ones. Weight = position index (most recent = N,
-     * oldest = 1). Caps lookback at 6 months regardless of total history.
-     *
-     * This gives better projections than a simple mean: a one-off large
-     * expense from 8 months ago won't skew the current forecast.
-     */
     function _computeWeightedAverages() {
         var allKeys = Object.keys(AppState.transactions || {})
             .filter(function(k) {
@@ -464,18 +407,18 @@
                 return Array.isArray(txs) && txs.length > 0;
             })
             .sort()
-            .slice(-6); // cap at 6 most recent months
+            .slice(-6);
 
         if (allKeys.length === 0) {
             return { inc: 0, exp: 0, sav: 0 };
         }
 
         var n           = allKeys.length;
-        var totalWeight = (n * (n + 1)) / 2; // sum of 1..n
+        var totalWeight = (n * (n + 1)) / 2;
         var wInc = 0, wExp = 0, wSav = 0;
 
         allKeys.forEach(function(k, i) {
-            var weight = i + 1; // oldest = 1, most recent = n
+            var weight = i + 1;
             var s      = getMonthStats(k);
             wInc += s.inc * weight;
             wExp += s.exp * weight;

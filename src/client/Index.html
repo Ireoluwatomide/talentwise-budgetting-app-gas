@@ -56,6 +56,7 @@
 <?!= include('src/client/utils/savings_state_addon') ?>
 <?!= include('src/client/utils/utils_recurring_addon') ?>
 <?!= include('src/client/utils/utils_phase4_addon') ?>
+<?!= include('src/client/utils/utils_period_integration_addon') ?>
 
 <!-- ══ LAYOUT ROOT ═══════════════════════════════════════════════════════ -->
 <!--
@@ -81,6 +82,7 @@
 
     <!-- ── 8. Header ─────────────────────────────────────────────────────── -->
     <?!= include('src/client/components/Header') ?>
+    <?!= include('src/client/components/AnalyticsPeriod') ?>
 
     <!-- ── 9. Tab Navigation (hidden, kept for DOM anchors) ──────────────── -->
     <?!= include('src/client/components/Tabs') ?>
@@ -143,6 +145,10 @@
     // 5. Set initial active state on mobile bottom nav
     var bnavOverview = document.getElementById('bnav-overview');
     if (bnavOverview) bnavOverview.classList.add('active');
+
+    if (typeof initAnalyticsPeriod === 'function') {
+      initAnalyticsPeriod();
+    }
 
     // 6. First full render
     if (typeof renderAll === 'function') {

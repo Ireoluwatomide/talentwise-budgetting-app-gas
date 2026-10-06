@@ -133,6 +133,14 @@
     }
 
     function _buildTrendsKeys() {
+
+        if (typeof _getTrendsKeysFromPeriod === 'function') {
+            var periodKeys = _getTrendsKeysFromPeriod();
+            if (periodKeys && periodKeys.length > 0) {
+                return periodKeys;
+            }
+        }
+
         var today    = new Date();
         var todayKey = today.getFullYear() + '-' +
             (today.getMonth() + 1 < 10 ? '0' : '') + (today.getMonth() + 1);

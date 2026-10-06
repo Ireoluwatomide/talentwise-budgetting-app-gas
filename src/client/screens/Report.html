@@ -39,12 +39,11 @@
         var bodyEl = document.getElementById('report-body');
         if (!bodyEl) return;
 
-        var keys = Object.keys(AppState.transactions || {})
-            .filter(function(k) {
-                var txs = AppState.transactions[k];
-                return txs && txs.length > 0;
-            })
-            .sort();
+        var keys = (window._reportKeys && window._reportKeys.length > 0)
+            ? window._reportKeys
+            : Object.keys(AppState.transactions || {})
+                .filter(function(k) { var txs = AppState.transactions[k]; return txs && txs.length > 0; })
+                .sort();
 
         if (keys.length === 0) {
             bodyEl.innerHTML = (

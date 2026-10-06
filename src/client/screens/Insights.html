@@ -162,11 +162,12 @@
         var sectionEl = document.getElementById('insights-health-section');
         if (!sectionEl) return;
 
-        var allKeys = Object.keys(AppState.transactions || {})
-            .filter(function(k) {
-                var txs = AppState.transactions[k];
-                return Array.isArray(txs) && txs.length > 0;
-            });
+        var allKeys = (typeof getAnalyticsPeriodKeysWithData === 'function')
+            ? getAnalyticsPeriodKeysWithData()
+            : Object.keys(AppState.transactions || {})
+                .filter(function(k) { var txs = AppState.transactions[k]; return Array.isArray(txs) && txs.length > 0; })
+                .sort()
+                .slice(-12);
 
         if (allKeys.length === 0) {
             sectionEl.innerHTML = '';
@@ -278,13 +279,12 @@
         var bodyEl = document.getElementById('insights-body');
         if (!bodyEl) return;
 
-        var allKeys = Object.keys(AppState.transactions || {})
-            .filter(function(k) {
-                var txs = AppState.transactions[k];
-                return Array.isArray(txs) && txs.length > 0;
-            })
-            .sort()
-            .slice(-12);
+        var allKeys = (typeof getAnalyticsPeriodKeysWithData === 'function')
+            ? getAnalyticsPeriodKeysWithData()
+            : Object.keys(AppState.transactions || {})
+                .filter(function(k) { var txs = AppState.transactions[k]; return Array.isArray(txs) && txs.length > 0; })
+                .sort()
+                .slice(-12);
 
         if (allKeys.length === 0) {
             bodyEl.innerHTML = (

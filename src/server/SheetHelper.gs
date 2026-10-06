@@ -1,75 +1,74 @@
 /**
  * SheetHelper.gs — Google Sheets Low-Level Utilities
  *
- * PURPOSE:
- *   Central abstraction layer for all read/write operations against the linked
- *   Google Sheet. Every other server module calls these helpers instead of
- *   using SpreadsheetApp directly.
+ * CHANGES (recurring enhancement):
+ *   - Transactions headers updated: added recurring_id column
+ *   - Recurring headers updated: added frequency, day_of_month, start_date,
+ *     end_date, active, last_applied columns
+ *   - New RecurringHistory sheet added to SHEET_HEADERS and _LOGICAL_NAME_MAP
+ *   - All other logic unchanged from savings enhancement version
  *
  * KEY FIX — month_key persistence:
  *   Google Sheets aggressively auto-converts any string that looks like a date
- *   (e.g. "2026-03") into a Date cell, even when the column is pre-formatted
- *   as Plain Text. sheet.appendRow() bypasses column formatting entirely —
- *   it writes to whatever row comes next, which has no format applied.
- *
- *   The fix is two-pronged:
- *     1. appendRow() writes month_key values via setValues() on the specific
- *        cell rather than including them in the appendRow() array, and
- *        explicitly sets that cell's number format to Plain Text (@STRING@)
- *        BEFORE writing the value. This prevents Sheets from ever seeing the
- *        string as a date candidate.
- *     2. _dateToMonthKey() uses WAT (UTC+1) consistently when converting a
- *        Date that Sheets has already auto-converted, ensuring the month
- *        extracted matches what the user originally entered.
+ *   (e.g. "2026-03") into a Date cell. The fix is two-pronged:
+ *     1. appendRow() writes string columns via setValues() with @STRING@ format applied first.
+ *     2. _dateToMonthKey() uses WAT (UTC+1) consistently when converting a Date back.
  *
  * PATTERN:
- *   Each sheet is treated as a table: Row 1 = headers, Rows 2+ = data.
- *   All functions operate on the active spreadsheet (bound script).
+ *   Row 1 = headers, Rows 2+ = data. All functions operate on the active spreadsheet.
  */
 
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const SHEET_NAMES = {
-  TRANSACTIONS:  'Transactions',
-  GOALS:         'Goals',
-  BILLS:         'Bills',
-  SAVINGS_GOALS: 'SavingsGoals',
-  DEBTS:         'Debts',
-  NET_WORTH:     'NetWorth',
-  RECURRING:     'Recurring',
-  PREFERENCES:   'Preferences'
+  TRANSACTIONS:       'Transactions',
+  GOALS:              'Goals',
+  BILLS:              'Bills',
+  BILL_HISTORY:       'BillHistory',
+  SAVINGS_GOALS:      'SavingsGoals',
+  SAVINGS_HISTORY:    'SavingsHistory',
+  DEBTS:              'Debts',
+  NET_WORTH:          'NetWorth',
+  RECURRING:          'Recurring',
+  RECURRING_HISTORY:  'RecurringHistory',
+  PREFERENCES:        'Preferences'
 };
 
 /**
- * SHEET_HEADERS defines the exact column order for every sheet.
- * appendRow() and initSheets() both read from this single source of truth.
+ * SHEET_HEADERS — single source of truth for column order in every sheet.
+ *
+ * Transactions: added recurring_id (links auto-applied txs back to their template)
+ * Recurring:    added frequency, day_of_month, start_date, end_date, active, last_applied
+ * RecurringHistory: new sheet for application audit trail
  */
 const SHEET_HEADERS = {
-  Transactions:  ['id', 'month_key', 'name', 'amount', 'type', 'category', 'note'],
-  Goals:         ['id', 'month_key', 'category', 'monthly_limit'],
-  Bills:         ['id', 'name', 'amount', 'due_day', 'paid'],
-  SavingsGoals:  ['id', 'name', 'target_amount', 'saved_amount'],
-  Debts:         ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate'],
-  NetWorth:      ['id', 'name', 'type', 'amount'],
-  Recurring:     ['id', 'name', 'amount', 'type', 'category'],
-  Preferences:   ['key', 'value']
+  Transactions:      ['id', 'month_key', 'name', 'amount', 'type', 'category', 'note', 'recurring_id'],
+  Goals:             ['id', 'month_key', 'category', 'monthly_limit'],
+  Bills:             ['id', 'name', 'amount', 'due_day', 'paid', 'category'],
+  BillHistory:       ['id', 'bill_id', 'month_key', 'paid_at', 'transaction_id', 'amount'],
+  SavingsGoals:      ['id', 'name', 'target_amount', 'saved_amount', 'target_date', 'sort_order'],
+  SavingsHistory:    ['id', 'goal_id', 'transaction_id', 'month_key', 'amount', 'note', 'recorded_at'],
+  Debts:             ['id', 'name', 'total', 'paid', 'monthly_payment', 'interest_rate', 'archived', 'recurring_id'],
+  DebtHistory:       ['id', 'debt_id', 'month_key', 'transaction_id', 'amount', 'paid_at'],
+  NetWorth:          ['id', 'name', 'type', 'amount', 'category', 'last_updated', 'source_id'],
+  NetWorthHistory:   ['id', 'snapshot_date', 'label', 'total_assets', 'total_liabilities', 'net_worth'],
+  Recurring:         ['id', 'name', 'amount', 'type', 'category', 'frequency', 'day_of_month',
+                      'start_date', 'end_date', 'active', 'last_applied'],
+  RecurringHistory:  ['id', 'recurring_id', 'month_key', 'transaction_id', 'applied_at', 'skipped_reason'],
+  Preferences:       ['key', 'value']
 };
 
 // Columns that must always be stored as plain text strings.
-// Sheets will auto-convert anything that looks like a date — we fight this
-// by writing these columns with an explicit @STRING@ format every time.
-var STRING_COLUMNS = ['month_key', 'key'];
+var STRING_COLUMNS = ['month_key', 'key', 'recorded_at', 'paid_at', 'target_date',
+                      'last_updated', 'snapshot_date', 'source_id', 'start_date',
+                      'end_date', 'last_applied', 'applied_at', 'recurring_id'];
 
 
 // ─── SPREADSHEET ACCESS ───────────────────────────────────────────────────────
 
 var _spreadsheet = null;
 
-/**
- * getSpreadsheet()
- * Returns the active spreadsheet, using a cached reference after the first call.
- */
 function getSpreadsheet() {
   if (!_spreadsheet) {
     _spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -83,10 +82,6 @@ function getSpreadsheet() {
   return _spreadsheet;
 }
 
-/**
- * getSheet(sheetName)
- * Returns the named sheet tab. Throws a clear error if not found.
- */
 function getSheet(sheetName) {
   var sheet = getSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
@@ -101,19 +96,9 @@ function getSheet(sheetName) {
 
 // ─── READ OPERATIONS ──────────────────────────────────────────────────────────
 
-/**
- * getAllRows(sheetName)
- *
- * Returns all data rows (Row 2 onward) as an array of plain objects
- * keyed by the header values in Row 1.
- *
- * When a cell value is a Date (Sheets auto-converted a string column),
- * _dateToMonthKey() recovers the original YYYY-MM string using WAT timezone.
- */
 function getAllRows(sheetName) {
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
-
   if (lastRow < 2) return [];
 
   var lastCol = sheet.getLastColumn();
@@ -137,13 +122,10 @@ function getAllRows(sheetName) {
       var val = row[j];
 
       if (val instanceof Date) {
-        // Sheets auto-converted a string to a Date.
-        // _dateToMonthKey uses WAT (UTC+1) to recover "YYYY-MM".
         val = _dateToMonthKey(val);
       } else if (typeof val === 'string') {
         val = val.trim();
       }
-      // Numbers and booleans pass through unchanged.
 
       obj[key] = val;
     }
@@ -152,10 +134,6 @@ function getAllRows(sheetName) {
   return rows;
 }
 
-/**
- * getRowsByFilter(sheetName, filterFn)
- * Returns only the rows from getAllRows() that satisfy filterFn.
- */
 function getRowsByFilter(sheetName, filterFn) {
   return getAllRows(sheetName).filter(filterFn);
 }
@@ -163,36 +141,12 @@ function getRowsByFilter(sheetName, filterFn) {
 
 // ─── WRITE OPERATIONS ─────────────────────────────────────────────────────────
 
-/**
- * appendRow(sheetName, rowObject)
- *
- * Appends a new data row to the sheet.
- *
- * FIX for month_key auto-conversion:
- *   sheet.appendRow() writes values and lets Sheets apply its own type
- *   detection — "2026-03" gets converted to a Date before we can stop it.
- *
- *   Instead we:
- *     1. Append a placeholder row (all values EXCEPT string columns, which
- *        get empty strings as placeholders).
- *     2. For each string column (month_key, key), set the cell's number
- *        format to @STRING@ FIRST, then write the value. This order is
- *        critical — setting the format after writing does not undo the
- *        auto-conversion that already happened.
- *
- *   Actually, the safest approach is to use sheet.getRange().setValues()
- *   for the entire row after setting @STRING@ on string columns, rather
- *   than using sheet.appendRow() at all. This gives us full control.
- *
- * Returns the 1-indexed sheet row number of the new row.
- */
 function appendRow(sheetName, rowObject) {
   var sheet   = getSheet(sheetName);
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
                      .map(function(h) { return String(h).trim(); });
 
-  // Determine which column indices are string columns (0-indexed).
   var stringColIndices = [];
   headers.forEach(function(h, idx) {
     if (STRING_COLUMNS.indexOf(h) !== -1) {
@@ -200,45 +154,29 @@ function appendRow(sheetName, rowObject) {
     }
   });
 
-  // The new row goes after the last row with content.
   var newRowNum = sheet.getLastRow() + 1;
 
-  // Step 1: Apply @STRING@ format to string columns in the new row BEFORE
-  // writing any values. This tells Sheets to treat whatever we write as
-  // plain text, not a date or number.
   stringColIndices.forEach(function(colIdx) {
     sheet.getRange(newRowNum, colIdx + 1).setNumberFormat('@STRING@');
   });
 
-  // Step 2: Build the values array.
   var values = headers.map(function(h) {
     var val = rowObject[h];
     return (val === undefined || val === null) ? '' : val;
   });
 
-  // Step 3: Write the entire row as a single setValues() call.
-  // Using setValues instead of appendRow means Sheets uses the number format
-  // we just applied (Plain Text) rather than auto-detecting the type.
   sheet.getRange(newRowNum, 1, 1, lastCol).setValues([values]);
-
   SpreadsheetApp.flush();
 
   return newRowNum;
 }
 
-/**
- * updateRow(sheetName, rowIndex, rowObject)
- *
- * Overwrites the row at rowIndex (1-indexed).
- * Applies @STRING@ to string columns before writing, same as appendRow.
- */
 function updateRow(sheetName, rowIndex, rowObject) {
   var sheet   = getSheet(sheetName);
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
                      .map(function(h) { return String(h).trim(); });
 
-  // Apply @STRING@ to string columns in this row before writing.
   headers.forEach(function(h, idx) {
     if (STRING_COLUMNS.indexOf(h) !== -1) {
       sheet.getRange(rowIndex, idx + 1).setNumberFormat('@STRING@');
@@ -254,20 +192,12 @@ function updateRow(sheetName, rowIndex, rowObject) {
   SpreadsheetApp.flush();
 }
 
-/**
- * deleteRow(sheetName, rowIndex)
- * Deletes the row at rowIndex (1-indexed sheet row number).
- */
 function deleteRow(sheetName, rowIndex) {
   var sheet = getSheet(sheetName);
   sheet.deleteRow(rowIndex);
   SpreadsheetApp.flush();
 }
 
-/**
- * clearSheetData(sheetName)
- * Deletes all data rows, preserving the header row.
- */
 function clearSheetData(sheetName) {
   var sheet   = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
@@ -280,12 +210,6 @@ function clearSheetData(sheetName) {
 
 // ─── ROW LOOKUP ───────────────────────────────────────────────────────────────
 
-/**
- * findRowIndex(sheetName, matchFn)
- *
- * Returns the 1-indexed sheet row number of the first row satisfying matchFn.
- * Returns -1 if no match is found.
- */
 function findRowIndex(sheetName, matchFn) {
   var sheet   = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
@@ -310,7 +234,7 @@ function findRowIndex(sheetName, matchFn) {
     });
 
     if (matchFn(obj)) {
-      return i + 1; // Convert from 0-indexed array to 1-indexed sheet row.
+      return i + 1;
     }
   }
   return -1;
@@ -319,13 +243,6 @@ function findRowIndex(sheetName, matchFn) {
 
 // ─── SHEET INITIALISATION ─────────────────────────────────────────────────────
 
-/**
- * initSheets()
- *
- * One-time setup. Creates all sheet tabs with headers.
- * Applies @STRING@ to all string columns from row 2 down.
- * Safe to re-run — existing data is never overwritten.
- */
 function initSheets() {
   var ss = getSpreadsheet();
 
@@ -343,30 +260,19 @@ function initSheets() {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       var headerRange = sheet.getRange(1, 1, 1, headers.length);
       headerRange.setFontWeight('bold');
-      headerRange.setBackground('#f0f0f0');
+      headerRange.setBackground('\x23f0f0f0');
       Logger.log('initSheets: Wrote headers for "' + sheetName + '"');
     }
 
-    // Always (re-)apply @STRING@ to string columns, even on existing sheets.
     _applyStringFormats(sheet, headers);
   });
 
   Logger.log('initSheets: Complete. ' + Object.keys(SHEET_HEADERS).length + ' sheets ready.');
 }
 
-/**
- * _applyStringFormats(sheet, headers)
- *
- * Applies @STRING@ number format to all string columns (month_key, key) from
- * row 2 down to row 2000. This prevents Sheets from auto-converting values
- * that are written into those columns.
- *
- * Must be called at initSheets time AND after provisioning new user sheets
- * (via UserManager._provisionUserSheets).
- */
 function _applyStringFormats(sheet, headers) {
   var lastDataRow = Math.max(sheet.getLastRow(), 2);
-  var maxRows     = Math.max(lastDataRow, 2000); // protect future rows too
+  var maxRows     = Math.max(lastDataRow, 2000);
 
   headers.forEach(function(h, idx) {
     if (STRING_COLUMNS.indexOf(h) !== -1) {
@@ -378,50 +284,17 @@ function _applyStringFormats(sheet, headers) {
 
 // ─── UTILITIES ────────────────────────────────────────────────────────────────
 
-/**
- * generateId()
- * Returns a v4 UUID string used as the primary key for every new row.
- */
 function generateId() {
   return Utilities.getUuid();
 }
 
-/**
- * headersToMap(headers)
- * Converts a header array to a { headerName: columnIndex } map (0-based).
- */
 function headersToMap(headers) {
   var map = {};
   headers.forEach(function(h, i) { map[String(h).trim()] = i; });
   return map;
 }
 
-/**
- * _dateToMonthKey(date)
- *
- * Converts a JS Date (created by Sheets auto-converting "2026-03") back to
- * the original "YYYY-MM" string.
- *
- * WHY WAT (UTC+1):
- *   The spreadsheet timezone is Africa/Lagos (WAT = UTC+1).
- *   When Sheets stores "2026-03" it internally represents it as
- *   2026-03-01T00:00:00 WAT = 2026-02-28T23:00:00Z.
- *   Reading it back as a JS Date gives us 2026-02-28T23:00:00Z.
- *
- *   If we use UTC:   getUTCMonth() → February (WRONG — off by one month)
- *   If we use WAT:   add 1 hour first → 2026-03-01T00:00:00Z
- *                    getUTCMonth() → March (CORRECT)
- *
- *   This is the root cause of the "transaction goes to previous month on
- *   refresh" bug. The fix is to consistently apply the WAT offset here.
- *
- * NOTE: There is an edge case at month boundaries near midnight WAT, but
- * since month_key is always written as a string by the client ("2026-03")
- * and we are only ever recovering from Sheets' own auto-conversion, the
- * WAT offset always gives us the right month.
- */
 function _dateToMonthKey(date) {
-  // Add 1 hour to convert from UTC storage to WAT (Africa/Lagos, UTC+1).
   var wat = new Date(date.getTime() + 60 * 60 * 1000);
   var y   = wat.getUTCFullYear();
   var m   = wat.getUTCMonth() + 1;
@@ -429,12 +302,8 @@ function _dateToMonthKey(date) {
 }
 
 
-/**
- * reinitGoalsSheet()
- *
- * One-time migration helper for the month-scoped goals schema change.
- * Run ONCE from the Apps Script editor after deploying this branch.
- */
+// ─── ONE-TIME MIGRATION HELPERS ───────────────────────────────────────────────
+
 function reinitGoalsSheet() {
   var email = Session.getActiveUser().getEmail();
   if (!email) {
@@ -457,14 +326,135 @@ function reinitGoalsSheet() {
   var newHeaders = ['id', 'month_key', 'category', 'monthly_limit'];
   sheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]);
   sheet.getRange(1, 1, 1, newHeaders.length).setFontWeight('bold');
-  sheet.getRange(1, 1, 1, newHeaders.length).setBackground('#f0f0f0');
+  sheet.getRange(1, 1, 1, newHeaders.length).setBackground('\x23f0f0f0');
 
   _applyStringFormats(sheet, newHeaders);
-
   SpreadsheetApp.flush();
 
   Logger.log(
     'reinitGoalsSheet: Done. "' + sheetName + '" cleared and ' +
     'reinitialized with schema: [' + newHeaders.join(', ') + ']'
   );
+}
+
+function initBillHistorySheet() {
+  var email = Session.getActiveUser().getEmail();
+  if (!email) {
+    Logger.log('initBillHistorySheet: No active user — run this while signed in.');
+    return;
+  }
+
+  var userKey = getCurrentUserKey();
+  var ss      = getSpreadsheet();
+
+  var bhName  = userKey + ':BillHistory';
+  var bhSheet = ss.getSheetByName(bhName);
+
+  if (!bhSheet) {
+    bhSheet = ss.insertSheet(bhName);
+    var bhHeaders = SHEET_HEADERS['BillHistory'];
+    bhSheet.getRange(1, 1, 1, bhHeaders.length).setValues([bhHeaders]);
+    bhSheet.getRange(1, 1, 1, bhHeaders.length).setFontWeight('bold');
+    bhSheet.getRange(1, 1, 1, bhHeaders.length).setBackground('\x23f0f0f0');
+    _applyStringFormats(bhSheet, bhHeaders);
+    SpreadsheetApp.flush();
+    Logger.log('initBillHistorySheet: Created BillHistory sheet for ' + userKey);
+  } else {
+    Logger.log('initBillHistorySheet: BillHistory sheet already exists for ' + userKey);
+  }
+
+  var billsName  = userKey + ':Bills';
+  var billsSheet = ss.getSheetByName(billsName);
+
+  if (billsSheet) {
+    var lastCol    = billsSheet.getLastColumn();
+    var headers    = billsSheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                               .map(function(h) { return String(h).trim(); });
+
+    if (headers.indexOf('category') === -1) {
+      var newColIdx = lastCol + 1;
+      billsSheet.getRange(1, newColIdx).setValue('category');
+      billsSheet.getRange(1, newColIdx).setFontWeight('bold');
+      billsSheet.getRange(1, newColIdx).setBackground('\x23f0f0f0');
+      SpreadsheetApp.flush();
+      Logger.log('initBillHistorySheet: Added category column to Bills sheet for ' + userKey);
+    }
+  }
+
+  Logger.log('initBillHistorySheet: Migration complete for ' + userKey);
+}
+
+/**
+ * initSavingsEnhancements()
+ * One-time migration for savings goals enhancement.
+ */
+function initSavingsEnhancements() {
+  var email = Session.getActiveUser().getEmail();
+  if (!email) {
+    Logger.log('initSavingsEnhancements: No active user — run this while signed in.');
+    return;
+  }
+
+  var userKey = getCurrentUserKey();
+  var ss      = getSpreadsheet();
+
+  var sgName  = userKey + ':SavingsGoals';
+  var sgSheet = ss.getSheetByName(sgName);
+
+  if (!sgSheet) {
+    Logger.log('initSavingsEnhancements: SavingsGoals sheet not found — nothing to migrate.');
+  } else {
+    var lastCol  = sgSheet.getLastColumn();
+    var headers  = sgSheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                          .map(function(h) { return String(h).trim(); });
+
+    if (headers.indexOf('target_date') === -1) {
+      var tdCol = lastCol + 1;
+      sgSheet.getRange(1, tdCol).setValue('target_date');
+      sgSheet.getRange(1, tdCol).setFontWeight('bold');
+      sgSheet.getRange(1, tdCol).setBackground('\x23f0f0f0');
+      var lastRow = sgSheet.getLastRow();
+      if (lastRow >= 2) {
+        sgSheet.getRange(2, tdCol, lastRow - 1, 1).setValue('');
+        sgSheet.getRange(2, tdCol, lastRow - 1, 1).setNumberFormat('@STRING@');
+      }
+      lastCol = tdCol;
+      headers.push('target_date');
+      Logger.log('initSavingsEnhancements: Added target_date to ' + sgName);
+    }
+
+    if (headers.indexOf('sort_order') === -1) {
+      var soCol   = lastCol + 1;
+      sgSheet.getRange(1, soCol).setValue('sort_order');
+      sgSheet.getRange(1, soCol).setFontWeight('bold');
+      sgSheet.getRange(1, soCol).setBackground('\x23f0f0f0');
+      var lastRow2 = sgSheet.getLastRow();
+      if (lastRow2 >= 2) {
+        for (var r = 2; r <= lastRow2; r++) {
+          sgSheet.getRange(r, soCol).setValue(r - 1);
+        }
+      }
+      headers.push('sort_order');
+      Logger.log('initSavingsEnhancements: Added sort_order to ' + sgName);
+    }
+
+    _applyStringFormats(sgSheet, SHEET_HEADERS['SavingsGoals']);
+    SpreadsheetApp.flush();
+  }
+
+  var shName  = userKey + ':SavingsHistory';
+  var shSheet = ss.getSheetByName(shName);
+
+  if (!shSheet) {
+    shSheet = ss.insertSheet(shName);
+    var shHeaders = SHEET_HEADERS['SavingsHistory'];
+    shSheet.getRange(1, 1, 1, shHeaders.length).setValues([shHeaders]);
+    shSheet.getRange(1, 1, 1, shHeaders.length).setFontWeight('bold');
+    shSheet.getRange(1, 1, 1, shHeaders.length).setBackground('\x23f0f0f0');
+    _applyStringFormats(shSheet, shHeaders);
+    SpreadsheetApp.flush();
+    Logger.log('initSavingsEnhancements: Created SavingsHistory for ' + userKey);
+  }
+
+  Logger.log('initSavingsEnhancements: Migration complete for ' + userKey);
 }

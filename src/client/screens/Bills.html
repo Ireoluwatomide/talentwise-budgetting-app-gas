@@ -1,54 +1,403 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Bills.html — Bill Tracker Screen
+     Bills.html — Bill Tracker Screen (Overhauled)
+
+     IMPROVEMENTS:
+       1. Accurate days-until using real calendar math (server-side in Bills.gs)
+       2. Bill categories — add-bill modal includes category select
+       3. Summary metrics — Total Bills | Paid This Month | Outstanding
+       4. "Mark all paid" button in section header
+       5. Payment history section at the bottom of the tab
+       6. Undo toast — 5-second window to reverse an accidental pay toggle
+       7. Alert threshold configured in Settings tab (bills_alert_days preference)
+       8. Add-bill modal (desktop) + bottom sheet (mobile) instead of inline form
+       9. Paying a bill records an expense transaction; unpaying deletes it
 
      TAB: Bills
-
-     SECTIONS:
-       1. Bills list with due-date badges and pay/unpay toggle
-       2. Add Bill form
-
-     STATE: AppState.bills
-     SERVER CALLS: addBill, toggleBillPaid, deleteBill
+     STATE: AppState.bills, AppState.billHistory, AppState.transactions
+     SERVER CALLS: addBill, toggleBillPaid, deleteBill, markAllBillsPaid
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-bills">
 
-    <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;">
-        Recurring bills — alerts fire 5 days before the due date.
+    <div style="font-size:12px;color:var(--text2);margin-bottom:1.25rem;line-height:1.6;">
+        Recurring bills — alerts fire
+        <strong id="bills-alert-days-label">5</strong> days before the due date.
+        Marking a bill paid records it as an expense transaction automatically.
     </div>
 
-    <!-- ── 1. Bills List ──────────────────────────────────────────────────────── -->
+    <!-- ── 1. Summary Metrics ─────────────────────────────────────────────── -->
+    <div class="row3" style="margin-bottom:1.25rem;" id="bills-metrics">
+        <div class="metric">
+            <div class="lbl">Total Monthly</div>
+            <div class="val" id="bills-total" style="color:var(--text);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Paid This Month</div>
+            <div class="val" id="bills-paid-total" style="color:var(--acc);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Outstanding</div>
+            <div class="val" id="bills-outstanding" style="color:var(--red);">—</div>
+        </div>
+    </div>
+
+    <!-- ── 2. Section header with Mark All Paid ───────────────────────────── -->
+    <div class="ov-section-hdr">
+        <span class="sec" style="margin:0;">Bills</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <button id="btn-mark-all-paid"
+                    onclick="markAllPaidAction()"
+                    class="btn-sm"
+                    title="Mark all unpaid bills as paid">
+                Mark all paid
+            </button>
+            <button id="btn-open-add-bill"
+                    onclick="openAddBillModal()"
+                    class="btn-add-tx-trigger"
+                    title="Add a new bill">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Add Bill
+            </button>
+        </div>
+    </div>
+
+    <!-- ── 3. Bills List ──────────────────────────────────────────────────── -->
     <div id="bills-list">
         <!-- populated by renderBills() -->
     </div>
 
-    <!-- ── 2. Add Bill Form ───────────────────────────────────────────────────── -->
-    <div class="sec">Add Bill</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;">
-        <input id="b-name" class="inp" placeholder="Bill name"/>
-        <input id="b-amt"  class="inp" placeholder="Amount"   type="number" min="0" step="any"/>
-        <input id="b-day"  class="inp" placeholder="Day"      type="number" min="1" max="31"/>
-        <button id="btn-add-bill" onclick="addBillForm()" class="btn-primary">
-            <span class="btn-label">Add</span>
-            <span class="btn-spinner"></span>
-        </button>
+    <!-- ── 4. Payment History ─────────────────────────────────────────────── -->
+    <div id="bills-history-section" style="margin-top:2rem;display:none;">
+        <div class="sec" style="margin-top:0;">Payment History</div>
+        <div id="bills-history-list">
+            <!-- populated by renderBillsHistory() -->
+        </div>
     </div>
 
 </div>
 
 
+<!-- ══ ADD BILL MODAL (desktop ≥ 601px) ══════════════════════════════════ -->
+<div id="add-bill-modal" role="dialog" aria-modal="true" aria-label="Add Bill">
+    <div id="add-bill-modal-backdrop" onclick="closeAddBillModal()"></div>
+    <div id="add-bill-modal-panel">
+
+        <div class="atx-modal-header">
+            <span class="atx-modal-title">Add Bill</span>
+            <button class="atx-modal-close" onclick="closeAddBillModal()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="atx-modal-body">
+            <div class="row2" style="margin-bottom:8px;">
+                <input id="b-name-d" class="inp" placeholder="Bill name (e.g. Electricity)"/>
+                <input id="b-amt-d"  class="inp amt-input" type="text"
+                       inputmode="numeric" placeholder="Amount"/>
+                <input id="b-day-d"  class="inp" type="number" min="1" max="31"
+                       placeholder="Due day (1–31)"/>
+                <select id="b-cat-d" class="inp">
+                    <!-- populated by _populateBillCategorySelect() -->
+                </select>
+            </div>
+            <button id="btn-add-bill-d" onclick="addBillFromModal()"
+                    class="btn-primary" style="width:100%;margin-top:6px;">
+                <span class="btn-label">Add Bill</span>
+                <span class="btn-spinner"></span>
+            </button>
+        </div>
+
+    </div>
+</div>
+
+
+<!-- ══ ADD BILL SHEET (mobile ≤ 600px) ═══════════════════════════════════ -->
+<div id="add-bill-sheet">
+    <div id="add-bill-sheet-backdrop" onclick="closeAddBillSheet()"></div>
+    <div id="add-bill-sheet-panel">
+        <div id="add-bill-sheet-handle"></div>
+
+        <div class="atx-modal-title" style="margin-bottom:1.25rem;">Add Bill</div>
+
+        <div class="row2" style="margin-bottom:8px;">
+            <input id="b-name-m" class="inp" placeholder="Bill name"/>
+            <input id="b-amt-m"  class="inp amt-input" type="text"
+                   inputmode="numeric" placeholder="Amount"/>
+            <input id="b-day-m"  class="inp" type="number" min="1" max="31"
+                   placeholder="Due day (1–31)"/>
+            <select id="b-cat-m" class="inp">
+                <!-- populated by _populateBillCategorySelect() -->
+            </select>
+        </div>
+        <button id="btn-add-bill-m" onclick="addBillFromSheet()"
+                class="btn-primary" style="width:100%;margin-top:6px;">
+            <span class="btn-label">Add Bill</span>
+            <span class="btn-spinner"></span>
+        </button>
+    </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Add Bill modal ──────────────────────────────────────────────────── */
+    #add-bill-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    #add-bill-modal.open { display: flex; }
+
+    #add-bill-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+    }
+
+    #add-bill-modal-panel {
+        position: relative;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius-lg);
+        width: 100%;
+        max-width: 440px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+        overflow: hidden;
+    }
+
+    @media (max-width: 600px) { #add-bill-modal { display: none !important; } }
+
+    /* ── Add Bill bottom sheet ───────────────────────────────────────────── */
+    #add-bill-sheet {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 350;
+    }
+    #add-bill-sheet.open { display: block; }
+
+    #add-bill-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+
+    #add-bill-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+        max-height: 88vh;
+        overflow-y: auto;
+        animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    #add-bill-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+
+    @media (min-width: 601px) { #add-bill-sheet { display: none !important; } }
+
+    /* ── Bill row ────────────────────────────────────────────────────────── */
+    .bill-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 0.5px solid var(--border);
+        gap: 10px;
+    }
+    .bill-row:last-child { border-bottom: none; }
+
+    .bill-row-left { flex: 1; min-width: 0; }
+
+    .bill-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .bill-sub {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 2px;
+    }
+
+    .bill-row-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    /* ── History section ─────────────────────────────────────────────────── */
+    .history-bill-group {
+        margin-bottom: 1.25rem;
+    }
+
+    .history-bill-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .history-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 7px 10px;
+        background: var(--bg2);
+        border-radius: var(--radius);
+        margin-bottom: 4px;
+        font-size: 12px;
+    }
+
+    .history-month {
+        font-weight: 500;
+        color: var(--text);
+    }
+
+    .history-meta {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 1px;
+    }
+
+    .history-amount {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--red);
+    }
+
+    /* ── Due badge ───────────────────────────────────────────────────────── */
+    .due-badge {
+        font-size: 11px;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    /* ── Mark-all disabled state ─────────────────────────────────────────── */
+    #btn-mark-all-paid:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 600px) {
+        #btn-open-add-bill { display: none; }
+    }
+
+    /* Mobile FAB for bills */
+    #fab-add-bill {
+        display: none;
+        position: fixed;
+        bottom: calc(72px + max(12px, env(safe-area-inset-bottom)));
+        right: 20px;
+        z-index: 190;
+        width: 52px; height: 52px;
+        border-radius: 50%;
+        background: var(--text);
+        color: var(--bg);
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s, box-shadow 0.15s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    #fab-add-bill svg { width: 22px; height: 22px; }
+    #fab-add-bill:active { transform: scale(0.93); }
+
+    @media (max-width: 600px) {
+        #fab-add-bill.fab-visible { display: flex; }
+    }
+    @media (min-width: 601px) {
+        #fab-add-bill { display: none !important; }
+    }
+
+</style>
+
+
+<!-- ══ BILLS JAVASCRIPT ═══════════════════════════════════════════════════ -->
 <script>
-    // =============================================================================
-    // Bills screen — render + action functions
-    // =============================================================================
+
+    // ─── UNDO STATE ────────────────────────────────────────────────────────────
+    // Tracks the last pay-toggle so it can be reversed within 5 seconds.
+    var _billUndoTimer   = null;
+    var _billUndoPending = null; // { billId, wasUndo: bool }
+
+
+    // ─── RENDER ────────────────────────────────────────────────────────────────
 
     /**
      * renderBills()
      * Called from renderAll() when the Bills pane is active.
-     * Computes days-until-due for each bill and renders a row with
-     * status badge, pay/unpay toggle, and delete button.
      */
     function renderBills() {
+        _syncBillsAlertDaysLabel();
+        _renderBillsMetrics();
+        _renderBillsList();
+        _renderBillsHistory();
+        _syncMarkAllBtn();
+        _updateBillFabVisibility();
+    }
+
+    // ── Alert days label ────────────────────────────────────────────────────────
+    function _syncBillsAlertDaysLabel() {
+        var el = document.getElementById('bills-alert-days-label');
+        if (el) el.textContent = AppState.billAlertDays || 5;
+    }
+
+    // ── Summary metrics ─────────────────────────────────────────────────────────
+    function _renderBillsMetrics() {
+        var bills       = AppState.bills || [];
+        var totalAmt    = 0;
+        var paidAmt     = 0;
+        var unpaidAmt   = 0;
+
+        bills.forEach(function(b) {
+            var amt = parseFloat(b.amount) || 0;
+            totalAmt += amt;
+            if (b.paid) paidAmt   += amt;
+            else        unpaidAmt += amt;
+        });
+
+        var set = function(id, val, col) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = val;
+            if (col) el.style.color = col;
+        };
+
+        set('bills-total',       fmt(totalAmt),  '');
+        set('bills-paid-total',  fmt(paidAmt),   paidAmt  > 0 ? 'var(--acc)' : 'var(--text2)');
+        set('bills-outstanding', fmt(unpaidAmt),  unpaidAmt > 0 ? 'var(--red)' : 'var(--acc)');
+    }
+
+    // ── Bills list ──────────────────────────────────────────────────────────────
+    function _renderBillsList() {
         var listEl = document.getElementById('bills-list');
         if (!listEl) return;
 
@@ -57,58 +406,62 @@
         if (bills.length === 0) {
             listEl.innerHTML = (
                 '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
-                'No bills added yet.' +
+                'No bills added yet. Add your first recurring bill above.' +
                 '</div>'
             );
             return;
         }
 
-        var today = new Date().getDate();
-        var html  = '';
+        var today    = new Date();
+        var todayDay = today.getDate();
+        var alertDays = AppState.billAlertDays || 5;
 
-        // Sort: unpaid and most-urgent first, then paid bills at the bottom.
+        // Sort: unpaid + most urgent first, paid at bottom
         var sorted = bills.slice().sort(function(a, b) {
             if (a.paid && !b.paid) return 1;
             if (!a.paid && b.paid) return -1;
-            return _daysUntil(a.due_day, today) - _daysUntil(b.due_day, today);
+            return _clientDaysUntil(a.due_day, todayDay) - _clientDaysUntil(b.due_day, todayDay);
         });
 
+        var html = '';
         sorted.forEach(function(bill) {
-            var daysUntil    = _daysUntil(bill.due_day, today);
-            var dueLabelText = _dueBadgeText(bill, daysUntil);
-            var dueLabelColor= _dueBadgeColor(bill, daysUntil);
-            var dueSubline   = bill.due_day + ordinal(bill.due_day) + ' monthly';
+            var daysUntil    = _clientDaysUntil(bill.due_day, todayDay);
+            var badgeText    = _dueBadgeText(bill, daysUntil);
+            var badgeColor   = _dueBadgeColor(bill, daysUntil, alertDays);
+            var dueSubline   = 'Day ' + bill.due_day + _ordinal(bill.due_day) + ' monthly';
+            var catColor     = getCategoryColor(bill.category || 'Utilities');
 
             html += (
-                '<div class="tx-row">' +
+                '<div class="bill-row">' +
 
-                // LEFT: name + due sub-line
-                '<div class="tx-left">' +
-                '<div class="tx-meta">' +
-                '<div class="tx-name">' + _escB(bill.name) + '</div>' +
-                '<div class="tx-cat">'  + dueSubline + '</div>' +
+                // LEFT: colour dot + name + sub-line
+                '<div class="bill-row-left">' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+                'display:inline-block;background:' + catColor + ';"></span>' +
+                '<div>' +
+                '<div class="bill-name">' + _escB(bill.name) + '</div>' +
+                '<div class="bill-sub">' + _escB(bill.category || 'Utilities') + ' · ' + dueSubline + '</div>' +
                 '</div>' +
                 '</div>' +
+                '</div>' +
 
-                // RIGHT: amount, status badge, pay toggle, delete
-                '<div class="tx-right" style="gap:8px;">' +
+                // RIGHT: amount, status badge, pay/unpay, delete
+                '<div class="bill-row-right">' +
                 '<span style="font-family:var(--mono);font-size:13px;">' +
                 fmt(bill.amount) +
                 '</span>' +
-                '<span style="font-size:11px;font-weight:500;color:' + dueLabelColor + ';">' +
-                dueLabelText +
+                '<span class="due-badge" style="color:' + badgeColor + ';">' +
+                badgeText +
                 '</span>' +
-                // Pay/Unpay button — passes itself so we can disable it during the call
-                '<button ' +
-                'class="btn-sm" ' +
-                'onclick="toggleBillPaid(\'' + bill.id + '\', this)">' +
+                '<button class="btn-sm" ' +
+                'onclick="toggleBillPaidAction(\'' + bill.id + '\', this)" ' +
+                'style="min-width:52px;">' +
                 (bill.paid ? 'Unpay' : 'Pay') +
                 '</button>' +
-                // Delete button — passes itself for optimistic dimming
-                '<button ' +
-                'class="tx-delete" ' +
-                'onclick="deleteBill(\'' + bill.id + '\', this)" ' +
-                'title="Delete bill">×</button>' +
+                '<button class="tx-delete" ' +
+                'onclick="deleteBillAction(\'' + bill.id + '\', this)" ' +
+                'title="Delete bill">\xd7</button>' +
                 '</div>' +
 
                 '</div>'
@@ -118,132 +471,451 @@
         listEl.innerHTML = html;
     }
 
+    // ── Mark-all button state ───────────────────────────────────────────────────
+    function _syncMarkAllBtn() {
+        var btn    = document.getElementById('btn-mark-all-paid');
+        if (!btn) return;
+        var bills  = AppState.bills || [];
+        var hasUnpaid = bills.some(function(b) { return !b.paid; });
+        btn.disabled = !hasUnpaid;
+    }
 
-    // ─── ADD BILL ────────────────────────────────────────────────────────────────
+    // ── Bills payment history ───────────────────────────────────────────────────
+    function _renderBillsHistory() {
+        var sectionEl = document.getElementById('bills-history-section');
+        var listEl    = document.getElementById('bills-history-list');
+        if (!sectionEl || !listEl) return;
 
-    /**
-     * addBillForm()
-     * Uses withButtonLoading() to show an inline spinner while saving.
-     */
-    async function addBillForm() {
-        var btn    = document.getElementById('btn-add-bill');
-        var name   = getVal('b-name');
-        var amtRaw = getVal('b-amt');
-        var dayRaw = getVal('b-day');
-
-        if (!name) {
-            showToast('Please enter a bill name.', 'error');
-            document.getElementById('b-name').focus();
+        var history = AppState.billHistory || [];
+        if (history.length === 0) {
+            sectionEl.style.display = 'none';
             return;
         }
 
-        var amount = parseFloat(amtRaw);
+        sectionEl.style.display = 'block';
+
+        // Group by bill_id
+        var bills     = AppState.bills || [];
+        var billMap   = {};
+        bills.forEach(function(b) { billMap[b.id] = b; });
+
+        // Group history entries by bill_id
+        var grouped = {};
+        history.forEach(function(h) {
+            if (!grouped[h.bill_id]) grouped[h.bill_id] = [];
+            grouped[h.bill_id].push(h);
+        });
+
+        // Sort each group newest first
+        Object.keys(grouped).forEach(function(billId) {
+            grouped[billId].sort(function(a, b) {
+                return b.month_key.localeCompare(a.month_key);
+            });
+        });
+
+        // Build HTML — one group per bill
+        var html = '';
+        Object.keys(grouped).forEach(function(billId) {
+            var bill  = billMap[billId];
+            var rows  = grouped[billId];
+            var catColor = getCategoryColor((bill && bill.category) || 'Utilities');
+
+            html += '<div class="history-bill-group">';
+            html += (
+                '<div class="history-bill-name">' +
+                '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+                'display:inline-block;background:' + catColor + ';"></span>' +
+                _escB((bill && bill.name) || 'Deleted Bill') +
+                '</div>'
+            );
+
+            rows.forEach(function(h) {
+                var parts   = h.month_key.split('-');
+                var mLabel  = MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+                var paidAt  = h.paid_at ? _formatHistoryDate(h.paid_at) : '';
+
+                html += (
+                    '<div class="history-row">' +
+                    '<div>' +
+                    '<div class="history-month">' + mLabel + '</div>' +
+                    (paidAt ? '<div class="history-meta">Paid ' + paidAt + '</div>' : '') +
+                    '</div>' +
+                    '<div class="history-amount">' + fmt(h.amount) + '</div>' +
+                    '</div>'
+                );
+            });
+
+            html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+    }
+
+
+    // ─── ADD BILL MODAL (desktop) ──────────────────────────────────────────────
+
+    function openAddBillModal() {
+        _populateBillCategorySelect('b-cat-d');
+        var m = document.getElementById('add-bill-modal');
+        if (!m) return;
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+            var el = document.getElementById('b-name-d');
+            if (el) el.focus();
+        }, 220);
+    }
+
+    function closeAddBillModal() {
+        var m = document.getElementById('add-bill-modal');
+        if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    async function addBillFromModal() {
+        var btn = document.getElementById('btn-add-bill-d');
+        await _doAddBill(
+            getVal('b-name-d'),
+            getVal('b-amt-d'),
+            getVal('b-day-d'),
+            getVal('b-cat-d'),
+            btn,
+            function() {
+                clearInputs('b-name-d', 'b-amt-d', 'b-day-d');
+                closeAddBillModal();
+            }
+        );
+    }
+
+
+    // ─── ADD BILL SHEET (mobile) ───────────────────────────────────────────────
+
+    function openAddBillSheet() {
+        _populateBillCategorySelect('b-cat-m');
+        var s = document.getElementById('add-bill-sheet');
+        if (!s) return;
+        s.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+            var el = document.getElementById('b-name-m');
+            if (el) el.focus();
+        }, 300);
+    }
+
+    function closeAddBillSheet() {
+        var s = document.getElementById('add-bill-sheet');
+        if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    async function addBillFromSheet() {
+        var btn = document.getElementById('btn-add-bill-m');
+        await _doAddBill(
+            getVal('b-name-m'),
+            getVal('b-amt-m'),
+            getVal('b-day-m'),
+            getVal('b-cat-m'),
+            btn,
+            function() {
+                clearInputs('b-name-m', 'b-amt-m', 'b-day-m');
+                closeAddBillSheet();
+            }
+        );
+    }
+
+    // Route to sheet on mobile
+    function openAddBillModal() {
+        if (window.innerWidth <= 600) { openAddBillSheet(); return; }
+        _populateBillCategorySelect('b-cat-d');
+        var m = document.getElementById('add-bill-modal');
+        if (!m) return;
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() { var el = document.getElementById('b-name-d'); if (el) el.focus(); }, 220);
+    }
+
+    /**
+     * _doAddBill(name, amtRaw, dayRaw, category, btn, onSuccess)
+     * Shared submit logic for modal and sheet.
+     */
+    async function _doAddBill(name, amtRaw, dayRaw, category, btn, onSuccess) {
+        if (!name) {
+            showToast('Please enter a bill name.', 'error'); return;
+        }
+
+        // Strip commas from amount
+        var amount = parseFloat(String(amtRaw || '').replace(/,/g, ''));
         if (!amtRaw || isNaN(amount) || amount <= 0) {
-            showToast('Please enter a valid amount.', 'error');
-            document.getElementById('b-amt').focus();
-            return;
+            showToast('Please enter a valid amount.', 'error'); return;
         }
 
         var dueDay = parseInt(dayRaw, 10);
         if (!dayRaw || isNaN(dueDay) || dueDay < 1 || dueDay > 31) {
-            showToast('Please enter a due day between 1 and 31.', 'error');
-            document.getElementById('b-day').focus();
-            return;
+            showToast('Please enter a due day between 1 and 31.', 'error'); return;
         }
 
         await withButtonLoading(btn, async function() {
             try {
-                var newBill = await callServer('addBill', name, amount, dueDay);
+                var newBill = await callServer('addBill', name, amount, dueDay, category);
 
                 if (!AppState.bills) AppState.bills = [];
                 AppState.bills.push(newBill);
 
-                clearInputs('b-name', 'b-amt', 'b-day');
+                onSuccess();
                 renderAll();
                 showToast('Bill added!', 'success');
 
-            } catch (e) {
-                // Error toast shown by callServer.
+            } catch(e) {
+                // Error toast shown by callServer
             }
         });
     }
 
 
-    // ─── TOGGLE PAID ─────────────────────────────────────────────────────────────
+    // ─── TOGGLE PAID ───────────────────────────────────────────────────────────
 
     /**
-     * toggleBillPaid(billId, payBtnEl)
-     * Disables the Pay/Unpay button while the server call is in flight.
+     * toggleBillPaidAction(billId, btnEl)
+     *
+     * Sends toggleBillPaid to the server, passing the current month key
+     * so the server can record or delete the expense transaction.
+     *
+     * On success: updates AppState.bills + AppState.transactions, then shows
+     * an undo toast for 5 seconds.
      */
-    async function toggleBillPaid(billId, payBtnEl) {
-        if (payBtnEl) {
-            payBtnEl.disabled = true;
-            payBtnEl.style.opacity = '0.5';
-        }
+    async function toggleBillPaidAction(billId, btnEl) {
+        // Cancel any in-flight undo for a previous bill
+        _clearBillUndoTimer();
+
+        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.5'; }
+
+        var bill = (AppState.bills || []).find(function(b) { return b.id === billId; });
+        var wasAlreadyPaid = bill && bill.paid; // true if we're UN-paying
 
         try {
-            var updated = await callServer('toggleBillPaid', billId);
+            var result = await callServer('toggleBillPaid', billId, curKey());
 
+            // result = { bill: updatedBill, transactionId: '...' | null }
+            var updatedBill   = result.bill || result; // backward compat
+            var transactionId = result.transactionId   || null;
+
+            // Update AppState.bills
             AppState.bills = (AppState.bills || []).map(function(b) {
-                return b.id === billId ? updated : b;
+                return b.id === billId ? updatedBill : b;
             });
+
+            // Sync AppState.transactions for the current month
+            if (!wasAlreadyPaid && transactionId) {
+                // We just paid — fetch updated transactions so the new expense appears
+                _refreshCurrentMonthTransactions();
+            } else if (wasAlreadyPaid) {
+                // We just un-paid — the server deleted the transaction.
+                // Remove it from AppState.transactions optimistically.
+                var key = curKey();
+                if (AppState.transactions[key]) {
+                    AppState.transactions[key] = AppState.transactions[key].filter(function(tx) {
+                        return tx.note !== 'bill payment' ||
+                            tx.name !== (bill && bill.name);
+                    });
+                }
+                // Also remove from billHistory
+                AppState.billHistory = (AppState.billHistory || []).filter(function(h) {
+                    return !(h.bill_id === billId && h.month_key === curKey());
+                });
+            }
 
             renderAll();
 
-        } catch (e) {
-            if (payBtnEl) {
-                payBtnEl.disabled = false;
-                payBtnEl.style.opacity = '';
-            }
-            // Error toast shown by callServer.
+            // Show undo toast
+            var action = updatedBill.paid ? 'marked as paid' : 'marked as unpaid';
+            _showBillUndoToast(updatedBill.name, action, billId, updatedBill.paid);
+
+        } catch(e) {
+            if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = ''; }
+        }
+    }
+
+    /**
+     * _refreshCurrentMonthTransactions()
+     * Silently re-fetches current month transactions so new bill payments appear.
+     */
+    async function _refreshCurrentMonthTransactions() {
+        try {
+            var txs = await callServerSilent('getTransactionsByMonth', curKey());
+            AppState.transactions[curKey()] = txs || [];
+        } catch(e) {
+            console.warn('Bills: failed to refresh transactions:', e);
         }
     }
 
 
-    // ─── DELETE BILL ─────────────────────────────────────────────────────────────
+    // ─── UNDO TOAST ────────────────────────────────────────────────────────────
 
-    /**
-     * deleteBill(billId, deleteBtnEl)
-     * Dims the delete button immediately as optimistic feedback.
-     */
-    async function deleteBill(billId, deleteBtnEl) {
-        if (deleteBtnEl) {
-            deleteBtnEl.disabled = true;
-            deleteBtnEl.style.opacity = '0.35';
+    function _showBillUndoToast(billName, action, billId, currentPaidState) {
+        _clearBillUndoTimer();
+
+        // Build a custom toast with an Undo button
+        var toastEl = document.getElementById('toast');
+        if (!toastEl) {
+            // Create the toast container if it doesn't exist (utils.js may not have created it yet)
+            toastEl = document.createElement('div');
+            toastEl.id = 'toast';
+            document.body.appendChild(toastEl);
         }
 
+        toastEl.style.cssText = [
+            'position:fixed',
+            'bottom:24px',
+            'left:50%',
+            'transform:translateX(-50%)',
+            'padding:10px 16px',
+            'border-radius:8px',
+            'font-size:13px',
+            'font-weight:500',
+            'z-index:9999',
+            'pointer-events:auto',
+            'opacity:1',
+            'max-width:360px',
+            'text-align:center',
+            'box-shadow:0 2px 12px rgba(0,0,0,0.15)',
+            'background:#1a1a1a',
+            'color:#f5f5f3',
+            'display:flex',
+            'align-items:center',
+            'gap:12px',
+            'white-space:nowrap'
+        ].join(';');
+
+        toastEl.innerHTML = (
+            '<span>' + _escB(billName) + ' ' + action + '</span>' +
+            '<button onclick="undoBillPaidAction(\'' + billId + '\')" ' +
+            'style="background:rgba(255,255,255,0.15);border:none;border-radius:4px;' +
+            'color:#fff;font-size:12px;font-weight:600;padding:3px 10px;cursor:pointer;' +
+            'font-family:var(--font);flex-shrink:0;">Undo</button>'
+        );
+
+        _billUndoPending = { billId: billId };
+        _billUndoTimer = setTimeout(function() {
+            _clearBillUndoTimer();
+            toastEl.style.opacity = '0';
+            toastEl.innerHTML = '';
+        }, 5000);
+    }
+
+    function _clearBillUndoTimer() {
+        if (_billUndoTimer) { clearTimeout(_billUndoTimer); _billUndoTimer = null; }
+        _billUndoPending = null;
+    }
+
+    async function undoBillPaidAction(billId) {
+        _clearBillUndoTimer();
+        // Hide the toast immediately
+        var toastEl = document.getElementById('toast');
+        if (toastEl) { toastEl.style.opacity = '0'; toastEl.innerHTML = ''; }
+        // Re-toggle (the server will reverse the payment)
+        await toggleBillPaidAction(billId, null);
+    }
+
+
+    // ─── MARK ALL PAID ─────────────────────────────────────────────────────────
+
+    async function markAllPaidAction() {
+        var bills   = AppState.bills || [];
+        var unpaid  = bills.filter(function(b) { return !b.paid; });
+
+        if (unpaid.length === 0) {
+            showToast('All bills are already paid.', 'info');
+            return;
+        }
+
+        var btn = document.getElementById('btn-mark-all-paid');
+        if (btn) { btn.disabled = true; btn.textContent = 'Marking…'; }
+
+        try {
+            var result = await callServer('markAllBillsPaid', curKey());
+
+            AppState.bills = result.bills || AppState.bills;
+
+            // Refresh transactions to pick up all the new expense records
+            await _refreshCurrentMonthTransactions();
+
+            // Refresh bill history
+            try {
+                var history = await callServerSilent('getAllBillHistory');
+                AppState.billHistory = history || [];
+            } catch(e) {}
+
+            renderAll();
+            showToast(result.marked + ' bill' + (result.marked > 1 ? 's' : '') + ' marked as paid!', 'success');
+
+        } catch(e) {
+            // Error toast shown by callServer
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Mark all paid'; }
+        }
+    }
+
+
+    // ─── DELETE BILL ───────────────────────────────────────────────────────────
+
+    async function deleteBillAction(billId, deleteBtnEl) {
+        if (deleteBtnEl) { deleteBtnEl.disabled = true; deleteBtnEl.style.opacity = '0.35'; }
         try {
             await callServer('deleteBill', billId);
 
-            AppState.bills = (AppState.bills || []).filter(function(b) {
-                return b.id !== billId;
+            AppState.bills = (AppState.bills || []).filter(function(b) { return b.id !== billId; });
+            // Remove history entries for this bill
+            AppState.billHistory = (AppState.billHistory || []).filter(function(h) {
+                return h.bill_id !== billId;
             });
 
             renderAll();
             showToast('Bill removed.', 'info');
 
-        } catch (e) {
-            if (deleteBtnEl) {
-                deleteBtnEl.disabled = false;
-                deleteBtnEl.style.opacity = '';
-            }
-            // Error toast shown by callServer.
+        } catch(e) {
+            if (deleteBtnEl) { deleteBtnEl.disabled = false; deleteBtnEl.style.opacity = ''; }
         }
     }
 
 
-    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+    // ─── FAB (mobile) ──────────────────────────────────────────────────────────
+
+    function _updateBillFabVisibility() {
+        var fab = document.getElementById('fab-add-bill');
+        if (fab) fab.classList.toggle('fab-visible', AppState.activeTab === 'bills');
+    }
+
+
+    // ─── HELPERS ───────────────────────────────────────────────────────────────
 
     /**
-     * ordinal(n)
-     * Returns the ordinal suffix for a day number.
-     * Handles the 11th/12th/13th special cases correctly.
+     * _clientDaysUntil(dueDay, todayDay)
      *
-     * ordinal(1)  → 'st'
-     * ordinal(11) → 'th'  (not 'st')
-     * ordinal(22) → 'nd'
+     * Client-side days-until calculation using real month length.
+     * Mirrors the server-side _daysUntilAccurate() in Bills.gs.
      */
-    function ordinal(n) {
+    function _clientDaysUntil(dueDay, todayDay) {
+        var d = parseInt(dueDay, 10);
+        if (d >= todayDay) return d - todayDay;
+
+        // Real days in current month
+        var now         = new Date();
+        var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        return (daysInMonth - todayDay) + d;
+    }
+
+    function _dueBadgeText(bill, daysUntil) {
+        if (bill.paid)       return 'Paid ✓';
+        if (daysUntil === 0) return 'Due today';
+        return 'In ' + daysUntil + 'd';
+    }
+
+    function _dueBadgeColor(bill, daysUntil, alertDays) {
+        if (bill.paid)               return 'var(--acc)';
+        if (daysUntil === 0)         return 'var(--red)';
+        if (daysUntil <= alertDays)  return 'var(--amber)';
+        return 'var(--text2)';
+    }
+
+    function _ordinal(n) {
         var mod100 = n % 100;
         var mod10  = n % 10;
         if (mod100 >= 11 && mod100 <= 13) return 'th';
@@ -253,42 +925,51 @@
         return 'th';
     }
 
-    /**
-     * _daysUntil(dueDay, today)
-     * Computes days until the bill is due, wrapping around month boundaries.
-     */
-    function _daysUntil(dueDay, today) {
-        var d = parseInt(dueDay, 10);
-        return d >= today ? d - today : (31 - today) + d;
+    function _populateBillCategorySelect(selectId) {
+        var sel = document.getElementById(selectId);
+        if (!sel) return;
+        var cats = getCategoriesByType('expense');
+        sel.innerHTML = '';
+        cats.forEach(function(cat) {
+            var opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.textContent = cat.name;
+            sel.appendChild(opt);
+        });
+        // Default to 'Utilities' if present
+        var utilOpt = sel.querySelector('option[value="Utilities"]');
+        if (utilOpt) sel.value = 'Utilities';
     }
 
-    /**
-     * _dueBadgeText(bill, daysUntil)
-     * Returns the status label string for the badge column.
-     */
-    function _dueBadgeText(bill, daysUntil) {
-        if (bill.paid)       return 'Paid';
-        if (daysUntil === 0) return 'Due today';
-        return 'Due in ' + daysUntil + 'd';
+    function _formatHistoryDate(isoString) {
+        try {
+            var d = new Date(isoString);
+            return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+        } catch(e) {
+            return '';
+        }
     }
 
-    /**
-     * _dueBadgeColor(bill, daysUntil)
-     * Returns the CSS colour for the status badge.
-     */
-    function _dueBadgeColor(bill, daysUntil) {
-        if (bill.paid)      return 'var(--acc)';
-        if (daysUntil <= 5) return 'var(--red)';
-        return 'var(--text2)';
-    }
-
-    /**
-     * _escB(str) — minimal HTML escape for bill names.
-     */
     function _escB(str) {
         return String(str || '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
     }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeAddBillModal(); closeAddBillSheet(); }
+    });
+
 </script>
+
+<!-- Mobile FAB for bills (injected outside .pane so it's always in the DOM) -->
+<button id="fab-add-bill"
+        onclick="openAddBillSheet()"
+        aria-label="Add bill"
+        title="Add bill">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+    </svg>
+</button>

@@ -1,30 +1,25 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Report.html — Full Budget Summary Report
 
-     TAB: Report
+     PHASE 3D ENHANCEMENTS (all retained):
+       3D.1-3D.6 complete — date range, normalized highlights, debt progress,
+       savings goal progress, budget adherence, print fix
 
-     SECTIONS (inside a single bordered card):
-       1. Header bar — "Budget Summary Report" + N months recorded
-       2. All-time totals (Income / Expenses / Saved)
-       3. Monthly averages + savings rate
-       4. Highlights (Best Month / Highest Spend Month)
-       5. Top spending categories (all-time, sorted descending)
-       6. Month-by-month table (all loaded months, oldest first)
-
-     Print button triggers window.print() — styles.css hides chrome in @media print.
-     All data from AppState.transactions — no server call needed.
-     switchTab('report') calls renderReport() immediately (no canvas delay).
+     PHASE 4 ENHANCEMENTS:
+       4.4 — Data density banner at top of pane
+       4.6 — savingsRate(key) used in month-by-month table + highlights
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-report">
 
-    <!-- Header row: subtitle + print button -->
+    <!-- ── 4.4 Data Density Banner ──────────────────────────────────────────── -->
+    <div id="report-density-banner-slot"></div>
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
         <div style="font-size:12px;color:var(--text2);">Full budget summary — all loaded months.</div>
         <button onclick="window.print()" class="btn-sm">Print / PDF</button>
     </div>
 
-    <!-- Report body — populated by renderReport() -->
     <div id="report-body"></div>
 
 </div>
@@ -32,28 +27,23 @@
 
 <script>
     // =============================================================================
-    // Report screen
+    // Report screen — Phase 3D + Phase 4 complete
     // =============================================================================
 
-    /**
-     * renderReport()
-     *
-     * Assembles the full printable report from AppState.transactions.
-     * Only months that have at least one transaction are included.
-     *
-     * Called by switchTab('report') and renderAll() when this pane is active.
-     */
     function renderReport() {
+        // 4.4 — Data density banner
+        if (typeof renderDataQualityBanner === 'function') {
+            renderDataQualityBanner('report-density-banner-slot');
+        }
+
         var bodyEl = document.getElementById('report-body');
         if (!bodyEl) return;
 
-        // ── Collect all months that have data ─────────────────────────────────────
-        var keys = Object.keys(AppState.transactions || {})
-            .filter(function(k) {
-                var txs = AppState.transactions[k];
-                return txs && txs.length > 0;
-            })
-            .sort(); // oldest first
+        var keys = (window._reportKeys && window._reportKeys.length > 0)
+            ? window._reportKeys
+            : Object.keys(AppState.transactions || {})
+                .filter(function(k) { var txs = AppState.transactions[k]; return txs && txs.length > 0; })
+                .sort();
 
         if (keys.length === 0) {
             bodyEl.innerHTML = (
@@ -64,37 +54,55 @@
             return;
         }
 
-        // ── Aggregate all-time totals ─────────────────────────────────────────────
         var totInc = 0, totExp = 0, totSav = 0;
         keys.forEach(function(k) {
             var s = getMonthStats(k);
-            totInc += s.inc;
-            totExp += s.exp;
-            totSav += s.sav;
+            totInc += s.inc; totExp += s.exp; totSav += s.sav;
         });
 
-        var n       = keys.length;
-        var avgInc  = Math.round(totInc / n);
-        var avgExp  = Math.round(totExp / n);
-        var avgSav  = Math.round(totSav / n);
-        var savRate = totInc > 0 ? Math.round((totSav / totInc) * 100) : 0;
+        var n      = keys.length;
+        var avgInc = Math.round(totInc / n);
+        var avgExp = Math.round(totExp / n);
+        var avgSav = Math.round(totSav / n);
 
-        // ── Best and worst months ────────────────────────────────────────────────
+        // 4.6: use shared savingsRate helper for all-time savings rate
+        var savRateAllTime = (typeof savingsRateAllTime === 'function')
+            ? savingsRateAllTime()
+            : (totInc > 0 ? Math.round((totSav / totInc) * 100) : 0);
+
+        // 3D.1 — Date range label
+        var firstParts = keys[0].split('-');
+        var lastParts  = keys[keys.length - 1].split('-');
+        var dateRange  = MONTHS[parseInt(firstParts[1],10)-1] + ' ' + firstParts[0] +
+            (n > 1 ? ' – ' + MONTHS[parseInt(lastParts[1],10)-1] + ' ' + lastParts[0] : '') +
+            ' (' + n + ' month' + (n > 1 ? 's' : '') + ')';
+
+        // 3D.2 — Normalized Best/Worst Month using savingsRate()
         var bestKey  = keys.reduce(function(best, k) {
-            return getMonthStats(k).bal > getMonthStats(best).bal ? k : best;
+            var bRate = (typeof savingsRate === 'function') ? savingsRate(best) : 0;
+            var kRate = (typeof savingsRate === 'function') ? savingsRate(k)    : 0;
+            return kRate > bRate ? k : best;
         }, keys[0]);
+
         var worstKey = keys.reduce(function(worst, k) {
-            return getMonthStats(k).exp > getMonthStats(worst).exp ? k : worst;
+            var ws = getMonthStats(worst);
+            var ks = getMonthStats(k);
+            var wRate = ws.inc > 0 ? ws.exp / ws.inc : 0;
+            var kRate = ks.inc > 0 ? ks.exp / ks.inc : 0;
+            return kRate > wRate ? k : worst;
         }, keys[0]);
 
         var bestStats  = getMonthStats(bestKey);
         var worstStats = getMonthStats(worstKey);
-        var bestParts  = bestKey.split('-');
-        var worstParts = worstKey.split('-');
-        var bestLabel  = MONTHS[parseInt(bestParts[1], 10) - 1] + ' ' + bestParts[0];
-        var worstLabel = MONTHS[parseInt(worstParts[1], 10) - 1] + ' ' + worstParts[0];
+        var bestLabel  = MONTHS[parseInt(bestKey.split('-')[1],10)-1] + ' ' + bestKey.split('-')[0];
+        var worstLabel = MONTHS[parseInt(worstKey.split('-')[1],10)-1] + ' ' + worstKey.split('-')[0];
 
-        // ── All-time category totals ─────────────────────────────────────────────
+        // 4.6: use savingsRate() for best month display
+        var bestSavRatePct  = (typeof savingsRate === 'function') ? savingsRate(bestKey)
+            : (bestStats.inc > 0 ? Math.round((bestStats.sav / bestStats.inc) * 100) : 0);
+        var worstExpRate = worstStats.inc > 0 ? Math.round((worstStats.exp / worstStats.inc) * 100) : 0;
+
+        // All-time category totals
         var catTotals = {};
         keys.forEach(function(k) {
             var txs = AppState.transactions[k] || [];
@@ -109,27 +117,32 @@
             .map(function(cat) { return { cat: cat, amt: catTotals[cat] }; })
             .sort(function(a, b) { return b.amt - a.amt; });
 
-        // ── Month-by-month table rows ─────────────────────────────────────────────
+        // Month-by-month table (4.6: savingsRate() for each row)
         var tableRows = keys.map(function(k) {
             var s       = getMonthStats(k);
             var parts   = k.split('-');
-            var label   = MONTHS[parseInt(parts[1], 10) - 1].slice(0, 3) + ' ' + parts[0];
-            var sp      = s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0;
+            var label   = MONTHS[parseInt(parts[1],10)-1].slice(0,3) + ' ' + parts[0];
+
+            // 4.6: use shared helper
+            var sp      = (typeof savingsRate === 'function') ? savingsRate(k)
+                : (s.inc > 0 ? Math.round((s.sav / s.inc) * 100) : 0);
+
             var balCol  = s.bal >= 0 ? 'var(--text)' : 'var(--red)';
+            var isActive = k === curKey();
 
             var cell = function(val, color, mono) {
                 return (
                     '<td style="padding:7px 8px;text-align:right;border-bottom:0.5px solid var(--border);' +
                     (color ? 'color:' + color + ';' : '') +
                     (mono  ? 'font-family:var(--mono);' : '') + '">' +
-                    val +
-                    '</td>'
+                    val + '</td>'
                 );
             };
 
             return (
-                '<tr>' +
-                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);">' + label + '</td>' +
+                '<tr' + (isActive ? ' class="row-active"' : '') + '>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);' +
+                (isActive ? 'font-weight:500;' : '') + '">' + label + '</td>' +
                 cell(fmt(s.inc), 'var(--acc)',  true) +
                 cell(fmt(s.exp), 'var(--red)',  true) +
                 cell(fmt(s.sav), 'var(--blue)', true) +
@@ -139,7 +152,6 @@
             );
         }).join('');
 
-        // ── Top categories rows ───────────────────────────────────────────────────
         var topCatRows = topCats.map(function(entry) {
             var catPct = totExp > 0 ? Math.round((entry.amt / totExp) * 100) : 0;
             return (
@@ -157,7 +169,6 @@
             );
         }).join('');
 
-        // ── Table header ─────────────────────────────────────────────────────────
         var thStyle = function(i) {
             return 'padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;' +
                 'letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);' +
@@ -167,27 +178,28 @@
             .map(function(h, i) { return '<th style="' + thStyle(i) + '">' + h + '</th>'; })
             .join('');
 
-        // ── Assemble report ───────────────────────────────────────────────────────
         var sec = function(label) {
             return '<div style="font-size:10px;font-weight:500;letter-spacing:0.08em;' +
-                'text-transform:uppercase;color:var(--text2);margin-bottom:10px;">' +
-                label +
-                '</div>';
+                'text-transform:uppercase;color:var(--text2);margin-bottom:10px;">' + label + '</div>';
         };
 
         var pad = 'padding:14px 18px;border-bottom:0.5px solid var(--border);';
 
+        var debtSection     = _buildDebtProgressSection(keys, sec, pad);
+        var savingsSection  = _buildSavingsProgressSection(keys, sec, pad);
+        var adherenceSection = _buildBudgetAdherenceSection(keys, sec, pad);
+
         bodyEl.innerHTML = (
             '<div style="border:0.5px solid var(--border);border-radius:12px;overflow:hidden;">' +
 
-            // ── Section 1: Header bar
+            // Header with date range (3D.1)
             '<div style="background:var(--bg2);' + pad + '">' +
             '<div style="font-size:10px;font-weight:500;letter-spacing:0.08em;' +
             'text-transform:uppercase;color:var(--text2);margin-bottom:3px;">Budget Summary Report</div>' +
-            '<div style="font-size:17px;font-weight:500;">' + n + ' month' + (n > 1 ? 's' : '') + ' recorded</div>' +
+            '<div style="font-size:17px;font-weight:500;">' + _escRpt(dateRange) + '</div>' +
             '</div>' +
 
-            // ── Section 2: Totals
+            // Totals
             '<div style="' + pad + '">' +
             sec('Totals') +
             '<div class="row3">' +
@@ -197,40 +209,46 @@
             '</div>' +
             '</div>' +
 
-            // ── Section 3: Averages
+            // Averages (4.6: consistent savings rate)
             '<div style="' + pad + '">' +
             sec('Monthly Averages') +
             '<div class="row3">' +
             _statCell('Avg Monthly Income', fmt(avgInc), '') +
             _statCell('Avg Monthly Spend',  fmt(avgExp), '') +
-            _statCell('Savings Rate', savRate + '%', savRate >= 20 ? 'var(--acc)' : 'var(--amber)') +
+            _statCell('Savings Rate', savRateAllTime + '%', savRateAllTime >= 20 ? 'var(--acc)' : 'var(--amber)') +
             '</div>' +
             '</div>' +
 
-            // ── Section 4: Highlights
+            // Highlights (3D.2 + 4.6)
             '<div style="' + pad + '">' +
             sec('Highlights') +
             '<div class="row2">' +
             '<div style="background:var(--bg2);border-radius:8px;padding:12px;">' +
-            '<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">Best Month</div>' +
+            '<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">Best Savings Month</div>' +
             '<div style="font-size:13px;font-weight:500;">' + bestLabel + '</div>' +
-            '<div style="font-family:var(--mono);font-size:12px;color:var(--acc);">' + fmt(bestStats.bal) + ' net</div>' +
+            '<div style="font-family:var(--mono);font-size:12px;color:var(--acc);">' + bestSavRatePct + '% savings rate</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' + fmt(bestStats.sav) + ' saved of ' + fmt(bestStats.inc) + ' income</div>' +
             '</div>' +
             '<div style="background:var(--bg2);border-radius:8px;padding:12px;">' +
             '<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">Highest Spend Month</div>' +
             '<div style="font-size:13px;font-weight:500;">' + worstLabel + '</div>' +
-            '<div style="font-family:var(--mono);font-size:12px;color:var(--red);">' + fmt(worstStats.exp) + ' spent</div>' +
+            '<div style="font-family:var(--mono);font-size:12px;color:var(--red);">' + worstExpRate + '% expense ratio</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' + fmt(worstStats.exp) + ' spent of ' + fmt(worstStats.inc) + ' income</div>' +
             '</div>' +
             '</div>' +
             '</div>' +
 
-            // ── Section 5: Top categories
+            // Top categories
             '<div style="' + pad + '">' +
             sec('Top Categories') +
             topCatRows +
             '</div>' +
 
-            // ── Section 6: Month-by-month table
+            debtSection +
+            savingsSection +
+            adherenceSection +
+
+            // Month-by-month table
             '<div style="padding:14px 18px;">' +
             sec('Month-by-Month') +
             '<table>' +
@@ -244,19 +262,176 @@
     }
 
 
+    // ─── 3D.3 DEBT PROGRESS ──────────────────────────────────────────────────────
+
+    function _buildDebtProgressSection(keys, sec, pad) {
+        var debts = (AppState.debts || []).concat(AppState.debtArchived || []);
+        if (debts.length === 0) return '';
+
+        var debtRows = debts.map(function(d) {
+            var total    = parseFloat(d.total) || 0;
+            var paid     = parseFloat(d.paid)  || 0;
+            var owed     = Math.max(0, total - paid);
+            var p        = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+            var barColor = p >= 100 ? 'var(--acc)' : p >= 50 ? 'var(--amber)' : 'var(--red)';
+            var status   = d.archived ? '✓ Paid off' : fmt(owed) + ' remaining';
+            var statusColor = d.archived ? 'var(--acc)' : 'var(--red)';
+
+            return (
+                '<div style="margin-bottom:10px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+                '<span style="font-size:13px;font-weight:500;">' + _escRpt(d.name) + '</span>' +
+                '<span style="font-size:12px;font-family:var(--mono);color:' + statusColor + ';">' + status + '</span>' +
+                '</div>' +
+                '<div class="prog-track" style="height:5px;">' +
+                '<div class="prog-fill" style="width:' + p + '%;background:' + barColor + ';"></div>' +
+                '</div>' +
+                '<div style="font-size:11px;color:var(--text2);margin-top:2px;">' +
+                p + '% paid · ' + fmt(paid) + ' of ' + fmt(total) +
+                '</div>' +
+                '</div>'
+            );
+        }).join('');
+
+        return '<div style="' + pad + '">' + sec('Debt Progress') + debtRows + '</div>';
+    }
+
+
+    // ─── 3D.4 SAVINGS GOAL PROGRESS ──────────────────────────────────────────────
+
+    function _buildSavingsProgressSection(keys, sec, pad) {
+        var goals   = AppState.savingsGoals || [];
+        var history = AppState.savingsHistory || [];
+        if (goals.length === 0) return '';
+
+        var keySet = {};
+        keys.forEach(function(k) { keySet[k] = true; });
+
+        var goalContribs = {};
+        history.forEach(function(h) {
+            if (!keySet[h.month_key]) return;
+            goalContribs[h.goal_id] = (goalContribs[h.goal_id] || 0) + (parseFloat(h.amount) || 0);
+        });
+
+        var goalRows = goals.map(function(g) {
+            var saved    = parseFloat(g.saved_amount)  || 0;
+            var target   = parseFloat(g.target_amount) || 0;
+            var p        = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+            var contrib  = goalContribs[g.id] || 0;
+            var barColor = p >= 100 ? 'var(--acc)' : 'var(--blue)';
+
+            return (
+                '<div style="margin-bottom:10px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+                '<span style="font-size:13px;font-weight:500;">' + _escRpt(g.name) + '</span>' +
+                '<span style="font-size:12px;font-family:var(--mono);color:var(--blue);">' + p + '% funded</span>' +
+                '</div>' +
+                '<div class="prog-track" style="height:5px;">' +
+                '<div class="prog-fill" style="width:' + p + '%;background:' + barColor + ';"></div>' +
+                '</div>' +
+                '<div style="font-size:11px;color:var(--text2);margin-top:2px;">' +
+                fmt(saved) + ' of ' + fmt(target) +
+                (contrib > 0 ? ' · <span style="color:var(--acc);">+' + fmt(contrib) + ' during this period</span>' : '') +
+                '</div>' +
+                '</div>'
+            );
+        }).join('');
+
+        return '<div style="' + pad + '">' + sec('Savings Goal Progress') + goalRows + '</div>';
+    }
+
+
+    // ─── 3D.5 BUDGET ADHERENCE ───────────────────────────────────────────────────
+
+    function _buildBudgetAdherenceSection(keys, sec, pad) {
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+        if (goals.length === 0) return '';
+
+        var catMap = {};
+        var txsCur = AppState.transactions[curKey()] || [];
+        txsCur.forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            catMap[tx.category || 'Other'] = (catMap[tx.category || 'Other'] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        var passCount = 0;
+        var rowsHtml  = goals.map(function(g) {
+            var limit  = parseFloat(g.monthly_limit) || 0;
+            var spent  = catMap[g.category] || 0;
+            var p      = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0;
+            var pass   = spent <= limit && limit > 0;
+            if (pass) passCount++;
+
+            var indicator = pass
+                ? '<span style="color:var(--acc);font-weight:600;">✓</span>'
+                : '<span style="color:var(--red);font-weight:600;">✗</span>';
+
+            var barColor = !pass ? 'var(--red)' : p >= 80 ? 'var(--amber)' : 'var(--acc)';
+
+            return (
+                '<tr>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);">' +
+                '<div style="display:flex;align-items:center;gap:6px;">' +
+                '<span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;display:inline-block;' +
+                'background:' + getCategoryColor(g.category) + ';"></span>' +
+                _escRpt(g.category) +
+                '</div>' +
+                '</td>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-family:var(--mono);font-size:12px;">' + fmt(limit) + '</td>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-family:var(--mono);font-size:12px;color:' + (pass ? 'var(--text)' : 'var(--red)') + ';">' + fmt(spent) + '</td>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-size:12px;">' +
+                '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;">' +
+                '<div style="width:50px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;display:inline-block;">' +
+                '<div style="width:' + p + '%;height:100%;background:' + barColor + ';border-radius:2px;"></div>' +
+                '</div>' +
+                p + '%' +
+                '</div>' +
+                '</td>' +
+                '<td style="padding:7px 8px;border-bottom:0.5px solid var(--border);text-align:center;">' + indicator + '</td>' +
+                '</tr>'
+            );
+        }).join('');
+
+        var totalGoals = goals.length;
+        var summary    = passCount + ' of ' + totalGoals + ' categor' + (totalGoals === 1 ? 'y' : 'ies') + ' stayed within budget.';
+
+        return (
+            '<div style="' + pad + '">' +
+            sec('Budget Adherence — Current Month') +
+            '<table>' +
+            '<thead><tr>' +
+            '<th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">Category</th>' +
+            '<th style="text-align:right;padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">Limit</th>' +
+            '<th style="text-align:right;padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">Actual</th>' +
+            '<th style="text-align:right;padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">Used</th>' +
+            '<th style="text-align:center;padding:6px 8px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border-bottom:0.5px solid var(--border);">Pass</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+            '</table>' +
+            '<div style="font-size:12px;color:' + (passCount === totalGoals ? 'var(--acc)' : 'var(--text2)') + ';margin-top:10px;font-weight:' + (passCount === totalGoals ? '600' : '400') + ';">' +
+            (passCount === totalGoals ? '🎉 ' : '') + _escRpt(summary) +
+            '</div>' +
+            '</div>'
+        );
+    }
+
+
     // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
     function _statCell(label, value, color) {
         return (
             '<div>' +
-            '<div style="font-size:11px;color:var(--text2);margin-bottom:2px;">' + label + '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-bottom:2px;">' + _escRpt(label) + '</div>' +
             '<div style="font-family:var(--mono);font-size:14px;font-weight:500;' +
-            (color ? 'color:' + color + ';' : '') + '">' + value + '</div>' +
+            (color ? 'color:' + color + ';' : '') + '">' + _escRpt(value) + '</div>' +
             '</div>'
         );
     }
 
     function _escRpt(str) {
-        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 </script>

@@ -1,299 +1,1420 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Debt.html — Debt Tracker Screen
+     Debt.html — Debt Tracker Screen (Overhauled)
+
+     IMPROVEMENTS IMPLEMENTED:
+       #1  Paying records an expense transaction automatically
+       #2  Per-debt collapsible payment history panel
+       #3  Interest-aware payoff estimate (amortisation formula on server)
+       #4  Debt-to-income ratio in summary metrics
+       #5  Payoff date displayed ("Paid off around May 2027")
+       #6  Avalanche / Snowball sort toggle
+       #7  Edit debt modal — update name, payment, rate, total
+       #8  Paid-off archiving — congratulations state + Archive button
+           Archived Debts section at the bottom
+       #9  Total interest cost projection on each card
+      #10  Recurring payment link — select from existing recurring templates
 
      TAB: Debt
-
-     SECTIONS:
-       1. Summary metrics — Total Debt Remaining | Total Monthly Payments
-       2. Debt list — progress bars, payoff ETA, pay + delete actions
-       3. Add Debt form
-
-     STATE: AppState.debts
-     SERVER CALLS: addDebt, recordDebtPayment, deleteDebt
+     STATE: AppState.debts, AppState.debtHistory, AppState.transactions
+     SERVER CALLS: addDebt, updateDebt, recordDebtPayment, reverseDebtPayment,
+                   archiveDebt, unarchiveDebt, deleteDebt, linkDebtToRecurring
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-debt">
 
-  <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;">
-    Track loans, credit cards, and other debts. Click Pay to record a payment.
+  <div style="font-size:12px;color:var(--text2);margin-bottom:1rem;line-height:1.6;">
+    Track loans, credit cards, and other debts. Payments are recorded as
+    <strong>Debt Repayment</strong> expense transactions automatically.
   </div>
 
   <!-- ── 1. Summary Metrics ────────────────────────────────────────────────── -->
-  <div class="row2" style="margin-bottom:1.25rem;">
+  <div class="row4" style="margin-bottom:1.25rem;" id="debt-metrics">
     <div class="metric">
-      <div class="lbl">Total Debt Remaining</div>
+      <div class="lbl">Total Remaining</div>
       <div class="val" id="debt-total" style="color:var(--red);">—</div>
     </div>
     <div class="metric">
       <div class="lbl">Monthly Payments</div>
       <div class="val" id="debt-monthly" style="color:var(--amber);">—</div>
     </div>
+    <div class="metric">
+      <div class="lbl">Active Debts</div>
+      <div class="val" id="debt-count" style="color:var(--text);">—</div>
+    </div>
+    <!-- #4 Debt-to-income ratio -->
+    <div class="metric" id="debt-dti-metric">
+      <div class="lbl">Debt-to-Income</div>
+      <div class="val" id="debt-dti" style="color:var(--text);">—</div>
+    </div>
   </div>
+
+  <!-- #4 DTI health bar -->
+  <div id="debt-dti-bar-wrap" style="display:none;margin-bottom:1.25rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                margin-bottom:4px;font-size:11px;color:var(--text2);">
+      <span>Debt-to-income ratio</span>
+      <span id="debt-dti-label-sub"></span>
+    </div>
+    <div class="prog-track" style="height:8px;">
+      <div id="debt-dti-bar" class="prog-fill" style="height:100%;border-radius:4px;
+           transition:width 0.5s ease,background 0.3s ease;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;
+                color:var(--text2);margin-top:3px;">
+      <span>0%</span>
+      <span style="color:var(--acc);">Safe ≤20%</span>
+      <span style="color:var(--amber);">Caution ≤36%</span>
+      <span style="color:var(--red);">Risk &gt;36%</span>
+      <span>100%</span>
+    </div>
+  </div>
+
+  <!-- ── Section header + sort controls ───────────────────────────────────── -->
+  <div class="ov-section-hdr" style="margin-bottom:10px;">
+    <span class="sec" style="margin:0;">Active Debts</span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <!-- #6 Avalanche / Snowball toggle -->
+      <div id="debt-sort-toggle"
+           style="display:flex;border:0.5px solid var(--border2);border-radius:var(--radius);
+                  overflow:hidden;font-size:11px;">
+        <button class="debt-sort-btn active" id="dsort-default"
+                onclick="setDebtSort('default')"
+                title="Default order (insertion)">Default</button>
+        <button class="debt-sort-btn" id="dsort-avalanche"
+                onclick="setDebtSort('avalanche')"
+                title="Highest interest rate first — mathematically optimal">Avalanche</button>
+        <button class="debt-sort-btn" id="dsort-snowball"
+                onclick="setDebtSort('snowball')"
+                title="Smallest balance first — psychologically motivating">Snowball</button>
+      </div>
+      <button id="btn-open-add-debt"
+              class="btn-add-tx-trigger"
+              onclick="openAddDebtModal()"
+              title="Add new debt">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        Add Debt
+      </button>
+    </div>
+  </div>
+
+  <!-- #6 Sort mode explanation -->
+  <div id="debt-sort-hint" style="display:none;font-size:11px;color:var(--text2);
+       margin-bottom:10px;padding:8px 12px;background:var(--bg2);
+       border-radius:var(--radius);border:0.5px solid var(--border);"></div>
 
   <!-- ── 2. Debt List ──────────────────────────────────────────────────────── -->
   <div id="debt-list">
     <!-- populated by renderDebt() -->
   </div>
 
-  <!-- ── 3. Add Debt Form ──────────────────────────────────────────────────── -->
-  <div class="sec">Add Debt</div>
-  <div class="row2" style="margin-bottom:8px;">
-    <input id="d-name"    class="inp" placeholder="Debt name"/>
-    <input id="d-total"   class="inp" placeholder="Total owed"       type="number" min="1"/>
-    <input id="d-payment" class="inp" placeholder="Monthly payment"  type="number" min="0"/>
-    <input id="d-rate"    class="inp" placeholder="Interest rate %"  type="number" min="0" step="0.1"/>
+  <!-- ── 8. Archived Debts Section ────────────────────────────────────────── -->
+  <div id="debt-archived-section" style="display:none;margin-top:2rem;">
+    <div class="sec" style="margin-top:0;">Paid Off &amp; Archived</div>
+    <div id="debt-archived-list"></div>
   </div>
-  <button id="btn-add-debt" onclick="addDebtForm()" class="btn-primary" style="width:100%;">
-    <span class="btn-label">Add Debt</span>
-    <span class="btn-spinner"></span>
-  </button>
 
 </div>
 
 
+<!-- ══ ADD DEBT MODAL (desktop ≥ 601px) ═══════════════════════════════════ -->
+<div id="add-debt-modal" role="dialog" aria-modal="true" aria-label="Add Debt">
+  <div id="add-debt-modal-backdrop" onclick="closeAddDebtModal()"></div>
+  <div id="add-debt-modal-panel">
+    <div class="atx-modal-header">
+      <span class="atx-modal-title" id="add-debt-modal-title">Add Debt</span>
+      <button class="atx-modal-close" onclick="closeAddDebtModal()" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="atx-modal-body">
+      <input type="hidden" id="edit-debt-id" value=""/>
+
+      <div class="row2" style="margin-bottom:8px;">
+        <div>
+          <label class="debt-field-label">Debt name</label>
+          <input id="d-name" class="inp" placeholder="e.g. Car Loan, Credit Card"/>
+        </div>
+        <div>
+          <label class="debt-field-label">Total owed</label>
+          <input id="d-total" class="inp amt-input" type="text"
+                 inputmode="numeric" placeholder="e.g. 850,000"/>
+        </div>
+        <div>
+          <label class="debt-field-label">Monthly payment</label>
+          <input id="d-payment" class="inp amt-input" type="text"
+                 inputmode="numeric" placeholder="e.g. 45,000"/>
+        </div>
+        <div>
+          <label class="debt-field-label">Interest rate % <span style="font-weight:400;color:var(--text2);text-transform:none;letter-spacing:0;">(annual)</span></label>
+          <input id="d-rate" class="inp" type="number" min="0" step="0.1"
+                 placeholder="e.g. 18 — leave 0 if unknown"/>
+        </div>
+      </div>
+
+      <!-- #10 Recurring payment link -->
+      <div style="margin-bottom:14px;">
+        <label class="debt-field-label">
+          Link to recurring transaction
+          <span style="font-weight:400;color:var(--text2);text-transform:none;letter-spacing:0;">(optional)</span>
+        </label>
+        <select id="d-recurring" class="inp">
+          <option value="">None — I'll record payments manually</option>
+          <!-- populated by _populateRecurringSelect() -->
+        </select>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">
+          If linked, monthly payments are auto-recorded when recurring transactions apply.
+        </div>
+      </div>
+
+      <button id="btn-save-debt" onclick="saveDebtFromModal()"
+              class="btn-primary" style="width:100%;">
+        <span class="btn-label">Add Debt</span>
+        <span class="btn-spinner"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ ADD DEBT SHEET (mobile ≤ 600px) ════════════════════════════════════ -->
+<div id="add-debt-sheet">
+  <div id="add-debt-sheet-backdrop" onclick="closeAddDebtSheet()"></div>
+  <div id="add-debt-sheet-panel">
+    <div id="add-debt-sheet-handle"></div>
+    <div class="atx-modal-title" style="margin-bottom:1.25rem;" id="add-debt-sheet-title">Add Debt</div>
+    <div class="row2" style="margin-bottom:8px;">
+      <input id="d-name-m"    class="inp" placeholder="Debt name"/>
+      <input id="d-total-m"   class="inp amt-input" type="text" inputmode="numeric" placeholder="Total owed"/>
+      <input id="d-payment-m" class="inp amt-input" type="text" inputmode="numeric" placeholder="Monthly payment"/>
+      <input id="d-rate-m"    class="inp" type="number" min="0" step="0.1" placeholder="Interest rate % (0 if unknown)"/>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label class="debt-field-label">Link to recurring (optional)</label>
+      <select id="d-recurring-m" class="inp">
+        <option value="">None — manual payments</option>
+      </select>
+    </div>
+    <input type="hidden" id="edit-debt-id-m" value=""/>
+    <button id="btn-save-debt-m" onclick="saveDebtFromSheet()"
+            class="btn-primary" style="width:100%;">
+      <span class="btn-label">Add Debt</span>
+      <span class="btn-spinner"></span>
+    </button>
+  </div>
+</div>
+
+
+<!-- ══ PAY MODAL (desktop ≥ 601px) ═══════════════════════════════════════ -->
+<div id="pay-debt-modal" role="dialog" aria-modal="true" aria-label="Record Payment">
+  <div id="pay-debt-modal-backdrop" onclick="closePayDebtModal()"></div>
+  <div id="pay-debt-modal-panel">
+    <div class="atx-modal-header">
+      <div>
+        <div class="atx-modal-title">Record Payment</div>
+        <div id="pay-debt-subtitle" style="font-size:12px;color:var(--text2);margin-top:2px;"></div>
+      </div>
+      <button class="atx-modal-close" onclick="closePayDebtModal()" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="atx-modal-body">
+      <!-- Debt recap -->
+      <div id="pay-debt-recap" style="background:var(--bg2);border:0.5px solid var(--border);
+           border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;"></div>
+
+      <div style="margin-bottom:10px;">
+        <label class="debt-field-label">
+          Payment amount
+          <span id="pay-debt-max-label" style="font-weight:400;color:var(--text2);
+                text-transform:none;letter-spacing:0;margin-left:4px;"></span>
+        </label>
+        <input id="pay-debt-amt" class="inp amt-input" type="text"
+               inputmode="numeric" placeholder="Enter amount"/>
+      </div>
+
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 10px;
+                  background:rgba(29,158,117,0.06);border:0.5px solid rgba(29,158,117,0.2);
+                  border-radius:var(--radius);">
+        💳 This payment will be recorded as a <strong>Debt Repayment</strong> expense
+        transaction in <strong id="pay-debt-month-label"></strong>.
+      </div>
+
+      <button id="btn-pay-debt" onclick="submitDebtPayment()"
+              class="btn-primary" style="width:100%;">
+        <span class="btn-label">Record Payment</span>
+        <span class="btn-spinner"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ PAY SHEET (mobile ≤ 600px) ════════════════════════════════════════ -->
+<div id="pay-debt-sheet">
+  <div id="pay-debt-sheet-backdrop" onclick="closePayDebtSheet()"></div>
+  <div id="pay-debt-sheet-panel">
+    <div id="pay-debt-sheet-handle"></div>
+    <div class="atx-modal-title" style="margin-bottom:3px;">Record Payment</div>
+    <div id="pay-debt-sheet-subtitle" style="font-size:12px;color:var(--text2);margin-bottom:14px;"></div>
+    <div id="pay-debt-recap-m" style="background:var(--bg2);border:0.5px solid var(--border);
+         border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;"></div>
+    <label class="debt-field-label">Payment amount</label>
+    <input id="pay-debt-amt-m" class="inp amt-input" type="text"
+           inputmode="numeric" placeholder="Enter amount" style="margin-bottom:14px;"/>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 10px;
+                background:rgba(29,158,117,0.06);border:0.5px solid rgba(29,158,117,0.2);
+                border-radius:var(--radius);">
+      💳 Records as a <strong>Debt Repayment</strong> expense.
+    </div>
+    <button id="btn-pay-debt-m" onclick="submitDebtPayment()"
+            class="btn-primary" style="width:100%;">
+      <span class="btn-label">Record Payment</span>
+      <span class="btn-spinner"></span>
+    </button>
+  </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+
+  /* ── Field label ──────────────────────────────────────────────────────── */
+  .debt-field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin-bottom: 5px;
+  }
+
+  /* ── Sort buttons ─────────────────────────────────────────────────────── */
+  .debt-sort-btn {
+    background: transparent;
+    border: none;
+    border-right: 0.5px solid var(--border2);
+    padding: 5px 9px;
+    font-family: var(--font);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .debt-sort-btn:last-child { border-right: none; }
+  .debt-sort-btn:hover   { background: var(--bg2); color: var(--text); }
+  .debt-sort-btn.active  { background: var(--text); color: var(--bg); }
+
+  /* ── Debt card ────────────────────────────────────────────────────────── */
+  .debt-card {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    transition: border-color 0.15s;
+  }
+  .debt-card:hover { border-color: var(--border2); }
+  .debt-card.is-paid-off { opacity: 0.75; }
+
+  /* ── Debt card header ─────────────────────────────────────────────────── */
+  .debt-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    gap: 10px;
+  }
+
+  .debt-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+
+  .debt-card-sub {
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.5;
+  }
+
+  .debt-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Interest cost callout ────────────────────────────────────────────── */
+  .debt-interest-callout {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    background: rgba(186,117,23,0.10);
+    color: var(--amber);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-top: 4px;
+  }
+
+  /* ── Payoff date badge ────────────────────────────────────────────────── */
+  .debt-payoff-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    background: rgba(24,95,165,0.10);
+    color: var(--blue);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-top: 4px;
+    margin-left: 4px;
+  }
+
+  /* ── Recurring link badge ─────────────────────────────────────────────── */
+  .debt-recurring-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    background: rgba(29,158,117,0.10);
+    color: var(--acc);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-left: 4px;
+  }
+
+  /* ── Paid-off card ────────────────────────────────────────────────────── */
+  .debt-paidoff-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(29,158,117,0.08);
+    border: 0.5px solid rgba(29,158,117,0.25);
+    border-radius: var(--radius);
+    margin-top: 10px;
+  }
+
+  .debt-paidoff-banner-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  /* ── History toggle + panel ───────────────────────────────────────────── */
+  .debt-history-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0 0;
+    margin-top: 4px;
+    border-top: 0.5px solid var(--border);
+    width: 100%;
+    text-align: left;
+    transition: color 0.12s;
+  }
+  .debt-history-toggle:hover { color: var(--text); }
+  .debt-history-toggle svg { width: 12px; height: 12px; transition: transform 0.2s; }
+  .debt-history-toggle.open svg { transform: rotate(90deg); }
+
+  .debt-history-panel {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .debt-history-panel.open { max-height: 500px; }
+
+  .debt-history-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 0.5px solid var(--border);
+    font-size: 12px;
+  }
+  .debt-history-row:last-child { border-bottom: none; }
+
+  .debt-history-date { color: var(--text2); font-size: 11px; margin-top: 1px; }
+  .debt-history-amt  { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--red); }
+
+  /* ── Edit button ──────────────────────────────────────────────────────── */
+  .debt-edit-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text2); padding: 2px 4px; border-radius: 4px;
+    display: flex; align-items: center;
+    transition: color 0.12s, background 0.12s;
+  }
+  .debt-edit-btn:hover { color: var(--text); background: var(--border); }
+  .debt-edit-btn svg { width: 13px; height: 13px; }
+
+  /* ── Avalanche / Snowball hint chip ───────────────────────────────────── */
+  .sort-highlight {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-left: 6px;
+  }
+  .sort-highlight-avalanche { background: rgba(216,90,48,0.12); color: var(--red); }
+  .sort-highlight-snowball  { background: rgba(24,95,165,0.12);  color: var(--blue); }
+
+  /* ── Add / Pay modals ─────────────────────────────────────────────────── */
+  #add-debt-modal, #pay-debt-modal {
+    display: none; position: fixed; inset: 0;
+    z-index: 400; align-items: center; justify-content: center; padding: 1rem;
+  }
+  #add-debt-modal.open, #pay-debt-modal.open { display: flex; }
+  #add-debt-modal-backdrop, #pay-debt-modal-backdrop {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  }
+  #add-debt-modal-panel, #pay-debt-modal-panel {
+    position: relative; background: var(--bg);
+    border: 0.5px solid var(--border2); border-radius: var(--radius-lg);
+    width: 100%; max-width: 460px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1); overflow: hidden;
+  }
+  @media (max-width: 600px) { #add-debt-modal, #pay-debt-modal { display: none !important; } }
+
+  /* ── Mobile sheets ────────────────────────────────────────────────────── */
+  #add-debt-sheet, #pay-debt-sheet { display: none; position: fixed; inset: 0; z-index: 350; }
+  #add-debt-sheet.open, #pay-debt-sheet.open { display: block; }
+  #add-debt-sheet-backdrop, #pay-debt-sheet-backdrop {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.4);
+  }
+  #add-debt-sheet-panel, #pay-debt-sheet-panel {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: var(--bg); border-radius: 20px 20px 0 0;
+    padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+    max-height: 92vh; overflow-y: auto;
+    animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #add-debt-sheet-handle, #pay-debt-sheet-handle {
+    width: 36px; height: 4px; background: var(--border2);
+    border-radius: 2px; margin: 0 auto 16px;
+  }
+  @media (min-width: 601px) { #add-debt-sheet, #pay-debt-sheet { display: none !important; } }
+
+  /* ── Mobile: hide desktop add trigger ────────────────────────────────── */
+  @media (max-width: 600px) { #btn-open-add-debt { display: none; } }
+
+  /* ── Mobile FAB ───────────────────────────────────────────────────────── */
+  #fab-add-debt {
+    display: none; position: fixed;
+    bottom: calc(72px + max(12px, env(safe-area-inset-bottom)));
+    right: 20px; z-index: 190;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--text); color: var(--bg); border: none; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+    align-items: center; justify-content: center;
+    transition: transform 0.15s; -webkit-tap-highlight-color: transparent;
+  }
+  #fab-add-debt svg { width: 22px; height: 22px; }
+  #fab-add-debt:active { transform: scale(0.93); }
+  @media (max-width: 600px) { #fab-add-debt.fab-visible { display: flex; } }
+  @media (min-width: 601px) { #fab-add-debt { display: none !important; } }
+
+  /* ── Archived card variant ────────────────────────────────────────────── */
+  .debt-card.is-archived {
+    border-color: rgba(29,158,117,0.2);
+    background: rgba(29,158,117,0.04);
+  }
+
+  /* ── row4 on mobile ───────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    #debt-metrics.row4 { grid-template-columns: 1fr 1fr; }
+  }
+
+</style>
+
+
+<!-- ══ DEBT JAVASCRIPT ════════════════════════════════════════════════════ -->
 <script>
-  // =============================================================================
-  // Debt screen — render + action functions
-  // =============================================================================
 
-  /**
-   * renderDebt()
-   * Called from renderAll() when the Debt pane is active.
-   * Computes aggregate metrics from AppState.debts and renders each
-   * debt as a .card with a progress bar and payoff ETA.
-   */
+  // ─── STATE ──────────────────────────────────────────────────────────────────
+
+  var _debtSortMode    = 'default';  // #6
+  var _historyOpen     = {};         // #2 per-card history panel open state
+  var _payDebtId       = null;       // currently open Pay modal
+  var _payDebtIsMobile = false;
+
+
+  // ─── RENDER ─────────────────────────────────────────────────────────────────
+
   function renderDebt() {
-    var debts = AppState.debts || [];
+    _renderDebtMetrics();
+    _renderDebtList();
+    _renderArchivedDebts();   // #8
+    _updateDebtFabVisibility();
+  }
 
-    // ── Summary metrics ───────────────────────────────────────────────────────
-    var totalOwed   = 0;
+  // ── Summary metrics ──────────────────────────────────────────────────────────
+  function _renderDebtMetrics() {
+    var debts      = _getSortedDebts();
+    var totalOwed  = 0;
     var totalMonthly = 0;
 
     debts.forEach(function(d) {
-      totalOwed    += parseFloat(d.amount_owed)      || (parseFloat(d.total) - parseFloat(d.paid)) || 0;
-      totalMonthly += parseFloat(d.monthly_payment)  || 0;
+      totalOwed    += parseFloat(d.amount_owed)     || 0;
+      totalMonthly += parseFloat(d.monthly_payment) || 0;
     });
 
-    var totalEl   = document.getElementById('debt-total');
-    var monthlyEl = document.getElementById('debt-monthly');
-    if (totalEl)   totalEl.textContent   = fmt(totalOwed);
-    if (monthlyEl) monthlyEl.textContent = fmt(totalMonthly);
+    _setText('debt-total',   fmt(totalOwed));
+    _setText('debt-monthly', fmt(totalMonthly));
+    _setText('debt-count',   debts.length + ' debt' + (debts.length !== 1 ? 's' : ''));
 
-    // ── Debt list ─────────────────────────────────────────────────────────────
+    // #4 Debt-to-income ratio
+    var dti    = AppState.debtToIncomeRatio || 0;
+    var dtiEl  = document.getElementById('debt-dti');
+    var barEl  = document.getElementById('debt-dti-bar');
+    var barWrap = document.getElementById('debt-dti-bar-wrap');
+    var subEl  = document.getElementById('debt-dti-label-sub');
+
+    if (dtiEl) {
+      dtiEl.textContent = dti > 0 ? dti + '%' : '—';
+      dtiEl.style.color = dti > 36 ? 'var(--red)'
+              : dti > 20 ? 'var(--amber)'
+                      :             'var(--acc)';
+    }
+
+    if (dti > 0 && barWrap && barEl && subEl) {
+      barWrap.style.display = 'block';
+      var barPct   = Math.min(100, dti);
+      var barColor = dti > 36 ? 'var(--red)'
+              : dti > 20 ? 'var(--amber)'
+                      :             'var(--acc)';
+      barEl.style.width      = barPct + '%';
+      barEl.style.background = barColor;
+      var label = dti > 36 ? '⚠ High — exceeds 36% warning threshold'
+              : dti > 20 ? '⚡ Moderate — between 20% and 36%'
+                      :             '✓ Healthy — below 20%';
+      subEl.textContent  = label;
+      subEl.style.color  = barColor;
+    } else if (barWrap) {
+      barWrap.style.display = 'none';
+    }
+  }
+
+  // ── Main debt list ───────────────────────────────────────────────────────────
+  function _renderDebtList() {
     var listEl = document.getElementById('debt-list');
     if (!listEl) return;
 
+    var debts = _getSortedDebts();
+
     if (debts.length === 0) {
       listEl.innerHTML = (
-              '<div style="text-align:center;color:var(--text2);padding:2rem 0;font-size:13px;">' +
-              'No debts tracked. Add one below.' +
+              '<div style="text-align:center;color:var(--text2);padding:2.5rem 1rem;font-size:13px;">' +
+              '<div style="font-size:22px;margin-bottom:8px;">🎉</div>' +
+              '<strong style="color:var(--text);display:block;margin-bottom:4px;">No active debts</strong>' +
+              'Add a debt below to start tracking.' +
               '</div>'
       );
       return;
     }
 
-    var html = '';
+    listEl.innerHTML = debts.map(function(d, i) {
+      return _buildDebtCard(d, i);
+    }).join('');
+  }
 
-    debts.forEach(function(d) {
-      var total   = parseFloat(d.total)          || 0;
-      var paid    = parseFloat(d.paid)           || 0;
-      var owed    = parseFloat(d.amount_owed)    != null ? parseFloat(d.amount_owed)   : Math.max(0, total - paid);
-      var payment = parseFloat(d.monthly_payment)|| 0;
-      var rate    = parseFloat(d.interest_rate)  || 0;
-      var p       = (d.percent_paid != null)     ? d.percent_paid
-              : (total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0);
+  // ── #8 Archived debts ────────────────────────────────────────────────────────
+  function _renderArchivedDebts() {
+    var sectionEl = document.getElementById('debt-archived-section');
+    var listEl    = document.getElementById('debt-archived-list');
+    if (!sectionEl || !listEl) return;
 
-      var months  = (d.months_to_payoff != null) ? d.months_to_payoff
-              : (payment > 0 && owed > 0 ? Math.ceil(owed / payment) : null);
+    var archived = (AppState.debtArchived || []);
+    if (archived.length === 0) {
+      sectionEl.style.display = 'none';
+      return;
+    }
 
-      var etaText = months != null ? '~' + months + ' month' + (months === 1 ? '' : 's') + ' left'
-              : 'No payment set';
-
-      // Sub-line: rate · payment · ETA
-      var subParts = [];
-      if (rate > 0)    subParts.push(rate + '% interest');
-      if (payment > 0) subParts.push(fmt(payment) + '/mo');
-      subParts.push(etaText);
-
-      var isPaidOff = owed <= 0;
-
-      html += (
-              '<div class="card">' +
-
-              // Card header: name + sub-line | amount owed + actions
-              '<div class="card-header">' +
-              '<div>' +
-              '<div style="font-size:13px;font-weight:500;margin-bottom:3px;">' +
-              _escD(d.name) +
-              (isPaidOff ? ' <span class="badge badge-green">Paid off</span>' : '') +
-              '</div>' +
-              '<div style="font-size:11px;color:var(--text2);">' +
-              subParts.join(' · ') +
-              '</div>' +
-              '</div>' +
-              '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-              '<span style="font-family:var(--mono);font-size:14px;color:' +
-              (isPaidOff ? 'var(--acc)' : 'var(--red)') + ';">' +
-              fmt(owed) +
-              '</span>' +
-              // Pay button passes itself so we can disable it during the call
-              (!isPaidOff
-                      ? '<button class="btn-sm" onclick="payDebt(\'' + d.id + '\', this)">Pay</button>'
-                      : '') +
-              // Delete button passes itself for optimistic dimming
-              '<button class="tx-delete" onclick="deleteDebt(\'' + d.id + '\', this)" title="Remove debt">×</button>' +
-              '</div>' +
-              '</div>' +
-
-              // Progress bar — green, shows % paid off
-              '<div class="prog-track">' +
-              '<div class="prog-fill" style="width:' + p + '%;background:var(--acc);"></div>' +
-              '</div>' +
-
-              // Sub-label
-              '<div style="font-size:11px;color:var(--text2);margin-top:3px;">' +
-              p + '% paid off' +
-              (isPaidOff ? ' — congratulations! 🎉' : '') +
-              '</div>' +
-
-              '</div>'
-      );
-    });
-
-    listEl.innerHTML = html;
+    sectionEl.style.display = 'block';
+    listEl.innerHTML = archived.map(function(d) {
+      return _buildArchivedCard(d);
+    }).join('');
   }
 
 
-  // ─── ADD DEBT ────────────────────────────────────────────────────────────────
+  // ─── CARD BUILDERS ──────────────────────────────────────────────────────────
 
-  /**
-   * addDebtForm()
-   * Uses withButtonLoading() to show an inline spinner while saving.
-   */
-  async function addDebtForm() {
-    var btn     = document.getElementById('btn-add-debt');
-    var name    = getVal('d-name');
-    var totRaw  = getVal('d-total');
-    var payRaw  = getVal('d-payment');
-    var rateRaw = getVal('d-rate');
+  function _buildDebtCard(d, rankIndex) {
+    var owed      = parseFloat(d.amount_owed)    || 0;
+    var total     = parseFloat(d.total)          || 0;
+    var p         = parseFloat(d.percent_paid)   || 0;
+    var payment   = parseFloat(d.monthly_payment)|| 0;
+    var rate      = parseFloat(d.interest_rate)  || 0;
+    var isPaidOff = owed <= 0;
 
-    if (!name) {
-      showToast('Please enter a debt name.', 'error');
-      document.getElementById('d-name').focus();
-      return;
+    var barColor  = isPaidOff ? 'var(--acc)'
+            : p >= 75  ? 'var(--acc)'
+                    : p >= 40  ? 'var(--amber)'
+                            :             'var(--red)';
+
+    // Sub-line parts
+    var subParts = [];
+    if (rate > 0)    subParts.push(rate + '% p.a.');
+    if (payment > 0) subParts.push(fmt(payment) + '/mo');
+
+    // #5 Payoff date
+    if (d.payoff_date && !isPaidOff) {
+      var pd = new Date(d.payoff_date);
+      var pdLabel = MONTHS[pd.getMonth()] + ' ' + pd.getFullYear();
+      subParts.push('≈ ' + pdLabel);
     }
 
-    var total = parseFloat(totRaw);
-    if (!totRaw || isNaN(total) || total <= 0) {
-      showToast('Please enter the total amount owed.', 'error');
-      document.getElementById('d-total').focus();
-      return;
+    // Sort highlight chips (#6)
+    var sortChip = '';
+    if (_debtSortMode === 'avalanche' && rankIndex === 0 && rate > 0) {
+      sortChip = '<span class="sort-highlight sort-highlight-avalanche">🎯 Pay first</span>';
+    } else if (_debtSortMode === 'snowball' && rankIndex === 0) {
+      sortChip = '<span class="sort-highlight sort-highlight-snowball">❄ Pay first</span>';
     }
 
-    var payment = parseFloat(payRaw)  || 0;
+    // #10 Recurring badge
+    var recurringBadge = '';
+    if (d.recurring_id) {
+      recurringBadge = '<span class="debt-recurring-badge">🔄 Auto-pay linked</span>';
+    }
+
+    // #9 Interest cost callout
+    var interestCallout = '';
+    if (d.total_interest_cost != null && d.total_interest_cost > 0) {
+      interestCallout = (
+              '<span class="debt-interest-callout">' +
+              '📈 ' + fmt(d.total_interest_cost) + ' in interest' +
+              '</span>'
+      );
+    } else if (d.total_interest_cost === null) {
+      interestCallout = (
+              '<span class="debt-interest-callout" style="background:rgba(216,90,48,0.12);color:var(--red);">' +
+              '⚠ Payment too low to cover interest' +
+              '</span>'
+      );
+    }
+
+    // #5 Payoff date badge
+    var payoffBadge = '';
+    if (d.payoff_date && !isPaidOff && d.months_to_payoff !== null) {
+      var pd2 = new Date(d.payoff_date);
+      var pdLabel2 = MONTHS[pd2.getMonth()].slice(0, 3) + ' ' + pd2.getFullYear();
+      payoffBadge = (
+              '<span class="debt-payoff-badge">' +
+              '📅 Paid off ' + pdLabel2 +
+              '</span>'
+      );
+    }
+
+    // #2 Payment history
+    var history      = _getHistoryForDebt(d.id);
+    var isHistOpen   = !!_historyOpen[d.id];
+    var histToggle   = '';
+    var histPanel    = '';
+
+    if (history.length > 0) {
+      var histHtml = history.map(function(h) {
+        var dateStr = h.paid_at ? _formatDebtDate(h.paid_at) : '';
+        var mkLabel = h.month_key ? _monthKeyToLabel(h.month_key) : '';
+        return (
+                '<div class="debt-history-row">' +
+                '<div>' +
+                '<div style="font-size:12px;font-weight:500;color:var(--text);">' + mkLabel + '</div>' +
+                '<div class="debt-history-date">' + dateStr + '</div>' +
+                '</div>' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span class="debt-history-amt">−' + fmt(h.amount) + '</span>' +
+                '<button onclick="_reversePayment(\'' + h.id + '\', this)" ' +
+                'class="tx-delete" title="Reverse this payment" ' +
+                'style="font-size:12px;padding:2px 5px;">↩</button>' +
+                '</div>' +
+                '</div>'
+        );
+      }).join('');
+
+      histToggle = (
+              '<button class="debt-history-toggle' + (isHistOpen ? ' open' : '') + '" ' +
+              'onclick="_toggleDebtHistory(\'' + d.id + '\')" ' +
+              'id="dhist-toggle-' + d.id + '">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+              'stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M9 18l6-6-6-6"/></svg>' +
+              history.length + ' payment' + (history.length !== 1 ? 's' : '') +
+              '</button>'
+      );
+
+      histPanel = (
+              '<div class="debt-history-panel' + (isHistOpen ? ' open' : '') + '" ' +
+              'id="dhist-panel-' + d.id + '">' +
+              '<div style="padding-top:8px;">' + histHtml + '</div>' +
+              '</div>'
+      );
+    }
+
+    // Paid-off state
+    var paidOffBanner = '';
+    if (isPaidOff) {
+      paidOffBanner = (
+              '<div class="debt-paidoff-banner">' +
+              '<div class="debt-paidoff-banner-icon">🎉</div>' +
+              '<div>' +
+              '<div style="font-size:13px;font-weight:600;color:var(--acc);">Debt paid off!</div>' +
+              '<div style="font-size:12px;color:var(--text2);">Congratulations — this debt is fully settled.</div>' +
+              '</div>' +
+              '<button onclick="archiveDebtAction(\'' + d.id + '\')" class="btn-sm" ' +
+              'style="margin-left:auto;flex-shrink:0;color:var(--acc);border-color:var(--acc);">' +
+              'Archive</button>' +
+              '</div>'
+      );
+    }
+
+    return (
+            '<div class="debt-card' + (isPaidOff ? ' is-paid-off' : '') + '" id="dcard-' + d.id + '">' +
+
+            // Header
+            '<div class="debt-card-header">' +
+            '<div style="flex:1;min-width:0;">' +
+            '<div class="debt-card-title">' + _escD(d.name) + sortChip + recurringBadge + '</div>' +
+            '<div class="debt-card-sub">' +
+            (subParts.join(' · ') || 'No payment plan set') +
+            '</div>' +
+            '</div>' +
+            '<div class="debt-card-actions">' +
+            '<span style="font-family:var(--mono);font-size:15px;font-weight:600;' +
+            'color:' + (isPaidOff ? 'var(--acc)' : 'var(--red)') + ';">' +
+            fmt(owed) +
+            '</span>' +
+            (!isPaidOff ? (
+                    '<button class="btn-sm" onclick="openPayDebtModal(\'' + d.id + '\')" ' +
+                    'style="white-space:nowrap;">Pay</button>'
+            ) : '') +
+            // #7 Edit button
+            '<button class="debt-edit-btn" onclick="openEditDebtModal(\'' + d.id + '\')" ' +
+            'title="Edit debt details">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+            'stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>' +
+            '<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>' +
+            '</svg></button>' +
+            '<button class="tx-delete" onclick="deleteDebtAction(\'' + d.id + '\', this)" ' +
+            'title="Remove debt">\xd7</button>' +
+            '</div>' +
+            '</div>' +
+
+            // Progress bar
+            '<div class="prog-track">' +
+            '<div class="prog-fill" style="width:' + p + '%;background:' + barColor + ';"></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-top:3px;margin-bottom:' +
+            (interestCallout || payoffBadge ? '6px' : '0') + ';">' +
+            p + '% paid off' +
+            '</div>' +
+
+            // #9 Interest + #5 Payoff badge row
+            (interestCallout || payoffBadge ? (
+                    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">' +
+                    interestCallout + payoffBadge +
+                    '</div>'
+            ) : '') +
+
+            // #8 Paid-off banner
+            paidOffBanner +
+
+            // #2 History toggle + panel
+            histToggle +
+            histPanel +
+
+            '</div>'
+    );
+  }
+
+  function _buildArchivedCard(d) {
+    var history = _getHistoryForDebt(d.id);
+    return (
+            '<div class="debt-card is-archived" style="margin-bottom:8px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<div>' +
+            '<div style="font-size:13px;font-weight:600;color:var(--acc);">' + _escD(d.name) + ' ✓</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' +
+            'Total: ' + fmt(d.total) +
+            (history.length > 0 ? ' · ' + history.length + ' payment' + (history.length !== 1 ? 's' : '') : '') +
+            '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<button onclick="unarchiveDebtAction(\'' + d.id + '\')" class="btn-sm" ' +
+            'title="Restore this debt to active">Restore</button>' +
+            '<button class="tx-delete" onclick="deleteDebtAction(\'' + d.id + '\', this)" ' +
+            'title="Permanently delete">\xd7</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>'
+    );
+  }
+
+
+  // ─── SORT (#6) ──────────────────────────────────────────────────────────────
+
+  function setDebtSort(mode) {
+    _debtSortMode = mode;
+
+    // Update button states
+    ['default', 'avalanche', 'snowball'].forEach(function(m) {
+      var btn = document.getElementById('dsort-' + m);
+      if (btn) btn.classList.toggle('active', m === mode);
+    });
+
+    // Show hint
+    var hintEl = document.getElementById('debt-sort-hint');
+    if (hintEl) {
+      var hints = {
+        default:   '',
+        avalanche: '🎯 Avalanche: pay the highest-interest debt first. Minimises total interest paid over time.',
+        snowball:  '❄ Snowball: pay the smallest balance first. Builds momentum with quick wins.'
+      };
+      hintEl.style.display = mode !== 'default' ? 'block' : 'none';
+      hintEl.textContent   = hints[mode] || '';
+    }
+
+    renderDebt();
+  }
+
+  function _getSortedDebts() {
+    var debts = AppState.debts || [];
+
+    if (_debtSortMode === 'avalanche') {
+      return debts.slice().sort(function(a, b) {
+        return (parseFloat(b.interest_rate) || 0) - (parseFloat(a.interest_rate) || 0);
+      });
+    }
+
+    if (_debtSortMode === 'snowball') {
+      return debts.slice().sort(function(a, b) {
+        return (parseFloat(a.amount_owed) || 0) - (parseFloat(b.amount_owed) || 0);
+      });
+    }
+
+    return debts.slice(); // default: insertion order
+  }
+
+
+  // ─── ADD / EDIT DEBT (#7) ───────────────────────────────────────────────────
+
+  function openAddDebtModal() {
+    if (window.innerWidth <= 600) { openAddDebtSheet(); return; }
+    _resetDebtForm('modal');
+    _populateRecurringSelect('d-recurring');
+    document.getElementById('add-debt-modal-title').textContent = 'Add Debt';
+    document.getElementById('btn-save-debt').querySelector('.btn-label').textContent = 'Add Debt';
+    var m = document.getElementById('add-debt-modal');
+    if (m) {
+      m.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setTimeout(function() {
+        var el = document.getElementById('d-name'); if (el) el.focus();
+      }, 220);
+    }
+  }
+
+  function openEditDebtModal(debtId) {
+    var debts   = (AppState.debts || []).concat(AppState.debtArchived || []);
+    var debt    = debts.find(function(d) { return d.id === debtId; });
+    if (!debt) return;
+
+    var isMobile = window.innerWidth <= 600;
+    _populateRecurringSelect(isMobile ? 'd-recurring-m' : 'd-recurring');
+
+    var suffix = isMobile ? '-m' : '';
+    _setVal('d-name'       + suffix, debt.name);
+    _setVal('d-total'      + suffix, String(Math.round(debt.total)));
+    _setVal('d-payment'    + suffix, String(Math.round(debt.monthly_payment)));
+    _setVal('d-rate'       + suffix, String(debt.interest_rate));
+    _setVal('d-recurring'  + suffix, debt.recurring_id || '');
+    _setVal('edit-debt-id' + suffix, debtId);
+
+    if (isMobile) {
+      document.getElementById('add-debt-sheet-title').textContent = 'Edit Debt';
+      document.getElementById('btn-save-debt-m').querySelector('.btn-label').textContent = 'Save Changes';
+      var s = document.getElementById('add-debt-sheet');
+      if (s) { s.classList.add('open'); document.body.style.overflow = 'hidden'; }
+    } else {
+      document.getElementById('add-debt-modal-title').textContent = 'Edit Debt';
+      document.getElementById('btn-save-debt').querySelector('.btn-label').textContent = 'Save Changes';
+      var m = document.getElementById('add-debt-modal');
+      if (m) {
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+          var el = document.getElementById('d-name'); if (el) el.focus();
+        }, 220);
+      }
+    }
+  }
+
+  function closeAddDebtModal() {
+    var m = document.getElementById('add-debt-modal');
+    if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+  }
+
+  function openAddDebtSheet() {
+    _resetDebtForm('sheet');
+    _populateRecurringSelect('d-recurring-m');
+    document.getElementById('add-debt-sheet-title').textContent = 'Add Debt';
+    document.getElementById('btn-save-debt-m').querySelector('.btn-label').textContent = 'Add Debt';
+    var s = document.getElementById('add-debt-sheet');
+    if (s) {
+      s.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setTimeout(function() {
+        var el = document.getElementById('d-name-m'); if (el) el.focus();
+      }, 300);
+    }
+  }
+
+  function closeAddDebtSheet() {
+    var s = document.getElementById('add-debt-sheet');
+    if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+  }
+
+  async function saveDebtFromModal() {
+    var btn = document.getElementById('btn-save-debt');
+    await _doSaveDebt(
+            getVal('edit-debt-id'), getVal('d-name'),
+            getVal('d-total'), getVal('d-payment'),
+            getVal('d-rate'), getVal('d-recurring'),
+            btn, closeAddDebtModal
+    );
+  }
+
+  async function saveDebtFromSheet() {
+    var btn = document.getElementById('btn-save-debt-m');
+    await _doSaveDebt(
+            getVal('edit-debt-id-m'), getVal('d-name-m'),
+            getVal('d-total-m'), getVal('d-payment-m'),
+            getVal('d-rate-m'), getVal('d-recurring-m'),
+            btn, closeAddDebtSheet
+    );
+  }
+
+  async function _doSaveDebt(editId, name, totalRaw, paymentRaw, rateRaw, recurringId, btn, closeFn) {
+    if (!name) { showToast('Please enter a debt name.', 'error'); return; }
+
+    var total   = parseFloat(String(totalRaw   || '').replace(/,/g, ''));
+    var payment = parseFloat(String(paymentRaw || '').replace(/,/g, '')) || 0;
     var rate    = parseFloat(rateRaw) || 0;
+
+    if (!totalRaw || isNaN(total) || total <= 0) {
+      showToast('Please enter the total amount owed.', 'error'); return;
+    }
 
     await withButtonLoading(btn, async function() {
       try {
-        var newDebt = await callServer('addDebt', name, total, payment, rate);
+        if (editId) {
+          // #7 Edit existing debt
+          var updated = await callServer('updateDebt', editId, {
+            name:            name,
+            total:           total,
+            monthly_payment: payment,
+            interest_rate:   rate,
+            recurring_id:    recurringId || ''
+          });
 
-        if (!AppState.debts) AppState.debts = [];
-        AppState.debts.push(newDebt);
+          AppState.debts = (AppState.debts || []).map(function(d) {
+            return d.id === editId ? updated : d;
+          });
+          showToast('Debt updated!', 'success');
+        } else {
+          // Add new debt
+          var newDebt = await callServer('addDebt', name, total, payment, rate, recurringId || '');
+          if (!AppState.debts) AppState.debts = [];
+          AppState.debts.push(newDebt);
+          showToast('Debt added!', 'success');
+        }
 
-        clearInputs('d-name', 'd-total', 'd-payment', 'd-rate');
+        closeFn();
         renderAll();
-        showToast('Debt added!', 'success');
-
-      } catch (e) {
-        // Error toast shown by callServer.
-      }
+      } catch(e) {}
     });
   }
 
 
-  // ─── RECORD PAYMENT ──────────────────────────────────────────────────────────
+  // ─── PAY DEBT (#1) ──────────────────────────────────────────────────────────
 
-  /**
-   * payDebt(debtId, payBtnEl)
-   *
-   * Uses a browser prompt to ask for the payment amount.
-   * This keeps the UI clean without needing an inline form per debt.
-   * Disables the Pay button while the server call is in flight.
-   */
-  async function payDebt(debtId, payBtnEl) {
-    var input = window.prompt('Enter payment amount:');
-    if (input === null) return; // user cancelled
+  function openPayDebtModal(debtId) {
+    var isMobile = window.innerWidth <= 600;
+    _payDebtId       = debtId;
+    _payDebtIsMobile = isMobile;
+    _populatePayForm(debtId, isMobile);
 
-    var amount = parseFloat(input);
-    if (isNaN(amount) || amount <= 0) {
+    if (isMobile) {
+      var s = document.getElementById('pay-debt-sheet');
+      if (s) {
+        s.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+          var el = document.getElementById('pay-debt-amt-m'); if (el) el.focus();
+        }, 300);
+      }
+    } else {
+      var m = document.getElementById('pay-debt-modal');
+      if (m) {
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+          var el = document.getElementById('pay-debt-amt'); if (el) el.focus();
+        }, 220);
+      }
+    }
+  }
+
+  function closePayDebtModal() {
+    var m = document.getElementById('pay-debt-modal');
+    if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+    _payDebtId = null;
+  }
+
+  function closePayDebtSheet() {
+    var s = document.getElementById('pay-debt-sheet');
+    if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+    _payDebtId = null;
+  }
+
+  function _populatePayForm(debtId, isMobile) {
+    var debts = AppState.debts || [];
+    var debt  = debts.find(function(d) { return d.id === debtId; });
+    if (!debt) return;
+
+    var owed      = parseFloat(debt.amount_owed) || 0;
+    var payment   = parseFloat(debt.monthly_payment) || 0;
+    var p         = parseFloat(debt.percent_paid) || 0;
+    var catColor  = 'var(--red)';
+
+    var recapHtml = (
+            '<div style="margin-bottom:8px;">' +
+            '<div style="font-size:13px;font-weight:600;margin-bottom:1px;">' + _escD(debt.name) + '</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' +
+            (debt.interest_rate > 0 ? debt.interest_rate + '% p.a. · ' : '') +
+            fmt(owed) + ' remaining' +
+            '</div>' +
+            '</div>' +
+            '<div class="prog-track" style="margin-bottom:6px;">' +
+            '<div class="prog-fill" style="width:' + p + '%;background:var(--acc);"></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--text2);">' + p + '% paid off</div>'
+    );
+
+    var maxLabel = '(max ' + fmt(owed) + ')';
+    var monthLbl = monthLabel(AppState.curYear, AppState.curMonth);
+
+    if (isMobile) {
+      var sr = document.getElementById('pay-debt-recap-m');
+      var sl = document.getElementById('pay-debt-sheet-subtitle');
+      var sa = document.getElementById('pay-debt-amt-m');
+      if (sr) sr.innerHTML   = recapHtml;
+      if (sl) sl.textContent = debt.name + ' · ' + fmt(owed) + ' remaining';
+      if (sa) { sa.value = payment > 0 ? String(Math.round(payment)) : ''; }
+    } else {
+      var dr  = document.getElementById('pay-debt-recap');
+      var ds  = document.getElementById('pay-debt-subtitle');
+      var dmx = document.getElementById('pay-debt-max-label');
+      var dml = document.getElementById('pay-debt-month-label');
+      var da  = document.getElementById('pay-debt-amt');
+      if (dr)  dr.innerHTML   = recapHtml;
+      if (ds)  ds.textContent = debt.name + ' · ' + fmt(owed) + ' remaining';
+      if (dmx) dmx.textContent = maxLabel;
+      if (dml) dml.textContent = monthLbl;
+      if (da)  da.value = payment > 0 ? String(Math.round(payment)) : '';
+    }
+  }
+
+  async function submitDebtPayment() {
+    if (!_payDebtId) return;
+    var isMobile = _payDebtIsMobile;
+    var btn      = document.getElementById(isMobile ? 'btn-pay-debt-m' : 'btn-pay-debt');
+    var amtRaw   = String(getVal(isMobile ? 'pay-debt-amt-m' : 'pay-debt-amt')).replace(/,/g, '');
+    var amount   = parseFloat(amtRaw);
+
+    if (!amtRaw || isNaN(amount) || amount <= 0) {
       showToast('Please enter a valid payment amount.', 'error');
       return;
     }
 
-    if (payBtnEl) {
-      payBtnEl.disabled = true;
-      payBtnEl.textContent = '…';
+    // Client-side cap check
+    var debts   = AppState.debts || [];
+    var debt    = debts.find(function(d) { return d.id === _payDebtId; });
+    var owed    = debt ? (parseFloat(debt.amount_owed) || 0) : 0;
+    if (owed > 0 && amount > owed) {
+      showToast('Amount exceeds remaining balance. Max: ' + fmt(owed) + '.', 'error');
+      return;
     }
 
-    try {
-      var updated = await callServer('recordDebtPayment', debtId, amount);
+    var debtIdToPayment = _payDebtId;
 
-      // Replace the updated debt in AppState.
+    await withButtonLoading(btn, async function() {
+      try {
+        var result = await callServer(
+                'recordDebtPayment', debtIdToPayment, amount, curKey()
+        );
+
+        var updatedDebt   = result.debt || result;
+        var transactionId = result.transactionId || null;
+
+        // Update AppState.debts
+        AppState.debts = (AppState.debts || []).map(function(d) {
+          return d.id === debtIdToPayment ? updatedDebt : d;
+        });
+
+        // Add transaction to AppState if returned
+        if (transactionId) {
+          _refreshCurrentMonthTransactions();
+        }
+
+        // Add history entry locally
+        if (!AppState.debtHistory) AppState.debtHistory = [];
+        AppState.debtHistory.unshift({
+          id:             generateClientId(),
+          debt_id:        debtIdToPayment,
+          month_key:      curKey(),
+          transaction_id: transactionId || '',
+          amount:         amount,
+          paid_at:        new Date().toISOString()
+        });
+
+        if (isMobile) closePayDebtSheet(); else closePayDebtModal();
+        renderAll();
+
+        var debtName = debt ? debt.name : 'debt';
+        showToast(fmt(amount) + ' payment recorded for ' + debtName + '!', 'success');
+
+        // #8 Check if now paid off
+        if (updatedDebt.amount_owed <= 0) {
+          setTimeout(function() {
+            showToast('🎉 ' + (debt ? debt.name : 'Debt') + ' is fully paid off!', 'success', 4000);
+          }, 1000);
+        }
+
+      } catch(e) {}
+    });
+  }
+
+  // #2 Reverse a payment
+  async function _reversePayment(historyId, btnEl) {
+    if (!window.confirm('Reverse this payment? The linked expense transaction will also be deleted.')) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.35'; }
+
+    try {
+      var result = await callServer('reverseDebtPayment', historyId);
+
+      var updatedDebt = result.debt;
       AppState.debts = (AppState.debts || []).map(function(d) {
-        return d.id === debtId ? updated : d;
+        return d.id === updatedDebt.id ? updatedDebt : d;
       });
 
-      renderAll();
-      showToast('Payment recorded!', 'success');
+      // Remove history entry
+      AppState.debtHistory = (AppState.debtHistory || []).filter(function(h) {
+        return h.id !== historyId;
+      });
 
-    } catch (e) {
-      if (payBtnEl) {
-        payBtnEl.disabled = false;
-        payBtnEl.textContent = 'Pay';
-      }
-      // Error toast shown by callServer.
+      // Refresh transactions
+      _refreshCurrentMonthTransactions();
+      renderAll();
+      showToast('Payment reversed.', 'info');
+
+    } catch(e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = ''; }
     }
   }
 
 
-  // ─── DELETE DEBT ─────────────────────────────────────────────────────────────
+  // ─── ARCHIVE (#8) ───────────────────────────────────────────────────────────
 
-  /**
-   * deleteDebt(debtId, deleteBtnEl)
-   * Dims the delete button immediately as optimistic feedback.
-   */
-  async function deleteDebt(debtId, deleteBtnEl) {
-    if (deleteBtnEl) {
-      deleteBtnEl.disabled = true;
-      deleteBtnEl.style.opacity = '0.35';
-    }
+  async function archiveDebtAction(debtId) {
+    try {
+      var result = await callServer('archiveDebt', debtId);
+
+      // Move from active to archived in AppState
+      var debt = (AppState.debts || []).find(function(d) { return d.id === debtId; });
+      AppState.debts = (AppState.debts || []).filter(function(d) { return d.id !== debtId; });
+      if (debt) {
+        if (!AppState.debtArchived) AppState.debtArchived = [];
+        AppState.debtArchived.push(Object.assign({}, debt, { archived: true }));
+      }
+
+      renderAll();
+      showToast('Debt archived. Well done! 🎊', 'success');
+    } catch(e) {}
+  }
+
+  async function unarchiveDebtAction(debtId) {
+    try {
+      var result = await callServer('unarchiveDebt', debtId);
+      var debt   = (AppState.debtArchived || []).find(function(d) { return d.id === debtId; });
+      AppState.debtArchived = (AppState.debtArchived || []).filter(function(d) { return d.id !== debtId; });
+      if (debt) {
+        if (!AppState.debts) AppState.debts = [];
+        AppState.debts.push(Object.assign({}, debt, { archived: false }));
+      }
+      renderAll();
+      showToast('Debt restored to active.', 'info');
+    } catch(e) {}
+  }
+
+
+  // ─── DELETE ─────────────────────────────────────────────────────────────────
+
+  async function deleteDebtAction(debtId, btnEl) {
+    if (!window.confirm('Permanently delete this debt and all its payment history?')) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.35'; }
 
     try {
       await callServer('deleteDebt', debtId);
 
-      AppState.debts = (AppState.debts || []).filter(function(d) {
-        return d.id !== debtId;
-      });
+      AppState.debts = (AppState.debts || []).filter(function(d) { return d.id !== debtId; });
+      AppState.debtArchived = (AppState.debtArchived || []).filter(function(d) { return d.id !== debtId; });
+      AppState.debtHistory  = (AppState.debtHistory  || []).filter(function(h) { return h.debt_id !== debtId; });
 
       renderAll();
       showToast('Debt removed.', 'info');
-
-    } catch (e) {
-      if (deleteBtnEl) {
-        deleteBtnEl.disabled = false;
-        deleteBtnEl.style.opacity = '';
-      }
-      // Error toast shown by callServer.
+    } catch(e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = ''; }
     }
   }
 
 
-  // ─── HELPERS ─────────────────────────────────────────────────────────────────
+  // ─── HISTORY TOGGLE (#2) ────────────────────────────────────────────────────
+
+  function _toggleDebtHistory(debtId) {
+    _historyOpen[debtId] = !_historyOpen[debtId];
+    var toggle = document.getElementById('dhist-toggle-' + debtId);
+    var panel  = document.getElementById('dhist-panel-'  + debtId);
+    if (toggle) toggle.classList.toggle('open', _historyOpen[debtId]);
+    if (panel)  panel.classList.toggle('open',  _historyOpen[debtId]);
+  }
+
+
+  // ─── FAB ────────────────────────────────────────────────────────────────────
+
+  function _updateDebtFabVisibility() {
+    var fab = document.getElementById('fab-add-debt');
+    if (fab) fab.classList.toggle('fab-visible', AppState.activeTab === 'debt');
+  }
+
+
+  // ─── HELPERS ────────────────────────────────────────────────────────────────
+
+  function _getHistoryForDebt(debtId) {
+    var history = AppState.debtHistory || [];
+    return history
+            .filter(function(h) { return h.debt_id === debtId; })
+            .sort(function(a, b) { return b.paid_at.localeCompare(a.paid_at); });
+  }
+
+  function _populateRecurringSelect(selectId) {
+    var sel = document.getElementById(selectId);
+    if (!sel) return;
+    var recurring = (AppState.recurring || []).filter(function(r) {
+      return r.type === 'expense';
+    });
+    // Keep the "None" option, then add expense recurring templates
+    sel.innerHTML = '<option value="">None — I\'ll record payments manually</option>';
+    recurring.forEach(function(r) {
+      var opt = document.createElement('option');
+      opt.value       = r.id;
+      opt.textContent = r.name + ' (' + fmt(r.amount) + '/mo)';
+      sel.appendChild(opt);
+    });
+  }
+
+  function _resetDebtForm(surface) {
+    var suffix = surface === 'modal' ? '' : '-m';
+    ['d-name', 'd-total', 'd-payment', 'd-rate'].forEach(function(id) {
+      var el = document.getElementById(id + suffix); if (el) el.value = '';
+    });
+    var recEl = document.getElementById('d-recurring' + suffix);
+    if (recEl) recEl.value = '';
+    var editEl = document.getElementById('edit-debt-id' + suffix);
+    if (editEl) editEl.value = '';
+  }
+
+  function _monthKeyToLabel(key) {
+    var parts = String(key).split('-');
+    if (parts.length < 2) return key;
+    return MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+  }
+
+  function _formatDebtDate(isoStr) {
+    try {
+      var d = new Date(isoStr);
+      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch(e) { return ''; }
+  }
+
+  async function _refreshCurrentMonthTransactions() {
+    try {
+      var txs = await callServerSilent('getTransactionsByMonth', curKey());
+      AppState.transactions[curKey()] = txs || [];
+    } catch(e) {
+      console.warn('Debt: failed to refresh transactions:', e);
+    }
+  }
+
+  function generateClientId() {
+    return 'client-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function _setText(id, val) {
+    var el = document.getElementById(id); if (el) el.textContent = val;
+  }
+
+  function _setVal(id, val) {
+    var el = document.getElementById(id); if (el) el.value = val;
+  }
 
   function _escD(str) {
     return String(str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    closeAddDebtModal(); closeAddDebtSheet();
+    closePayDebtModal(); closePayDebtSheet();
+  });
+
 </script>
+
+<!-- Mobile FAB -->
+<button id="fab-add-debt"
+        onclick="openAddDebtSheet()"
+        aria-label="Add debt"
+        title="Add debt">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 5v14M5 12h14"/>
+  </svg>
+</button>

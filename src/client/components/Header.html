@@ -294,11 +294,9 @@
         networth:   function(y,m){ return { title:'Net Worth',   sub:'Assets minus liabilities' }; },
         recurring:  function(y,m){ return { title:'Recurring',   sub:'Auto-applied monthly transactions' }; },
         templates:  function(y,m){ return { title:'Templates',   sub:'50/30/20 and 70/20/10 budget rules' }; },
-        charts:     function(y,m){ return { title:'Charts',      sub:monthLabel(y,m)+' \u00b7 Income, expenses and spending' }; },
-        categories: function(y,m){ return { title:'Categories',  sub:monthLabel(y,m)+' \u00b7 Spending by category' }; },
+        spending:   function(y,m){ return { title:'Spending',    sub:monthLabel(y,m)+' \u00b7 Charts, categories and breakdown' }; },
         insights:   function(y,m){ return { title:'Insights',    sub:'Auto-generated spending analysis' }; },
-        forecast:   function(y,m){ return { title:'Forecast',    sub:'6-month cash flow projection' }; },
-        multimonth: function(y,m){ return { title:'Multi-Month', sub:'6-month trend and summary' }; },
+        trends:     function(y,m){ return { title:'Trends',      sub:'Monthly actuals \u00b7 ' + _trendsWindow + '-month view with forecast' }; },
         report:     function(y,m){ return { title:'Report',      sub:'Full printable budget summary' }; },
         settings:   function(y,m){ return { title:'Settings',    sub:'Categories, preferences and danger zone' }; }
     };

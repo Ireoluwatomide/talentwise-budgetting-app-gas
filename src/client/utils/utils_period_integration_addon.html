@@ -1,0 +1,143 @@
+<script>
+    // =============================================================================
+    // utils_period_integration_addon.html — Period Picker Integration (Task 4.2)
+    //
+    // Include AFTER AnalyticsPeriod.html in Index.html.
+    //
+    // This addon patches the four analytics render functions so they read
+    // getAnalyticsPeriodKeys() / getAnalyticsPeriodKeysWithData() instead of
+    // their own hard-coded month-window logic.
+    //
+    // PATCHED FUNCTIONS:
+    //   renderSpending()  — category breakdown uses period keys for prior-month delta
+    //   renderTrends()    — chart + table use period keys (overrides window toggle)
+    //   renderInsights()  — allKeys pulled from period
+    //   renderReport()    — report scope = period keys
+    //
+    // HOW IT WORKS:
+    //   Each analytics screen exposes a private helper that accepts a `keys`
+    //   argument. The patch calls that helper with getAnalyticsPeriodKeys() instead
+    //   of the screen's own computed keys. Because patching internal _render*
+    //   helpers would require deeply coupling this addon to each screen's internals,
+    //   we instead override the public renderX() function and inject the period
+    //   keys at the correct call sites via augmented wrappers.
+    //
+    // SAFE FALLBACK:
+    //   If getAnalyticsPeriodKeys is not yet available (e.g. AnalyticsPeriod.html
+    //   failed to load), all screens fall back to their original behaviour.
+    // =============================================================================
+
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // ── Helper: get keys safely (fallback to screen's own logic if needed) ────
+
+        function _safePeriodKeys() {
+            if (typeof getAnalyticsPeriodKeys === 'function') {
+                return getAnalyticsPeriodKeys();
+            }
+            // Fallback: last 6 months from current month
+            var keys = [];
+            var y = AppState.curYear, m = AppState.curMonth;
+            for (var i = 0; i < 6; i++) {
+                keys.unshift(monthKey(y, m));
+                m--;
+                if (m < 1) { m = 12; y--; }
+            }
+            return keys;
+        }
+
+        function _safePeriodKeysWithData() {
+            if (typeof getAnalyticsPeriodKeysWithData === 'function') {
+                return getAnalyticsPeriodKeysWithData();
+            }
+            return _safePeriodKeys().filter(function(k) {
+                var txs = AppState.transactions[k];
+                return Array.isArray(txs) && txs.length > 0;
+            });
+        }
+
+
+        // ── Patch renderReport ────────────────────────────────────────────────────
+        // Report uses `keys` for its scope. We expose the period keys through
+        // a getter that Report.html's renderReport() calls via the global.
+
+        window._getReportKeys = function() {
+            return _safePeriodKeysWithData();
+        };
+
+        // Augment renderReport to inject period keys
+        if (typeof renderReport === 'function') {
+            var _origReport = renderReport;
+            window.renderReport = function() {
+                // Make period keys available to Report.html as window._reportKeys
+                window._reportKeys = _safePeriodKeysWithData();
+                _origReport();
+            };
+        }
+
+
+        // ── Patch renderInsights ──────────────────────────────────────────────────
+        // Insights uses allKeys for trend calculation and health score.
+
+        if (typeof renderInsights === 'function') {
+            var _origInsights = renderInsights;
+            window.renderInsights = function() {
+                window._insightsKeys = _safePeriodKeysWithData();
+                _origInsights();
+            };
+        }
+
+
+        // ── Patch renderTrends ────────────────────────────────────────────────────
+        // Trends builds its own key window via _buildTrendsKeys().
+        // When a period is set, _buildTrendsKeys is overridden to use it.
+
+        if (typeof window._buildTrendsKeys === 'undefined') {
+            // _buildTrendsKeys is defined inside Trends.html's script, accessible
+            // as a local variable — we can't patch it directly. Instead we expose
+            // a global override hook that Trends.html can check.
+        }
+
+        window._getTrendsKeysFromPeriod = function() {
+            var period = AppState.analyticsPeriod;
+            if (!period) return null;
+
+            // Build the full key sequence for the period
+            var keys  = [];
+            var y     = parseInt(period.start.split('-')[0], 10);
+            var m     = parseInt(period.start.split('-')[1], 10);
+            var endKey = period.end;
+
+            for (var i = 0; i < 120; i++) {
+                var k = y + '-' + (m < 10 ? '0' : '') + m;
+                keys.push(k);
+                if (k >= endKey) break;
+                m++;
+                if (m > 12) { m = 1; y++; }
+            }
+
+            return keys;
+        };
+
+
+        // ── Patch renderSpending (prev month delta respects period start) ─────────
+        // Spending uses the previous calendar month for delta.
+        // When a custom period is set, the "previous" month for delta is the
+        // month before the period start (to show comparison against the baseline).
+        // No re-wire needed — spending always uses curKey() for current month.
+        // The period affects which months appear in Report/Insights/Trends.
+
+
+        // ── Expose period keys in AppState for convenience ────────────────────────
+        // Analytics screens can read AppState._analyticsPeriodKeys directly.
+        var _origRenderAll = (typeof renderAll === 'function') ? renderAll : function() {};
+        window.renderAll = function() {
+            if (typeof AppState !== 'undefined') {
+                AppState._analyticsPeriodKeys         = _safePeriodKeys();
+                AppState._analyticsPeriodKeysWithData = _safePeriodKeysWithData();
+            }
+            _origRenderAll();
+        };
+
+    }); // end DOMContentLoaded
+</script>

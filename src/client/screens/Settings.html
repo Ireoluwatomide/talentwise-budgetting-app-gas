@@ -63,10 +63,34 @@
     </button>
   </div>
 
-  <!-- ── 2. Divider ──────────────────────────────────────────────────────── -->
+  <!-- ── 2. Bill Alerts ──────────────────────────────────────────────────── -->
   <hr class="divider"/>
 
-  <!-- ── 3. Danger Zone ──────────────────────────────────────────────────── -->
+  <div class="sec">Bill Alerts</div>
+  <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6;">
+    Alert me this many days before a bill is due. Affects the alert badge on the
+    Bills tab and the daily email digest.
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.5rem;">
+    <input
+            id="bills-alert-days-input"
+            class="inp"
+            type="number"
+            min="1"
+            max="30"
+            style="width:80px;flex-shrink:0;"
+            placeholder="5"/>
+    <span style="font-size:13px;color:var(--text2);">days before due date</span>
+    <button id="btn-save-alert-days" onclick="saveBillAlertDays()" class="btn-sm">
+      Save
+    </button>
+  </div>
+
+  <!-- ── 3. Divider ──────────────────────────────────────────────────────── -->
+  <hr class="divider"/>
+
+  <!-- ── 4. Danger Zone ──────────────────────────────────────────────────── -->
   <div class="sec">Danger Zone</div>
   <button
           id="btn-clear-month"
@@ -106,21 +130,21 @@
           // Used purely to decide whether to show a delete button — the server
           // enforces the actual protection on deleteCategory() calls.
   var _SETTINGS_DEFAULT_NAMES = {
-            income: [
-              'Employment / Salary', 'Side Hustle', 'Freelance',
-              'Dividends', 'Rental Income', 'Business Income', 'Other Income'
-            ],
-            expense: [
-              'Housing', 'Utilities', 'Groceries', 'Transportation',
-              'Insurance', 'Clothing', 'Entertainment', 'Fun & Vacation',
-              'Media & Subscriptions', 'Body Care & Medicine', 'Education',
-              'Dining Out', 'Debt Repayment', 'Other Expense'
-            ],
-            savings: [
-              'Emergency Fund', 'Retirement Account', 'Stock Portfolio',
-              'Sinking Fund', 'Down Payment', 'Other Savings'
-            ]
-          };
+    income: [
+      'Employment / Salary', 'Side Hustle', 'Freelance',
+      'Dividends', 'Rental Income', 'Business Income', 'Other Income'
+    ],
+    expense: [
+      'Housing', 'Utilities', 'Groceries', 'Transportation',
+      'Insurance', 'Clothing', 'Entertainment', 'Fun & Vacation',
+      'Media & Subscriptions', 'Body Care & Medicine', 'Education',
+      'Dining Out', 'Debt Repayment', 'Other Expense'
+    ],
+    savings: [
+      'Emergency Fund', 'Retirement Account', 'Stock Portfolio',
+      'Sinking Fund', 'Down Payment', 'Other Savings'
+    ]
+  };
 
   function _isDefaultCategory(name, type) {
     var defaults = _SETTINGS_DEFAULT_NAMES[type] || [];
@@ -129,75 +153,72 @@
 
   function renderSettings() {
     var listEl = document.getElementById('cat-settings-list');
-    if (!listEl) return;
+    if (listEl) {
+      var cats = AppState.categories || [];
 
-    var cats = AppState.categories || [];
+      if (cats.length === 0) {
+        listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories found.</div>';
+      } else {
+        // Group by type.
+        var groups = { income: [], expense: [], savings: [] };
+        cats.forEach(function(cat) {
+          var t = cat.type || 'expense';
+          if (!groups[t]) groups[t] = [];
+          groups[t].push(cat);
+        });
 
-    if (cats.length === 0) {
-      listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories found.</div>';
-      return;
+        var typeConfig = [
+          { type: 'income',  label: 'Income',  badgeClass: 'badge-green' },
+          { type: 'expense', label: 'Expense', badgeClass: 'badge-red'   },
+          { type: 'savings', label: 'Savings', badgeClass: 'badge-blue'  }
+        ];
+
+        var html = '';
+        typeConfig.forEach(function(cfg) {
+          var group = groups[cfg.type] || [];
+          if (group.length === 0) return;
+
+          html += (
+                  '<div style="margin-bottom:8px;">' +
+                  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;' +
+                  'padding:6px 0;border-bottom:0.5px solid var(--border);">' +
+                  '<span class="badge ' + cfg.badgeClass + '">' + cfg.label + '</span>' +
+                  '<span style="font-size:11px;color:var(--text2);">' +
+                  group.length + ' categor' + (group.length === 1 ? 'y' : 'ies') +
+                  '</span>' +
+                  '</div>'
+          );
+
+          group.forEach(function(cat) {
+            var isDef = _isDefaultCategory(cat.name, cat.type);
+            var deleteBtn = isDef
+                    ? ''
+                    : '<button class="tx-delete" ' +
+                    'onclick="deleteCat(\'' + _escAttr(cat.name) + '\',\'' + cat.type + '\',this)" ' +
+                    'title="Remove category">\xd7</button>';
+
+            html += (
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;padding-left:4px;">' +
+                    '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
+                    ';display:inline-block;flex-shrink:0;"></span>' +
+                    '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
+                    deleteBtn +
+                    '</div>'
+            );
+          });
+
+          html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+      }
     }
 
-    // Group by type.
-    var groups = { income: [], expense: [], savings: [] };
-    cats.forEach(function(cat) {
-      var t = cat.type || 'expense';
-      if (!groups[t]) groups[t] = [];
-      groups[t].push(cat);
-    });
-
-    // Type display configuration.
-    var typeConfig = [
-      { type: 'income',  label: 'Income',  badgeClass: 'badge-green' },
-      { type: 'expense', label: 'Expense', badgeClass: 'badge-red'   },
-      { type: 'savings', label: 'Savings', badgeClass: 'badge-blue'  }
-    ];
-
-    var html = '';
-
-    typeConfig.forEach(function(cfg) {
-      var group = groups[cfg.type] || [];
-      if (group.length === 0) return;
-
-      // Section heading for each type group.
-      html += (
-              '<div style="margin-bottom:8px;">' +
-              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;' +
-              'padding:6px 0;border-bottom:0.5px solid var(--border);">' +
-              '<span class="badge ' + cfg.badgeClass + '">' + cfg.label + '</span>' +
-              '<span style="font-size:11px;color:var(--text2);">' +
-              group.length + ' categor' + (group.length === 1 ? 'y' : 'ies') +
-              '</span>' +
-              '</div>'
-      );
-
-      // Each category row within this type group.
-      group.forEach(function(cat) {
-        var isDef = _isDefaultCategory(cat.name, cat.type);
-
-        // Delete button passes itself + name + type for optimistic dimming.
-        // Default categories are rendered without a delete button — the server
-        // would reject the call anyway, but we skip it to keep the UI clean.
-        var deleteBtn = isDef
-                ? ''
-                : '<button class="tx-delete" ' +
-                'onclick="deleteCat(\'' + _escAttr(cat.name) + '\',\'' + cat.type + '\',this)" ' +
-                'title="Remove category">×</button>';
-
-        html += (
-                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;padding-left:4px;">' +
-                '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
-                ';display:inline-block;flex-shrink:0;"></span>' +
-                '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
-                deleteBtn +
-                '</div>'
-        );
-      });
-
-      html += '</div>'; // close group div
-    });
-
-    listEl.innerHTML = html;
+    // Sync the bill alert days input with current AppState value
+    var alertInput = document.getElementById('bills-alert-days-input');
+    if (alertInput) {
+      alertInput.value = AppState.billAlertDays || 5;
+    }
   }
 
 
@@ -241,12 +262,9 @@
         AppState.categories = updated;
 
         clearInputs('new-cat-name');
-        renderAll(); // refreshes category list + all <select> dropdowns
+        renderAll();
         showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' category added!', 'success');
-
-      } catch (e) {
-        // Error toast shown by callServer.
-      }
+      } catch (e) {}
     });
   }
 
@@ -267,20 +285,15 @@
     }
 
     try {
-      // Updated server signature: deleteCategory(name, type)
       var updated = await callServer('deleteCategory', categoryName, categoryType);
-
       AppState.categories = updated;
-
       renderAll();
       showToast('Category removed.', 'info');
-
     } catch (e) {
       if (deleteBtnEl) {
         deleteBtnEl.disabled = false;
         deleteBtnEl.style.opacity = '';
       }
-      // Error toast shown by callServer (includes "default category" protection error).
     }
   }
 
@@ -302,8 +315,38 @@
       AppState.categories = defaults;
       renderAll();
       showToast('Categories reset to defaults.', 'info');
-    } catch (e) {
-      // Error toast shown by callServer.
+    } catch (e) {}
+  }
+
+
+  // ─── BILL ALERT DAYS ──────────────────────────────────────────────────────────
+
+  /**
+   * saveBillAlertDays()
+   * Reads the input value, validates, saves to server preference, updates AppState.
+   */
+  async function saveBillAlertDays() {
+    var input = document.getElementById('bills-alert-days-input');
+    var val   = parseInt((input && input.value) || '', 10);
+
+    if (isNaN(val) || val < 1 || val > 30) {
+      showToast('Please enter a number between 1 and 30.', 'error');
+      if (input) input.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btn-save-alert-days');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    try {
+      await callServerSilent('setPreference', 'bills_alert_days', String(val));
+      AppState.billAlertDays = val;
+      renderAll(); // refreshes the Bills tab subtitle + alert badge colours
+      showToast('Bill alert set to ' + val + ' day' + (val > 1 ? 's' : '') + '.', 'success');
+    } catch(e) {
+      showToast('Could not save preference. Please try again.', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     }
   }
 
@@ -322,26 +365,16 @@
     )) return;
 
     var btn = document.getElementById('btn-clear-month');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Clearing…';
-    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
 
     try {
       await callServer('clearMonthTransactions', curKey());
-
       AppState.transactions[curKey()] = [];
-
       renderAll();
       showToast(label + ' cleared.', 'info');
-
     } catch (e) {
-      // Error toast shown by callServer.
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Clear Current Month';
-      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Clear Current Month'; }
     }
   }
 
@@ -352,7 +385,6 @@
     return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // For use in inline onclick="..." attribute values — escapes single quotes.
   function _escAttr(str) {
     return String(str || '').replace(/'/g, "\\'").replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }

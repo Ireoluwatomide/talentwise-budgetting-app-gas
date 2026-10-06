@@ -1,0 +1,47 @@
+<script>
+
+    // ── Extend AppState defaults for recurring overhaul ──────────────────────────
+    if (typeof AppState !== 'undefined') {
+        if (AppState.recurringHistory === undefined) {
+            AppState.recurringHistory = [];
+        }
+        if (AppState.recurringStatus === undefined) {
+            AppState.recurringStatus = [];
+        }
+
+        // Pick up from bootstrap if available
+        if (typeof window !== 'undefined' && window.__BOOTSTRAP__) {
+            if (window.__BOOTSTRAP__.recurringHistory) {
+                AppState.recurringHistory = window.__BOOTSTRAP__.recurringHistory;
+            }
+            if (window.__BOOTSTRAP__.recurringStatus) {
+                AppState.recurringStatus = window.__BOOTSTRAP__.recurringStatus;
+            }
+        }
+    }
+
+    // ── Auto-transaction badge helper ────────────────────────────────────────────
+    // Used by Overview.html to distinguish auto-applied recurring transactions
+    // from manually entered ones. Returns an HTML string for the badge or ''.
+    function getAutoTransactionBadge(tx) {
+        if (!tx) return '';
+        var isAuto = tx.note === 'auto' || (tx.recurring_id && String(tx.recurring_id).trim() !== '');
+        if (!isAuto) return '';
+
+        return '<span style="display:inline-flex;align-items:center;' +
+            'font-size:9px;font-weight:700;letter-spacing:0.04em;' +
+            'padding:1px 5px;border-radius:3px;margin-left:6px;' +
+            'background:rgba(24,95,165,0.10);color:var(--blue);' +
+            'vertical-align:middle;flex-shrink:0;">AUTO</span>';
+    }
+
+    // ── Patch Overview renderTxPage to show AUTO badge ───────────────────────────
+    // We store the original _renderTxPage and wrap it after it's defined.
+    // This runs after all screens are loaded, so the override lands cleanly.
+    document.addEventListener('DOMContentLoaded', function() {
+        // No-op: the override is applied inline in Overview.html using
+        // getAutoTransactionBadge() directly in the tx row builder.
+        // This file only needs to define the helper and extend AppState.
+    });
+
+</script>

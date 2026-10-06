@@ -1,26 +1,17 @@
 /**
  * Main.gs — Entry Point (Multi-User Edition)
  *
- * CHANGES FROM PHASE 1:
- *   - doGet() now checks if the user is authenticated.
- *   - Unauthenticated requests are served Landing.html (public page).
- *   - Authenticated requests provision the user if new, then serve the app.
- *   - getBootstrapData() scopes all data reads to the current user via UserManager.gs.
- *
- * APPSSCRIPT.JSON REQUIREMENT:
- *   Change "executeAs": "USER_DEPLOYING"  →  "USER_ACCESSING"
- *   Change "access":    "ANYONE_ANONYMOUS" →  "ANYONE_WITH_GOOGLE_ACCOUNT"
- *   This forces Google sign-in before the script runs, giving us the user's email.
+ * CHANGES (recurring enhancement):
+ *   - getBootstrapData() now loads recurringHistory and recurringStatus
+ *   - recurringStatus = getRecurringStatus(curMonthKey) — per-template
+ *     operational status for the current month (applied, skipped, next_apply)
+ *   - recurringHistory = getRecurringHistory() — full application audit trail
+ *   - All other logic unchanged
  */
 
 
 /**
  * doGet(e)
- *
- * Routes the request:
- *   - ?page=landing  → always serve Landing.html
- *   - No active user → serve Landing.html
- *   - Active user    → provision if new, serve the full app
  */
 function doGet(e) {
   var params = e && e.parameter ? e.parameter : {};
@@ -94,59 +85,65 @@ function include(filename) {
  * getBootstrapData()
  *
  * Loads all data needed for first render in a single server execution.
- * FIXED: now loads ALL transactions (grouped by month) rather than only
- * the current month, so Savings totals, multi-month charts, forecasts
- * and the report tab all work correctly on first page load.
+ *
+ * RECURRING ADDITIONS:
+ *   recurring        — template list (unchanged, now includes new fields)
+ *   recurringHistory — application audit trail (all RecurringHistory rows)
+ *   recurringStatus  — per-template status for curMonthKey (applied?, skipped?, next?)
  */
 function getBootstrapData() {
   var now = new Date();
   var data = {
-    curYear:      now.getFullYear(),
-    curMonth:     now.getMonth() + 1,
-    currency:     'NGN',
-    darkMode:     false,
-    categories:   [],
-    transactions: {},   // { 'YYYY-MM': [tx, ...] } — all months, not just current
-    goals:        {},
-    bills:        [],
-    savingsGoals: [],
-    debts:        [],
-    netWorthItems:[],
-    recurring:    []
+    curYear:          now.getFullYear(),
+    curMonth:         now.getMonth() + 1,
+    currency:         'NGN',
+    darkMode:         false,
+    categories:       [],
+    transactions:     {},
+    goals:            {},
+    bills:            [],
+    billHistory:      [],
+    billAlertDays:    5,
+    savingsGoals:     [],
+    savingsHistory:   [],
+    debts:            [],
+    debtHistory:      [],
+    debtArchived:     [],
+    debtToIncomeRatio: 0,
+    netWorthItems:    [],
+    netWorthHistory:  [],
+    netWorthTarget:   0,
+    netWorthSummary:  null,
+    recurring:        [],
+    recurringHistory: [],   // NEW: full application audit trail
+    recurringStatus:  []    // NEW: per-template status for current month
   };
 
   // Preferences
   if (typeof getAllPreferences === 'function') {
     try {
       var prefs = getAllPreferences();
-      data.currency   = prefs.currency   || 'NGN';
-      data.darkMode   = prefs.dark_mode  || false;
-      data.categories = prefs.categories || [];
+      data.currency      = prefs.currency   || 'NGN';
+      data.darkMode      = prefs.dark_mode  || false;
+      data.categories    = prefs.categories || [];
+      data.billAlertDays = prefs.bills_alert_days || 5;
     } catch (e) { Logger.log('Bootstrap: Preferences — ' + e.message); }
   }
 
-  // ── TRANSACTIONS: load ALL months, grouped by month_key ─────────────────────
-  // This is the key fix. Previously only the current month was loaded,
-  // causing Savings "Total Saved All Time", multi-month charts, forecast
-  // averages, and the Report to all show empty/zero data until the user
-  // manually navigated to each past month.
+  // Transactions (all months)
   if (typeof getAllTransactions === 'function') {
     try {
       var allTxs = getAllTransactions();
-
-      // Group by month_key into the same structure the client uses.
       allTxs.forEach(function(tx) {
         var key = tx.month_key;
         if (!key) return;
         if (!data.transactions[key]) data.transactions[key] = [];
         data.transactions[key].push(tx);
       });
-
       Logger.log('Bootstrap: Loaded transactions for ' +
         Object.keys(data.transactions).length + ' month(s).');
     } catch (e) {
-      // Fall back to just current month if getAllTransactions fails
-      Logger.log('Bootstrap: getAllTransactions failed — ' + e.message + '. Falling back to current month.');
+      Logger.log('Bootstrap: getAllTransactions failed — ' + e.message);
       try {
         var mk = data.curYear + '-' + (data.curMonth < 10 ? '0' : '') + data.curMonth;
         var monthTxs = getTransactionsByMonth(mk);
@@ -157,21 +154,130 @@ function getBootstrapData() {
     }
   }
 
-  // Goals — load ALL months grouped by month_key (getAllGoals now returns object)
+  // Goals
   if (typeof getAllGoals === 'function') {
-      try {
-        data.goals = getAllGoals();
-        Logger.log('Bootstrap: Loaded goals for ' +
-          Object.keys(data.goals).length + ' month(s).');
-      } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
-    }
+    try { data.goals = getAllGoals(); } catch(e) { Logger.log('Bootstrap: Goals — ' + e.message); }
+  }
 
-  // All other domains
-  if (typeof getAllBills         === 'function') { try { data.bills         = getAllBills();         } catch(e) { Logger.log('Bootstrap: Bills — '      + e.message); } }
-  if (typeof getAllSavingsGoals  === 'function') { try { data.savingsGoals  = getAllSavingsGoals();  } catch(e) { Logger.log('Bootstrap: Savings — '    + e.message); } }
-  if (typeof getAllDebts         === 'function') { try { data.debts         = getAllDebts();         } catch(e) { Logger.log('Bootstrap: Debts — '      + e.message); } }
-  if (typeof getAllNetWorthItems === 'function') { try { data.netWorthItems = getAllNetWorthItems(); } catch(e) { Logger.log('Bootstrap: NetWorth — '   + e.message); } }
-  if (typeof getAllRecurring     === 'function') { try { data.recurring     = getAllRecurring();     } catch(e) { Logger.log('Bootstrap: Recurring — '  + e.message); } }
+  // Bills
+  if (typeof getAllBills === 'function') {
+    try { data.bills = getAllBills(); } catch(e) { Logger.log('Bootstrap: Bills — ' + e.message); }
+  }
+
+  // Bill History
+  if (typeof getAllBillHistory === 'function') {
+    try { data.billHistory = getAllBillHistory(); } catch(e) {
+      Logger.log('Bootstrap: BillHistory — ' + e.message);
+      data.billHistory = [];
+    }
+  }
+
+  // Savings Goals
+  if (typeof getAllSavingsGoals === 'function') {
+    try { data.savingsGoals = getAllSavingsGoals(); } catch(e) {
+      Logger.log('Bootstrap: SavingsGoals — ' + e.message);
+    }
+  }
+
+  // Savings History
+  if (typeof getAllSavingsHistory === 'function') {
+    try { data.savingsHistory = getAllSavingsHistory(); } catch(e) {
+      Logger.log('Bootstrap: SavingsHistory — ' + e.message);
+      data.savingsHistory = [];
+    }
+  }
+
+  // Debt History
+  if (typeof getAllDebtHistory === 'function') {
+    try { data.debtHistory = getAllDebtHistory(); } catch(e) {
+      Logger.log('Bootstrap: DebtHistory — ' + e.message);
+      data.debtHistory = [];
+    }
+  }
+
+  // Archived Debts
+  if (typeof getArchivedDebts === 'function') {
+    try { data.debtArchived = getArchivedDebts(); } catch(e) {
+      Logger.log('Bootstrap: ArchivedDebts — ' + e.message);
+      data.debtArchived = [];
+    }
+  }
+
+  // Debt-to-income ratio
+  if (typeof getDebtSummary === 'function') {
+    try {
+      var curMk = data.curYear + '-' +
+        (data.curMonth < 10 ? '0' : '') + data.curMonth;
+      var debtSummary = getDebtSummary(curMk);
+      data.debtToIncomeRatio = debtSummary.debt_to_income_ratio || 0;
+    } catch(e) {
+      Logger.log('Bootstrap: DebtSummary — ' + e.message);
+    }
+  }
+
+  // Net Worth
+  if (typeof syncDebtsToNetWorth === 'function' &&
+      typeof getAllNetWorthItems  === 'function') {
+    try {
+      syncDebtsToNetWorth();
+      data.netWorthItems = getAllNetWorthItems();
+    } catch(e) {
+      Logger.log('Bootstrap: NetWorth/syncDebts — ' + e.message);
+      try { data.netWorthItems = getAllNetWorthItems(); } catch(e2) {}
+    }
+  }
+
+  if (typeof getNetWorthHistory === 'function') {
+    try { data.netWorthHistory = getNetWorthHistory(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthHistory — ' + e.message);
+      data.netWorthHistory = [];
+    }
+  }
+
+  if (typeof getNetWorthTarget === 'function') {
+    try { data.netWorthTarget = getNetWorthTarget(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthTarget — ' + e.message);
+      data.netWorthTarget = 0;
+    }
+  }
+
+  if (typeof getNetWorthSummary === 'function') {
+    try { data.netWorthSummary = getNetWorthSummary(); } catch(e) {
+      Logger.log('Bootstrap: NetWorthSummary — ' + e.message);
+      data.netWorthSummary = null;
+    }
+  }
+
+  if (typeof getAllDebts         === 'function') { try { data.debts     = getAllDebts();     } catch(e) { Logger.log('Bootstrap: Debts — '     + e.message); } }
+
+  // Recurring — templates (includes new fields)
+  if (typeof getAllRecurring     === 'function') {
+    try { data.recurring = getAllRecurring(); } catch(e) {
+      Logger.log('Bootstrap: Recurring — ' + e.message);
+      data.recurring = [];
+    }
+  }
+
+  // Recurring History — application audit trail
+  if (typeof getRecurringHistory === 'function') {
+    try { data.recurringHistory = getRecurringHistory(); } catch(e) {
+      Logger.log('Bootstrap: RecurringHistory — ' + e.message +
+        ' (run initRecurringEnhancements() if sheet is missing)');
+      data.recurringHistory = [];
+    }
+  }
+
+  // Recurring Status — per-template status for current month
+  if (typeof getRecurringStatus === 'function') {
+    try {
+      var statusMonthKey = data.curYear + '-' +
+        (data.curMonth < 10 ? '0' : '') + data.curMonth;
+      data.recurringStatus = getRecurringStatus(statusMonthKey);
+    } catch(e) {
+      Logger.log('Bootstrap: RecurringStatus — ' + e.message);
+      data.recurringStatus = [];
+    }
+  }
 
   return data;
 }

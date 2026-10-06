@@ -1,0 +1,582 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     NotificationBell.html — Notification Bell: Dropdown, Sheet, Styles & JS
+
+     The bell BUTTON itself lives in Header.html (desktop: inside
+     .header-desktop-controls; mobile: injected into #bell-mobile-wrap).
+
+     This file provides:
+       - The desktop dropdown panel (#bell-dropdown)
+       - The mobile bottom sheet (#bell-sheet)
+       - All CSS for the bell system
+       - All JS: updateNotificationBell(), toggle functions, alert parsing
+
+     INCLUDE ORDER in Index.html:
+       <?!= include('src/client/components/AlertBanner') ?>
+       <?!= include('src/client/components/NotificationBell') ?>   ← this file
+       <?!= include('src/client/components/Header') ?>
+
+     RENDERALL HOOK in utils.js:
+       After:  if (typeof updateAlertBanners     === 'function') updateAlertBanners();
+       Add:    if (typeof updateNotificationBell === 'function') updateNotificationBell();
+     ───────────────────────────────────────────────────────────────────────── -->
+
+
+<!-- ── DROPDOWN PANEL (desktop) ─────────────────────────────────────────── -->
+<div id="bell-dropdown" role="dialog" aria-label="Notifications">
+    <div id="bell-dropdown-inner">
+        <div id="bell-dropdown-content">
+            <!-- populated by updateNotificationBell() -->
+        </div>
+    </div>
+</div>
+
+<!-- Backdrop closes the dropdown on outside click -->
+<div id="bell-backdrop" onclick="closeBellDropdown()"></div>
+
+
+<!-- ── BOTTOM SHEET (mobile) ─────────────────────────────────────────────── -->
+<div id="bell-sheet" aria-label="Notifications">
+    <div id="bell-sheet-backdrop" onclick="closeBellSheet()"></div>
+    <div id="bell-sheet-panel">
+        <div id="bell-sheet-handle"></div>
+        <div id="bell-sheet-content">
+            <!-- populated by updateNotificationBell() -->
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ STYLES ════════════════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Hide the old inline banner divs everywhere ──────────────────────── */
+    #alerts-budget,
+    #alerts-bills {
+        display: none !important;
+    }
+
+    /* ── Bell badge (on the button in Header.html) ───────────────────────── */
+    #bell-badge,
+    #bell-badge-mobile {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: var(--red);
+        color: #fff;
+        font-size: 9px;
+        font-weight: 700;
+        font-family: var(--font);
+        line-height: 16px;
+        text-align: center;
+        pointer-events: none;
+        box-shadow: 0 0 0 2px var(--bg);
+    }
+
+    #bell-badge-mobile {
+        min-width: 14px;
+        height: 14px;
+        font-size: 8px;
+        line-height: 14px;
+        border-radius: 7px;
+    }
+
+    @keyframes bellBadgeIn {
+        0%  { transform: scale(0.6); opacity: 0; }
+        60% { transform: scale(1.15); }
+        100%{ transform: scale(1);   opacity: 1; }
+    }
+
+    #bell-badge.badge-appear,
+    #bell-badge-mobile.badge-appear {
+        animation: bellBadgeIn 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+    }
+
+    /* Bell shake when alerts are active */
+    #bell-btn.has-alerts svg,
+    #bell-btn-mobile.has-alerts svg {
+        animation: bellShake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        transform-origin: top center;
+    }
+
+    @keyframes bellShake {
+        0%, 100% { transform: rotate(0deg);  }
+        20%      { transform: rotate(8deg);  }
+        40%      { transform: rotate(-8deg); }
+        60%      { transform: rotate(4deg);  }
+        80%      { transform: rotate(-4deg); }
+    }
+
+    /* ── Desktop dropdown ────────────────────────────────────────────────── */
+    #bell-dropdown {
+        display: none;
+        position: fixed;
+        z-index: 999;
+        width: 320px;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: 14px;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+        overflow: hidden;
+    }
+
+    #bell-dropdown.open {
+        display: block;
+        animation: bellDropIn 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    @keyframes bellDropIn {
+        from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+        to   { opacity: 1; transform: translateY(0)    scale(1);    }
+    }
+
+    #bell-dropdown-inner {
+        max-height: 420px;
+        overflow-y: auto;
+        scrollbar-width: none;
+    }
+    #bell-dropdown-inner::-webkit-scrollbar { display: none; }
+
+    #bell-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 998;
+    }
+    #bell-backdrop.open { display: block; }
+
+    /* ── Shared content styles ───────────────────────────────────────────── */
+    .bell-dropdown-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 16px 10px;
+        border-bottom: 0.5px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 1;
+    }
+
+    .bell-dropdown-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+    }
+
+    .bell-clear-btn {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text2);
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 3px 8px;
+        border-radius: 5px;
+        transition: background var(--transition), color var(--transition);
+    }
+    .bell-clear-btn:hover { background: var(--bg2); color: var(--text); }
+
+    .bell-section-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        padding: 10px 16px 4px;
+    }
+
+    .bell-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 16px;
+        border-bottom: 0.5px solid var(--border);
+        transition: background var(--transition);
+    }
+    .bell-item:last-child { border-bottom: none; }
+    .bell-item:hover { background: var(--bg2); }
+
+    .bell-item-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 4px;
+    }
+    .bell-item-dot.dot-danger  { background: var(--red);   }
+    .bell-item-dot.dot-warning { background: var(--amber); }
+
+    .bell-item-body { flex: 1; min-width: 0; }
+
+    .bell-item-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1.4;
+    }
+
+    .bell-item-sub {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 2px;
+        line-height: 1.4;
+    }
+
+    .bell-item-badge {
+        flex-shrink: 0;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 4px;
+        margin-top: 2px;
+        white-space: nowrap;
+        align-self: flex-start;
+    }
+    .bell-item-badge.bdg-danger  { background: #FCEBEB; color: #791F1F; }
+    .bell-item-badge.bdg-warning { background: #FAEEDA; color: #412402; }
+
+    /* Empty state */
+    .bell-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 28px 20px;
+        gap: 8px;
+        text-align: center;
+    }
+
+    .bell-empty-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--bg2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 4px;
+    }
+
+    .bell-empty-icon svg {
+        width: 20px; height: 20px;
+        stroke: var(--acc); fill: none;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    .bell-empty-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .bell-empty-sub   { font-size: 12px; color: var(--text2); line-height: 1.5; max-width: 200px; }
+
+    /* ── Mobile bell button ──────────────────────────────────────────────── */
+    #bell-btn-mobile {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        flex-shrink: 0;
+        transition: background var(--transition), color var(--transition);
+        -webkit-tap-highlight-color: transparent;
+    }
+    #bell-btn-mobile svg { width: 18px; height: 18px; }
+
+    /* ── Mobile bottom sheet ─────────────────────────────────────────────── */
+    #bell-sheet { display: none; position: fixed; inset: 0; z-index: 450; }
+    #bell-sheet.open { display: block; }
+
+    #bell-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+
+    #bell-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        max-height: 75vh;
+        overflow-y: auto;
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+        animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+        scrollbar-width: none;
+    }
+    #bell-sheet-panel::-webkit-scrollbar { display: none; }
+
+    #bell-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 12px auto 0;
+    }
+
+    /* ── Dark mode ───────────────────────────────────────────────────────── */
+    .app.dark #bell-dropdown        { background: #1e1e21; border-color: var(--border2); }
+    .app.dark .bell-dropdown-header { background: #1e1e21; }
+    .app.dark #bell-sheet-panel     { background: var(--bg); }
+    .app.dark .bell-item-badge.bdg-danger  { background: rgba(216,90,48,.2);  color: #f0a080; }
+    .app.dark .bell-item-badge.bdg-warning { background: rgba(186,117,23,.2); color: #e0b060; }
+
+    /* ── Breakpoint visibility ───────────────────────────────────────────── */
+    @media (max-width: 767px) {
+        #bell-dropdown { display: none !important; }
+        #bell-backdrop { display: none !important; }
+    }
+    @media (min-width: 768px) {
+        #bell-btn-mobile { display: none !important; }
+    }
+
+</style>
+
+
+<!-- ══ JAVASCRIPT ════════════════════════════════════════════════════════════ -->
+<script>
+
+    var _bellAlerts         = [];
+    var _bellOpen           = false;
+    var _mobileBellInjected = false;
+    var _prevBellCount      = 0;
+
+    // ─── MAIN UPDATE ─────────────────────────────────────────────────────────────
+
+    function updateNotificationBell() {
+        _bellAlerts = _buildBellAlerts();
+        _updateBadge();
+        _buildBellContent();
+        _injectMobileBell();
+    }
+
+    // ─── ALERT BUILDER ───────────────────────────────────────────────────────────
+
+    function _buildBellAlerts() {
+        var alerts = [];
+
+        // Budget goal alerts
+        var goals    = (AppState.goals && AppState.goals[curKey()]) || [];
+        var spendMap = {};
+        curTxs().forEach(function(tx) {
+            if (tx.type !== 'expense') return;
+            var cat = tx.category || 'Other Expense';
+            spendMap[cat] = (spendMap[cat] || 0) + (parseFloat(tx.amount) || 0);
+        });
+
+        goals.forEach(function(goal) {
+            var limit = parseFloat(goal.monthly_limit) || 0;
+            if (limit <= 0) return;
+            var spent = spendMap[goal.category] || 0;
+            var ratio = limit > 0 ? spent / limit : 0;
+            var p     = Math.min(100, Math.round(ratio * 100));
+
+            if (spent > limit) {
+                alerts.push({ type:'budget', severity:'danger',  title:goal.category, sub:'Spent '+fmt(spent)+' · limit '+fmt(limit), badge:p+'% used', category:goal.category });
+            } else if (ratio >= 0.85) {
+                alerts.push({ type:'budget', severity:'warning', title:goal.category, sub:'Spent '+fmt(spent)+' · limit '+fmt(limit), badge:p+'% used', category:goal.category });
+            }
+        });
+
+        // Bill due-date alerts
+        var bills = AppState.bills || [];
+        var today = new Date().getDate();
+
+        bills.forEach(function(bill) {
+            if (bill.paid === true || bill.paid === 'true' || bill.paid === 1) return;
+            var dueDay = parseInt(bill.due_day, 10);
+            if (isNaN(dueDay)) return;
+            var daysUntil = dueDay >= today ? dueDay - today : (31 - today) + dueDay;
+            if (daysUntil > 5) return;
+
+            alerts.push({
+                type:      'bill',
+                severity:  daysUntil === 0 ? 'danger' : 'warning',
+                title:     bill.name,
+                sub:       fmt(bill.amount) + ' · day ' + bill.due_day + ' monthly',
+                badge:     daysUntil === 0 ? 'Due today' : 'Due in ' + daysUntil + 'd',
+                daysUntil: daysUntil
+            });
+        });
+
+        // Sort: danger first, then bills before budget within same severity
+        alerts.sort(function(a, b) {
+            var sev = { danger:0, warning:1 };
+            if (sev[a.severity] !== sev[b.severity]) return sev[a.severity] - sev[b.severity];
+            if (a.type !== b.type) return a.type === 'bill' ? -1 : 1;
+            return 0;
+        });
+
+        return alerts;
+    }
+
+    // ─── BADGE ───────────────────────────────────────────────────────────────────
+
+    function _updateBadge() {
+        var count    = _bellAlerts.length;
+        var hasAlert = count > 0;
+        var isNew    = count > _prevBellCount;
+
+        // Desktop
+        var badge = document.getElementById('bell-badge');
+        var btn   = document.getElementById('bell-btn');
+        if (badge) {
+            badge.style.display = hasAlert ? 'block' : 'none';
+            badge.textContent   = count > 9 ? '9+' : String(count);
+            if (isNew && hasAlert) {
+                badge.classList.remove('badge-appear');
+                void badge.offsetWidth;
+                badge.classList.add('badge-appear');
+            }
+        }
+        if (btn) {
+            btn.classList.remove('has-alerts');
+            if (hasAlert) { void btn.offsetWidth; btn.classList.add('has-alerts'); }
+        }
+
+        // Mobile
+        var mb = document.getElementById('bell-badge-mobile');
+        var mb_btn = document.getElementById('bell-btn-mobile');
+        if (mb) { mb.style.display = hasAlert ? 'block' : 'none'; mb.textContent = count > 9 ? '9+' : String(count); }
+        if (mb_btn) mb_btn.classList.toggle('has-alerts', hasAlert);
+
+        _prevBellCount = count;
+    }
+
+    // ─── CONTENT ─────────────────────────────────────────────────────────────────
+
+    function _buildBellContent() {
+        var html = _buildAlertsHTML();
+        var d = document.getElementById('bell-dropdown-content');
+        var s = document.getElementById('bell-sheet-content');
+        if (d) d.innerHTML = html;
+        if (s) s.innerHTML = html;
+    }
+
+    function _buildAlertsHTML() {
+        var count = _bellAlerts.length;
+        var header = (
+            '<div class="bell-dropdown-header">' +
+            '<span class="bell-dropdown-title">Notifications</span>' +
+            (count > 0 ? '<button class="bell-clear-btn" onclick="dismissAllAlerts()">Dismiss all</button>' : '') +
+            '</div>'
+        );
+
+        if (count === 0) {
+            return header + (
+                '<div class="bell-empty">' +
+                '<div class="bell-empty-icon"><svg viewBox="0 0 24 24">' +
+                '<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>' +
+                '<polyline points="22 4 12 14.01 9 11.01"/>' +
+                '</svg></div>' +
+                '<div class="bell-empty-title">All clear</div>' +
+                '<div class="bell-empty-sub">No budget alerts or upcoming bills right now.</div>' +
+                '</div>'
+            );
+        }
+
+        var bills   = _bellAlerts.filter(function(a){ return a.type==='bill';   });
+        var budgets = _bellAlerts.filter(function(a){ return a.type==='budget'; });
+        var body = '';
+        if (bills.length)   body += '<div class="bell-section-label">Upcoming Bills</div>'   + bills.map(_buildItem).join('');
+        if (budgets.length) body += '<div class="bell-section-label">Budget</div>' + budgets.map(_buildItem).join('');
+        return header + body;
+    }
+
+    function _buildItem(alert) {
+        var dotStyle = (alert.type==='budget' && typeof getCategoryColor==='function')
+            ? ' style="background:'+getCategoryColor(alert.category)+';"' : '';
+        return (
+            '<div class="bell-item">' +
+            '<span class="bell-item-dot dot-'+alert.severity+'"'+dotStyle+'></span>' +
+            '<div class="bell-item-body">' +
+            '<div class="bell-item-title">'+_escB(alert.title)+'</div>' +
+            '<div class="bell-item-sub">'+_escB(alert.sub)+'</div>' +
+            '</div>' +
+            '<span class="bell-item-badge bdg-'+alert.severity+'">'+_escB(alert.badge)+'</span>' +
+            '</div>'
+        );
+    }
+
+    // ─── DROPDOWN TOGGLE ─────────────────────────────────────────────────────────
+
+    function toggleBellDropdown(event) {
+        if (event) event.stopPropagation();
+        _bellOpen ? closeBellDropdown() : openBellDropdown();
+    }
+
+    function openBellDropdown() {
+        var dropdown = document.getElementById('bell-dropdown');
+        var backdrop = document.getElementById('bell-backdrop');
+        var btn      = document.getElementById('bell-btn');
+        if (!dropdown) return;
+        if (btn) {
+            var r = btn.getBoundingClientRect();
+            dropdown.style.top   = (r.bottom + 8) + 'px';
+            dropdown.style.right = (window.innerWidth - r.right) + 'px';
+            dropdown.style.left  = 'auto';
+        }
+        dropdown.classList.add('open');
+        if (backdrop) backdrop.classList.add('open');
+        _bellOpen = true;
+    }
+
+    function closeBellDropdown() {
+        var d = document.getElementById('bell-dropdown');
+        var b = document.getElementById('bell-backdrop');
+        if (d) d.classList.remove('open');
+        if (b) b.classList.remove('open');
+        _bellOpen = false;
+    }
+
+    // ─── SHEET TOGGLE ────────────────────────────────────────────────────────────
+
+    function openBellSheet() {
+        var s = document.getElementById('bell-sheet');
+        if (s) { s.classList.add('open'); document.body.style.overflow='hidden'; }
+    }
+
+    function closeBellSheet() {
+        var s = document.getElementById('bell-sheet');
+        if (s) { s.classList.remove('open'); document.body.style.overflow=''; }
+    }
+
+    // ─── MOBILE INJECTION ────────────────────────────────────────────────────────
+
+    function _injectMobileBell() {
+        if (_mobileBellInjected) return;
+        var wrap = document.getElementById('bell-mobile-wrap');
+        if (!wrap) return;
+        wrap.innerHTML = (
+            '<button id="bell-btn-mobile" onclick="openBellSheet()" aria-label="Notifications">' +
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>' +
+            '<path d="M13.73 21a2 2 0 01-3.46 0"/>' +
+            '</svg>' +
+            '<span id="bell-badge-mobile" style="display:none;"></span>' +
+            '</button>'
+        );
+        _mobileBellInjected = true;
+    }
+
+    // ─── DISMISS ─────────────────────────────────────────────────────────────────
+
+    function dismissAllAlerts() {
+        _bellAlerts = []; _prevBellCount = 0;
+        _updateBadge(); _buildBellContent();
+        closeBellDropdown(); closeBellSheet();
+    }
+
+    // ─── KEYBOARD ────────────────────────────────────────────────────────────────
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key==='Escape') { closeBellDropdown(); closeBellSheet(); }
+    });
+
+    function _escB(str) {
+        return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+</script>

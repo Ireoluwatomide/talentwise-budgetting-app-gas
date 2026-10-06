@@ -1,0 +1,694 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     AnalyticsPeriod.html — Shared Analytics Period Picker (Task 4.2)
+
+     Exposes: AppState.analyticsPeriod = { start: 'YYYY-MM', end: 'YYYY-MM' }
+
+     DESKTOP (≥ 768px):
+       Rendered inside #sidebar-analytics-period-slot in Sidebar.html.
+       Sits below the month nav, above the main nav group.
+       Only visible when an analytics tab is active.
+
+     MOBILE (< 768px):
+       Rendered as a sticky strip below the app-header.
+       Only visible when an analytics tab is active.
+
+     CONTROLS:
+       ← prev  [Jan 2026 – Mar 2026]  next →   [Custom ▼]
+       Prev/next shift the window by one month.
+       Custom dropdown: Last 3M / Last 6M / Last 12M / All time / Custom range.
+       Custom range opens a compact modal with two month selectors.
+
+     INTEGRATION:
+       1. Include this file in Index.html after Sidebar.html.
+       2. Call initAnalyticsPeriod() once on boot (before renderAll).
+       3. All analytics screens call getAnalyticsPeriodKeys() to get
+          the list of YYYY-MM keys they should operate on.
+       4. Analytics tabs are: spending, trends, insights, report.
+          On non-analytics tabs the picker is hidden automatically.
+
+     ANALYTICS SCREENS USING THIS:
+       Spending.html  — category breakdown uses period keys
+       Trends.html    — window toggle overridden by period picker
+       Insights.html  — allKeys computed from period
+       Report.html    — report scope = period keys
+     ───────────────────────────────────────────────────────────────────────── -->
+
+
+<!-- ── DESKTOP SLOT (injected into Sidebar by updateAnalyticsPeriodUI) ──── -->
+<!-- The actual DOM node lives in Sidebar.html as #sidebar-analytics-period-slot -->
+
+
+<!-- ── MOBILE STICKY STRIP ──────────────────────────────────────────────── -->
+<div id="analytics-period-strip" style="display:none;" aria-label="Analytics period">
+    <div class="ap-strip-inner">
+        <button class="ap-nav-btn" id="ap-strip-prev" onclick="analyticsPeriodPrev()" aria-label="Previous period">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="ap-period-label" id="ap-strip-label" onclick="openCustomPeriodModal()" title="Change period">
+            <!-- updated by updateAnalyticsPeriodUI() -->
+        </button>
+        <button class="ap-nav-btn" id="ap-strip-next" onclick="analyticsPeriodNext()" aria-label="Next period">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <select class="ap-preset-sel" id="ap-strip-preset" onchange="applyPeriodPreset(this.value)" aria-label="Period preset">
+            <option value="3m">Last 3M</option>
+            <option value="6m" selected>Last 6M</option>
+            <option value="12m">Last 12M</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom…</option>
+        </select>
+    </div>
+</div>
+
+
+<!-- ── CUSTOM RANGE MODAL ───────────────────────────────────────────────── -->
+<div id="ap-custom-modal" role="dialog" aria-modal="true" aria-label="Custom analytics period" style="display:none;">
+    <div id="ap-custom-backdrop" onclick="closeCustomPeriodModal()"></div>
+    <div id="ap-custom-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <div style="font-size:14px;font-weight:600;color:var(--text);">Custom Period</div>
+            <button onclick="closeCustomPeriodModal()" style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:18px;line-height:1;padding:0;">&times;</button>
+        </div>
+
+        <div class="row2" style="margin-bottom:14px;">
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-bottom:5px;">From</label>
+                <input id="ap-custom-start" class="inp" type="month" aria-label="Start month"/>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-bottom:5px;">To</label>
+                <input id="ap-custom-end" class="inp" type="month" aria-label="End month"/>
+            </div>
+        </div>
+
+        <div id="ap-custom-error" style="display:none;font-size:12px;color:var(--red);margin-bottom:10px;"></div>
+
+        <div style="display:flex;gap:8px;">
+            <button onclick="applyCustomPeriod()" class="btn-primary" style="flex:1;">
+                Apply Period
+            </button>
+            <button onclick="closeCustomPeriodModal()" class="btn-sm">Cancel</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ STYLES ════════════════════════════════════════════════════════════════ -->
+<style>
+
+    /* ── Mobile sticky strip ───────────────────────────────────────────────── */
+    #analytics-period-strip {
+        position: sticky;
+        top: 0;
+        z-index: 150;
+        background: var(--bg);
+        border-bottom: 0.5px solid var(--border);
+        padding: 6px var(--page-pad);
+    }
+
+    .ap-strip-inner {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    /* ── Desktop sidebar block ─────────────────────────────────────────────── */
+    .ap-sidebar-block {
+        padding: 8px 8px 4px;
+        border-bottom: 0.5px solid var(--border);
+        margin-bottom: 4px;
+    }
+
+    .ap-sidebar-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin-bottom: 6px;
+    }
+
+    .ap-sidebar-controls {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* ── Shared controls ───────────────────────────────────────────────────── */
+    .ap-nav-btn {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        border: 0.5px solid var(--border);
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--text2);
+        padding: 0;
+        flex-shrink: 0;
+        transition: background var(--transition), color var(--transition);
+    }
+
+    .ap-nav-btn:hover:not(:disabled) {
+        background: var(--border);
+        color: var(--text);
+    }
+
+    .ap-nav-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+    }
+
+    .ap-period-label {
+        flex: 1;
+        background: none;
+        border: none;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        text-align: center;
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background var(--transition);
+    }
+
+    .ap-period-label:hover { background: var(--bg2); }
+
+    .ap-preset-sel {
+        background: var(--bg2);
+        border: 0.5px solid var(--border2);
+        border-radius: 6px;
+        padding: 4px 22px 4px 7px;
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text2);
+        cursor: pointer;
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 6px center;
+        flex-shrink: 0;
+        transition: color var(--transition), border-color var(--transition);
+    }
+
+    .ap-preset-sel:hover { border-color: var(--text); color: var(--text); }
+
+    /* Active period badge (shown when not on default 6M) */
+    .ap-active-badge {
+        display: inline-flex;
+        align-items: center;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 20px;
+        background: rgba(29,158,117,0.12);
+        color: var(--acc);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* ── Custom range modal ────────────────────────────────────────────────── */
+    #ap-custom-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 500;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+
+    #ap-custom-modal.open { display: flex; }
+
+    #ap-custom-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+    }
+
+    #ap-custom-panel {
+        position: relative;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius-lg);
+        width: 100%;
+        max-width: 340px;
+        padding: 18px 20px 20px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    /* ── Visibility by breakpoint ─────────────────────────────────────────── */
+    @media (min-width: 768px) {
+        /* Strip is desktop-hidden — sidebar block handles it */
+        #analytics-period-strip { display: none !important; }
+    }
+
+    @media (max-width: 767px) {
+        /* Sidebar slot is mobile-hidden */
+        #sidebar-analytics-period-slot { display: none !important; }
+    }
+
+</style>
+
+
+<!-- ══ JAVASCRIPT ════════════════════════════════════════════════════════════ -->
+<script>
+
+    // ─── ANALYTICS TABS ──────────────────────────────────────────────────────────
+
+    var ANALYTICS_TABS = ['spending', 'trends', 'insights', 'report'];
+
+    // ─── STATE ───────────────────────────────────────────────────────────────────
+
+    // AppState.analyticsPeriod is the source of truth.
+    // All analytics screens read getAnalyticsPeriodKeys() rather than their
+    // own hard-coded window logic.
+    //
+    // { start: 'YYYY-MM', end: 'YYYY-MM', preset: '3m'|'6m'|'12m'|'all'|'custom' }
+    //
+    // 'end' is always today's month or earlier.
+
+    if (typeof AppState !== 'undefined' && !AppState.analyticsPeriod) {
+        AppState.analyticsPeriod = _buildDefaultPeriod();
+    }
+
+    function _buildDefaultPeriod() {
+        var today = new Date();
+        var endY  = today.getFullYear();
+        var endM  = today.getMonth() + 1;
+        var end   = _mkKey(endY, endM);
+
+        // Default: last 6 months
+        var startY = endY, startM = endM - 5;
+        if (startM < 1) { startM += 12; startY--; }
+        var start = _mkKey(startY, startM);
+
+        return { start: start, end: end, preset: '6m' };
+    }
+
+
+    // ─── PUBLIC API ───────────────────────────────────────────────────────────────
+
+    /**
+     * getAnalyticsPeriodKeys()
+     *
+     * Returns an array of 'YYYY-MM' strings covering the current period,
+     * filtered to only months that have actual transaction data.
+     *
+     * Analytics screens call this instead of building their own key lists.
+     * If analyticsPeriod is not set, falls back to last 6 months.
+     */
+    function getAnalyticsPeriodKeys() {
+        var period = AppState.analyticsPeriod || _buildDefaultPeriod();
+        var keys   = [];
+        var y = parseInt(period.start.split('-')[0], 10);
+        var m = parseInt(period.start.split('-')[1], 10);
+        var endKey = period.end;
+
+        // Generate all keys in range (inclusive)
+        for (var i = 0; i < 120; i++) {  // 120 month safety cap
+            var k = _mkKey(y, m);
+            keys.push(k);
+            if (k >= endKey) break;
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+
+        // Filter to only months with transaction data (or include anyway for projections)
+        return keys;
+    }
+
+    /**
+     * getAnalyticsPeriodKeysWithData()
+     *
+     * Like getAnalyticsPeriodKeys() but only returns months with actual data.
+     * Used by Insights/Report for "number of months of data" calculations.
+     */
+    function getAnalyticsPeriodKeysWithData() {
+        return getAnalyticsPeriodKeys().filter(function(k) {
+            var txs = AppState.transactions[k];
+            return Array.isArray(txs) && txs.length > 0;
+        });
+    }
+
+
+    // ─── INIT ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * initAnalyticsPeriod()
+     * Called once on boot from Index.html boot sequence.
+     * Sets up the sidebar slot and syncs UI.
+     */
+    function initAnalyticsPeriod() {
+        if (!AppState.analyticsPeriod) {
+            AppState.analyticsPeriod = _buildDefaultPeriod();
+        }
+        _buildSidebarBlock();
+        updateAnalyticsPeriodUI();
+    }
+
+    /**
+     * _buildSidebarBlock()
+     * Injects the sidebar period picker into #sidebar-analytics-period-slot.
+     * Called once on init; content is updated by updateAnalyticsPeriodUI().
+     */
+    function _buildSidebarBlock() {
+        var slot = document.getElementById('sidebar-analytics-period-slot');
+        if (!slot) return;
+
+        slot.innerHTML = (
+            '<div class="ap-sidebar-block" id="ap-sidebar-block">' +
+            '<div class="ap-sidebar-label">Analytics Period</div>' +
+            '<div class="ap-sidebar-controls">' +
+            '<button class="ap-nav-btn" id="ap-sb-prev" onclick="analyticsPeriodPrev()" aria-label="Previous period">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>' +
+            '</button>' +
+            '<button class="ap-period-label" id="ap-sb-label" onclick="openCustomPeriodModal()" title="Change period" style="font-size:11px;"></button>' +
+            '<button class="ap-nav-btn" id="ap-sb-next" onclick="analyticsPeriodNext()" aria-label="Next period">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>' +
+            '</button>' +
+            '</div>' +
+            '<select class="ap-preset-sel" id="ap-sb-preset" onchange="applyPeriodPreset(this.value)" aria-label="Period preset" style="width:100%;margin-top:6px;background-position:right 8px center;">' +
+            '<option value="3m">Last 3 months</option>' +
+            '<option value="6m">Last 6 months</option>' +
+            '<option value="12m">Last 12 months</option>' +
+            '<option value="all">All time</option>' +
+            '<option value="custom">Custom range…</option>' +
+            '</select>' +
+            '</div>'
+        );
+    }
+
+
+    // ─── UI SYNC ──────────────────────────────────────────────────────────────────
+
+    /**
+     * updateAnalyticsPeriodUI()
+     *
+     * Syncs all period picker UI elements (sidebar + mobile strip) with
+     * AppState.analyticsPeriod. Call this after any period change.
+     */
+    function updateAnalyticsPeriodUI() {
+        var period  = AppState.analyticsPeriod || _buildDefaultPeriod();
+        var label   = _periodLabel(period);
+        var isAnalyticsTab = ANALYTICS_TABS.indexOf(AppState.activeTab || '') !== -1;
+
+        // ── Desktop sidebar block visibility ──────────────────────────────────
+        var sbBlock = document.getElementById('ap-sidebar-block');
+        if (sbBlock) {
+            sbBlock.style.display = isAnalyticsTab ? '' : 'none';
+        }
+
+        // ── Mobile strip visibility ───────────────────────────────────────────
+        var strip = document.getElementById('analytics-period-strip');
+        if (strip) {
+            strip.style.display = (isAnalyticsTab && window.innerWidth < 768) ? 'block' : 'none';
+        }
+
+        // ── Labels ────────────────────────────────────────────────────────────
+        ['ap-sb-label', 'ap-strip-label'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = label;
+        });
+
+        // ── Preset selects ────────────────────────────────────────────────────
+        ['ap-sb-preset', 'ap-strip-preset'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = period.preset || '6m';
+        });
+
+        // ── Prev/next disabled state ──────────────────────────────────────────
+        // Disable "next" when period end is at or beyond today
+        var today   = new Date();
+        var todayKey = _mkKey(today.getFullYear(), today.getMonth() + 1);
+        var atEnd   = period.end >= todayKey;
+
+        ['ap-sb-next', 'ap-strip-next'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.disabled = atEnd;
+        });
+
+        // Disable "prev" when we can't go further back
+        // (period start is at or before the earliest data)
+        var allDataKeys = Object.keys(AppState.transactions || {})
+            .filter(function(k) { var txs = AppState.transactions[k]; return Array.isArray(txs) && txs.length > 0; })
+            .sort();
+        var earliest = allDataKeys.length > 0 ? allDataKeys[0] : period.start;
+        var atStart  = period.start <= earliest;
+
+        ['ap-sb-prev', 'ap-strip-prev'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.disabled = atStart;
+        });
+    }
+
+    function _periodLabel(period) {
+        if (!period) return '';
+        var s = period.start.split('-');
+        var e = period.end.split('-');
+        var sLabel = MONTHS[parseInt(s[1],10)-1].slice(0,3) + ' ' + s[0];
+        var eLabel = MONTHS[parseInt(e[1],10)-1].slice(0,3) + ' ' + e[0];
+        if (period.start === period.end) return sLabel;
+        return sLabel + ' – ' + eLabel;
+    }
+
+
+    // ─── NAVIGATION ───────────────────────────────────────────────────────────────
+
+    /**
+     * analyticsPeriodPrev()
+     * Shifts the period window one month earlier.
+     */
+    function analyticsPeriodPrev() {
+        var period = AppState.analyticsPeriod || _buildDefaultPeriod();
+        var span   = _periodSpanMonths(period);
+
+        var startParts = period.start.split('-');
+        var y = parseInt(startParts[0], 10);
+        var m = parseInt(startParts[1], 10);
+        m -= span;
+        while (m < 1) { m += 12; y--; }
+
+        var newStart = _mkKey(y, m);
+        var endParts = period.end.split('-');
+        var ey = parseInt(endParts[0], 10);
+        var em = parseInt(endParts[1], 10);
+        em -= span;
+        while (em < 1) { em += 12; ey--; }
+        var newEnd = _mkKey(ey, em);
+
+        AppState.analyticsPeriod = { start: newStart, end: newEnd, preset: 'custom' };
+        _onPeriodChange();
+    }
+
+    /**
+     * analyticsPeriodNext()
+     * Shifts the period window one month forward.
+     */
+    function analyticsPeriodNext() {
+        var period = AppState.analyticsPeriod || _buildDefaultPeriod();
+        var today  = new Date();
+        var todayKey = _mkKey(today.getFullYear(), today.getMonth() + 1);
+
+        if (period.end >= todayKey) return; // already at current month
+
+        var span   = _periodSpanMonths(period);
+
+        var endParts = period.end.split('-');
+        var ey = parseInt(endParts[0], 10);
+        var em = parseInt(endParts[1], 10);
+        em += span;
+        while (em > 12) { em -= 12; ey++; }
+        var newEnd = _mkKey(ey, em);
+        if (newEnd > todayKey) newEnd = todayKey;
+
+        var startParts = period.start.split('-');
+        var sy = parseInt(startParts[0], 10);
+        var sm = parseInt(startParts[1], 10);
+        sm += span;
+        while (sm > 12) { sm -= 12; sy++; }
+        var newStart = _mkKey(sy, sm);
+
+        AppState.analyticsPeriod = { start: newStart, end: newEnd, preset: 'custom' };
+        _onPeriodChange();
+    }
+
+    /**
+     * applyPeriodPreset(preset)
+     * Called from the preset <select> onchange.
+     */
+    function applyPeriodPreset(preset) {
+        if (preset === 'custom') {
+            openCustomPeriodModal();
+            return;
+        }
+
+        var today  = new Date();
+        var endY   = today.getFullYear();
+        var endM   = today.getMonth() + 1;
+        var end    = _mkKey(endY, endM);
+        var startY = endY, startM = endM;
+        var allDataKeys;
+
+        if (preset === '3m') {
+            startM -= 2;
+        } else if (preset === '6m') {
+            startM -= 5;
+        } else if (preset === '12m') {
+            startM -= 11;
+        } else if (preset === 'all') {
+            allDataKeys = Object.keys(AppState.transactions || {})
+                .filter(function(k) { var txs = AppState.transactions[k]; return Array.isArray(txs) && txs.length > 0; })
+                .sort();
+            if (allDataKeys.length > 0) {
+                var earliest = allDataKeys[0].split('-');
+                startY = parseInt(earliest[0], 10);
+                startM = parseInt(earliest[1], 10);
+            } else {
+                startM -= 5; // fallback to 6M if no data
+            }
+        }
+
+        while (startM < 1) { startM += 12; startY--; }
+        var start = _mkKey(startY, startM);
+
+        AppState.analyticsPeriod = { start: start, end: end, preset: preset };
+        _onPeriodChange();
+    }
+
+    function _periodSpanMonths(period) {
+        var s = period.start.split('-');
+        var e = period.end.split('-');
+        var sy = parseInt(s[0], 10), sm = parseInt(s[1], 10);
+        var ey = parseInt(e[0], 10), em = parseInt(e[1], 10);
+        return Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
+    }
+
+
+    // ─── CUSTOM RANGE MODAL ───────────────────────────────────────────────────────
+
+    function openCustomPeriodModal() {
+        var period = AppState.analyticsPeriod || _buildDefaultPeriod();
+        var startEl = document.getElementById('ap-custom-start');
+        var endEl   = document.getElementById('ap-custom-end');
+        var errEl   = document.getElementById('ap-custom-error');
+
+        if (startEl) startEl.value = period.start;
+        if (endEl)   endEl.value   = period.end;
+        if (errEl)   { errEl.textContent = ''; errEl.style.display = 'none'; }
+
+        var modal = document.getElementById('ap-custom-modal');
+        if (modal) {
+            modal.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            setTimeout(function() { if (startEl) startEl.focus(); }, 200);
+        }
+    }
+
+    function closeCustomPeriodModal() {
+        var modal = document.getElementById('ap-custom-modal');
+        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    function applyCustomPeriod() {
+        var startEl = document.getElementById('ap-custom-start');
+        var endEl   = document.getElementById('ap-custom-end');
+        var errEl   = document.getElementById('ap-custom-error');
+
+        var start = startEl ? startEl.value : '';
+        var end   = endEl   ? endEl.value   : '';
+
+        if (!start || !end) {
+            _showCustomError('Please select both a start and end month.');
+            return;
+        }
+
+        if (start > end) {
+            _showCustomError('Start month must be before or equal to end month.');
+            return;
+        }
+
+        var today    = new Date();
+        var todayKey = _mkKey(today.getFullYear(), today.getMonth() + 1);
+        if (end > todayKey) {
+            end = todayKey;
+        }
+
+        AppState.analyticsPeriod = { start: start, end: end, preset: 'custom' };
+        closeCustomPeriodModal();
+        _onPeriodChange();
+    }
+
+    function _showCustomError(msg) {
+        var errEl = document.getElementById('ap-custom-error');
+        if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+    }
+
+
+    // ─── PERIOD CHANGE HANDLER ────────────────────────────────────────────────────
+
+    /**
+     * _onPeriodChange()
+     * Called after any period mutation.
+     * Updates UI then re-renders the active analytics screen.
+     */
+    function _onPeriodChange() {
+        updateAnalyticsPeriodUI();
+
+        var activeTab = AppState.activeTab || '';
+        if (ANALYTICS_TABS.indexOf(activeTab) !== -1) {
+            // Re-render the active analytics screen with the new period
+            var renderMap = {
+                'spending': function() { if (typeof renderSpending === 'function') renderSpending(); },
+                'trends':   function() { if (typeof renderTrends   === 'function') renderTrends();   },
+                'insights': function() { if (typeof renderInsights === 'function') renderInsights(); },
+                'report':   function() { if (typeof renderReport   === 'function') renderReport();   }
+            };
+            if (renderMap[activeTab]) {
+                setTimeout(renderMap[activeTab], activeTab === 'trends' ? 50 : 0);
+            }
+        }
+    }
+
+
+    // ─── HOOK INTO switchTab ──────────────────────────────────────────────────────
+    // Show/hide the period picker when switching tabs.
+    // We patch switchTab after all screens load via DOMContentLoaded.
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var _origSwitchTab = (typeof switchTab === 'function') ? switchTab : null;
+        if (_origSwitchTab) {
+            window.switchTab = function(tabId) {
+                _origSwitchTab(tabId);
+                // Update picker visibility after tab switch
+                setTimeout(updateAnalyticsPeriodUI, 0);
+            };
+        }
+    });
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _mkKey(y, m) {
+        return y + '-' + (m < 10 ? '0' : '') + m;
+    }
+
+    // Close custom modal on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeCustomPeriodModal();
+    });
+
+</script>

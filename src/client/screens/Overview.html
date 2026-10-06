@@ -1,151 +1,1312 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
      Overview.html — Main Dashboard Screen
 
-     TAB: Overview (default / first tab)
+     CHANGES (savings redesign):
+       - Add transaction form (modal + sheet) now shows a goal selector when
+         the user picks "Savings deposit" as the transaction type.
+       - When type = savings, the category selector is hidden and replaced by
+         a goal dropdown populated from AppState.savingsGoals.
+       - On submit with type = savings, the request routes through
+         topUpSavingsGoal() instead of addTransaction() directly.
+         This ensures the goal's saved_amount is updated, the cap is enforced,
+         and a SavingsHistory row is written — all in one server call.
+       - If no savings goals exist when the user picks savings type, a nudge
+         message directs them to the Savings tab to create one first.
+       - All other behaviour (income, expense, CSV, pagination, etc.) unchanged.
 
-     SECTIONS:
-       1. Summary metrics row (Income / Expenses / Saved / Remaining)
-       2. Bills alert (upcoming bills inline on this tab — in addition to AlertBanner)
-       3. Transaction list (reverse-chronological, current month)
-       4. Add Transaction form
-       5. Import CSV control
-
-     SERVER CALLS:
-       addTransaction(monthKey, name, amount, type, category, note) → add new tx
-       deleteTransaction(id) → remove a tx
+     PREVIOUS SAVINGS ISSUES FIXED:
+       - Users no longer need to remember category names to credit a goal
+       - Savings deposits cannot be added without linking to a specific goal
+       - The server enforces the cap; the client shows the max in the label
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane active" id="pane-overview">
 
-    <!-- ── 1. Summary Metric Cards ─────────────────────────────────────────── -->
-    <!-- TODO: .row4 grid containing 4 metric cards:
-         - Income    id="ov-inc"  color var(--acc)
-         - Expenses  id="ov-exp"  color var(--red)
-         - Saved     id="ov-sav"  color var(--blue)
-         - Remaining id="ov-rem"  color var(--acc) or var(--red) based on sign
-         All values are updated by renderOverview() from AppState
-    -->
+    <!-- ── 1. Summary Metric Cards ──────────────────────────────────────────── -->
     <div class="row4">
-        <div class="metric"><div class="lbl">Income</div><div class="val" id="ov-inc"></div></div>
-        <div class="metric"><div class="lbl">Expenses</div><div class="val" id="ov-exp"></div></div>
-        <div class="metric"><div class="lbl">Saved</div><div class="val" id="ov-sav"></div></div>
-        <div class="metric"><div class="lbl">Remaining</div><div class="val" id="ov-rem"></div></div>
+        <div class="metric">
+            <div class="lbl">Income</div>
+            <div class="val" id="ov-inc" style="color:var(--acc);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Expenses</div>
+            <div class="val" id="ov-exp" style="color:var(--red);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Saved</div>
+            <div class="val" id="ov-sav" style="color:var(--blue);">—</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">Remaining</div>
+            <div class="val" id="ov-rem">—</div>
+        </div>
     </div>
 
-    <!-- ── 2. Transaction List ─────────────────────────────────────────────── -->
-    <!-- TODO: Section heading "Transactions" using .sec class -->
-    <!-- TODO: Container id="tx-list" — innerHTML set by renderOverview()
+    <!-- ── No-income banner ─────────────────────────────────────────────────── -->
+    <div id="ov-no-income-banner" style="display:none;margin-bottom:1rem;">
+        <div style="background:rgba(186,117,23,0.08);border:0.5px solid rgba(186,117,23,0.3);
+                    border-radius:var(--radius);padding:10px 14px;font-size:13px;line-height:1.5;
+                    display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:16px;flex-shrink:0;line-height:1.4;">💡</span>
+            <span style="color:var(--text);">
+                <strong style="color:var(--amber);">No income recorded yet for this month.</strong>
+                Add your salary or other income first — it helps your budget limits and forecasts
+                reflect reality.
+                <button onclick="_dismissNoIncomeBanner()" style="background:none;border:none;
+                        cursor:pointer;color:var(--text2);font-size:11px;margin-left:8px;
+                        text-decoration:underline;padding:0;font-family:var(--font);">Dismiss</button>
+            </span>
+        </div>
+    </div>
 
-         Empty state: if no transactions, show centred text "No transactions this month"
+    <!-- ── 2. Section header ────────────────────────────────────────────────── -->
+    <div class="ov-section-hdr">
+        <span class="sec" style="margin:0;">Transactions</span>
+        <button id="btn-open-add-tx"
+                class="btn-add-tx-trigger"
+                onclick="openAddTxModal()"
+                title="Add transaction">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Add
+        </button>
+    </div>
 
-         Populated state: for each transaction (reverse order — newest first):
-           <div class="tx-row">
-             LEFT:
-               - .tx-dot coloured circle (background: getCategoryColor(tx.category))
-               - tx.name as .tx-name
-               - tx.note rendered as .tx-tag if non-empty (e.g. "#groceries")
-               - tx.category as .tx-cat below the name
-             RIGHT:
-               - Amount as .tx-amount:
-                   income  → '+' prefix, color var(--acc)
-                   savings → '-' prefix, color var(--blue)
-                   expense → '-' prefix, color var(--red)
-               - × delete button: onclick="deleteTx(tx.id)" — .tx-delete
-           </div>
-    -->
-    <div class="sec">Transactions</div>
+    <!-- ── 3. Transaction list ───────────────────────────────────────────────── -->
     <div id="tx-list"></div>
 
-    <!-- ── 3. Add Transaction Form ─────────────────────────────────────────── -->
-    <!-- TODO: Section heading "Add Transaction" -->
-    <!-- TODO: .row2 grid:
-         Row 1: Description input (id="tx-name") | Amount input (id="tx-amt", type=number)
-         Row 2: Category select (id="tx-cat")    | Type select (id="tx-type")
-                  Type options: expense / income / savings deposit
-    -->
-    <!-- TODO: Note input full-width (id="tx-note", placeholder "Note / tag (optional)") -->
-    <!-- TODO: "Add Transaction" .btn-primary full-width onclick="addTx()" -->
-    <div class="sec">Add Transaction</div>
-    <div class="row2">
-        <input id="tx-name" placeholder="Description" class="inp"/>
-        <input id="tx-amt" placeholder="Amount" type="number" class="inp"/>
-        <select id="tx-cat" class="inp"><!-- populated by populateCategorySelects() --></select>
-        <select id="tx-type" class="inp">
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-            <option value="savings">Savings deposit</option>
-        </select>
-    </div>
-    <input id="tx-note" placeholder="Note / tag (optional)" class="inp" style="margin-bottom: 8px;"/>
-    <button onclick="addTx()" class="btn-primary" style="width: 100%;">Add Transaction</button>
-
-    <!-- ── 4. Import CSV ──────────────────────────────────────────────────── -->
-    <!-- TODO: Label styled as .btn-sm wrapping a hidden file input
-         <label class="btn-sm">
-           Import CSV
-           <input type="file" accept=".csv" onchange="importCSV(event)" style="display:none;"/>
-         </label>
-         margin-top 10px
-    -->
-    <div style="margin-top: 10px;">
-        <label class="btn-sm" style="cursor: pointer;">
-            Import CSV
-            <input type="file" accept=".csv" onchange="importCSV(event)" style="display: none;"/>
-        </label>
-    </div>
+    <!-- ── 4. Pagination ─────────────────────────────────────────────────────── -->
+    <div id="tx-pagination"></div>
 
 </div>
 
+
+<!-- ══ DESKTOP MODAL ══════════════════════════════════════════════════════ -->
+<div id="add-tx-modal" role="dialog" aria-modal="true" aria-label="Add Transaction">
+    <div id="add-tx-modal-backdrop" onclick="closeAddTxModal()"></div>
+    <div id="add-tx-modal-panel">
+
+        <div class="atx-modal-header">
+            <span class="atx-modal-title">Add Transaction</span>
+            <button class="atx-modal-close" onclick="closeAddTxModal()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="atx-modal-body">
+            <div class="row2" style="margin-bottom:8px;">
+                <input  id="tx-name-d" placeholder="Description" class="inp"/>
+                <input  id="tx-amt-d"  placeholder="Amount"      class="inp amt-input"
+                        type="text" inputmode="numeric"/>
+                <!-- Type select — drives category/goal selector visibility -->
+                <select id="tx-type-d" class="inp"
+                        onchange="_onTxTypeChange('d')">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                    <option value="savings">Savings deposit</option>
+                </select>
+                <!-- Category selector — visible for income + expense -->
+                <select id="tx-cat-d" class="inp"></select>
+                <!-- Goal selector — visible for savings only -->
+                <select id="tx-goal-d" class="inp" style="display:none;"></select>
+            </div>
+
+            <!-- Savings nudge — shown when savings selected but no goals exist -->
+            <div id="tx-savings-nudge-d" style="display:none;margin-bottom:10px;">
+                <div style="background:rgba(24,95,165,0.08);border:0.5px solid rgba(24,95,165,0.25);
+                            border-radius:var(--radius);padding:10px 14px;font-size:13px;line-height:1.5;">
+                    💡 You don't have any savings goals yet.
+                    <button onclick="switchTabSidebar('savings');closeAddTxModal();"
+                            style="background:none;border:none;cursor:pointer;color:var(--acc);
+                                   font-size:13px;font-weight:600;padding:0;font-family:var(--font);
+                                   text-decoration:underline;margin-left:4px;">
+                        Create a goal first →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Max deposit hint — shown when a goal is selected -->
+            <div id="tx-savings-max-d" style="display:none;margin-bottom:8px;">
+                <div style="font-size:12px;color:var(--text2);"></div>
+            </div>
+
+            <input id="tx-note-d" placeholder="Note / tag (optional)"
+                   class="inp" style="margin-bottom:14px;"/>
+            <button id="btn-add-tx-d" onclick="addTxFromModal()"
+                    class="btn-primary" style="width:100%;margin-bottom:10px;">
+                <span class="btn-label">Add Transaction</span>
+                <span class="btn-spinner"></span>
+            </button>
+            <div style="text-align:center;">
+                <label class="btn-sm" style="cursor:pointer;display:inline-block;">
+                    Import CSV instead
+                    <input type="file" accept=".csv" onchange="importCSV(event);closeAddTxModal();"
+                           style="display:none;"/>
+                </label>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+
+<!-- ══ MOBILE FAB ══════════════════════════════════════════════════════════ -->
+<button id="fab-add-tx"
+        onclick="openAddTxSheet()"
+        aria-label="Add transaction"
+        title="Add transaction">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+    </svg>
+</button>
+
+
+<!-- ══ MOBILE BOTTOM SHEET ════════════════════════════════════════════════ -->
+<div id="add-tx-sheet">
+    <div id="add-tx-sheet-backdrop" onclick="closeAddTxSheet()"></div>
+    <div id="add-tx-sheet-panel">
+        <div id="add-tx-sheet-handle"></div>
+
+        <div class="atx-modal-title" style="margin-bottom:1.25rem;">
+            Add Transaction
+        </div>
+
+        <div class="row2" style="margin-bottom:8px;">
+            <input  id="tx-name-m" placeholder="Description" class="inp"/>
+            <input  id="tx-amt-m"  placeholder="Amount"      class="inp amt-input"
+                    type="text" inputmode="numeric"/>
+            <select id="tx-type-m" class="inp"
+                    onchange="_onTxTypeChange('m')">
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+                <option value="savings">Savings deposit</option>
+            </select>
+            <!-- Category selector -->
+            <select id="tx-cat-m" class="inp"></select>
+            <!-- Goal selector -->
+            <select id="tx-goal-m" class="inp" style="display:none;"></select>
+        </div>
+
+        <!-- Savings nudge (mobile) -->
+        <div id="tx-savings-nudge-m" style="display:none;margin-bottom:10px;">
+            <div style="background:rgba(24,95,165,0.08);border:0.5px solid rgba(24,95,165,0.25);
+                        border-radius:var(--radius);padding:10px 14px;font-size:13px;line-height:1.5;">
+                💡 No savings goals yet.
+                <button onclick="switchTabMobile('savings');closeAddTxSheet();"
+                        style="background:none;border:none;cursor:pointer;color:var(--acc);
+                               font-size:13px;font-weight:600;padding:0;font-family:var(--font);
+                               text-decoration:underline;margin-left:4px;">
+                    Create one first →
+                </button>
+            </div>
+        </div>
+
+        <!-- Max deposit hint (mobile) -->
+        <div id="tx-savings-max-m" style="display:none;margin-bottom:8px;">
+            <div style="font-size:12px;color:var(--text2);"></div>
+        </div>
+
+        <input id="tx-note-m" placeholder="Note / tag (optional)"
+               class="inp" style="margin-bottom:12px;"/>
+        <button id="btn-add-tx-m" onclick="addTxFromSheet()"
+                class="btn-primary" style="width:100%;margin-bottom:10px;">
+            <span class="btn-label">Add Transaction</span>
+            <span class="btn-spinner"></span>
+        </button>
+        <div style="text-align:center;">
+            <label class="btn-sm" style="cursor:pointer;display:inline-block;">
+                Import CSV instead
+                <input type="file" accept=".csv"
+                       onchange="importCSV(event);closeAddTxSheet();"
+                       style="display:none;"/>
+            </label>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ NO-GOAL INTERRUPTION MODAL (desktop ≥ 601px) ══════════════════════ -->
+<div id="no-goal-modal" role="dialog" aria-modal="true" aria-label="Set Spending Limit">
+    <div id="no-goal-modal-backdrop" onclick="_noGoalCancel()"></div>
+    <div id="no-goal-modal-panel">
+        <div class="atx-modal-header" style="border-bottom:0.5px solid var(--border);">
+            <div>
+                <div class="atx-modal-title">No Spending Limit Set</div>
+                <div style="font-size:12px;color:var(--text2);margin-top:2px;">
+                    Set one first, then continue with your transaction.
+                </div>
+            </div>
+            <button class="atx-modal-close" onclick="_noGoalCancel()" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="atx-modal-body">
+            <div id="ng-pending-summary" style="
+                background:var(--bg2);border:0.5px solid var(--border);
+                border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;
+                font-size:13px;line-height:1.5;"></div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px;">
+                You're about to record an expense under
+                <strong id="ng-cat-display" style="color:var(--text);"></strong>,
+                but there's no spending limit for this category in
+                <strong id="ng-month-display" style="color:var(--text);"></strong>.
+                A limit lets you track how much of your budget you've used.
+            </div>
+            <div style="margin-bottom:6px;">
+                <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                               text-transform:uppercase;color:var(--text2);
+                               display:block;margin-bottom:5px;">Monthly Limit for
+                    <span id="ng-cat-label"></span>
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                    <div style="flex:1;background:var(--bg2);border:0.5px solid var(--border);
+                                border-radius:var(--radius);padding:9px 11px;font-size:13px;
+                                color:var(--text2);display:flex;align-items:center;gap:8px;">
+                        <span id="ng-cat-dot" style="width:8px;height:8px;border-radius:50%;
+                               flex-shrink:0;display:inline-block;"></span>
+                        <span id="ng-cat-locked"></span>
+                        <span style="font-size:10px;margin-left:auto;
+                                     background:var(--border);border-radius:3px;
+                                     padding:1px 5px;color:var(--text2);">locked</span>
+                    </div>
+                </div>
+                <input id="ng-limit-input" class="inp amt-input" type="text"
+                       inputmode="numeric" placeholder="Enter monthly limit (e.g. 50,000)"
+                       style="margin-bottom:4px;"/>
+                <div style="font-size:11px;color:var(--text2);">
+                    This limit applies only to <span id="ng-month-hint"></span>.
+                </div>
+            </div>
+            <button id="btn-ng-save" onclick="_noGoalSaveAndContinue()"
+                    class="btn-primary" style="width:100%;margin-top:14px;margin-bottom:10px;">
+                <span class="btn-label">Add Limit &amp; Continue</span>
+                <span class="btn-spinner"></span>
+            </button>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <button onclick="_noGoalCancel()"
+                        style="background:none;border:none;cursor:pointer;
+                               font-size:12px;color:var(--text2);font-family:var(--font);
+                               padding:4px 0;">Cancel</button>
+                <button onclick="_noGoalSkipAndSave()"
+                        style="background:none;border:none;cursor:pointer;
+                               font-size:12px;color:var(--text2);font-family:var(--font);
+                               padding:4px 0;text-decoration:underline;"
+                        title="Save without setting a spending limit">
+                    Skip &amp; save anyway</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ NO-GOAL INTERRUPTION SHEET (mobile ≤ 600px) ═══════════════════════ -->
+<div id="no-goal-sheet">
+    <div id="no-goal-sheet-backdrop" onclick="_noGoalCancel()"></div>
+    <div id="no-goal-sheet-panel">
+        <div id="no-goal-sheet-handle"></div>
+        <div class="atx-modal-title" style="margin-bottom:3px;">No Spending Limit Set</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">
+            Set one first, then continue with your transaction.
+        </div>
+        <div id="ng-pending-summary-m" style="
+            background:var(--bg2);border:0.5px solid var(--border);
+            border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;
+            font-size:13px;line-height:1.5;"></div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
+            No spending limit for
+            <strong id="ng-cat-display-m" style="color:var(--text);"></strong>
+            in <strong id="ng-month-display-m" style="color:var(--text);"></strong>.
+        </div>
+        <label style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                       text-transform:uppercase;color:var(--text2);
+                       display:block;margin-bottom:5px;">Monthly Limit for
+            <span id="ng-cat-label-m"></span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <div style="flex:1;background:var(--bg2);border:0.5px solid var(--border);
+                        border-radius:var(--radius);padding:9px 11px;font-size:13px;
+                        color:var(--text2);display:flex;align-items:center;gap:8px;">
+                <span id="ng-cat-dot-m" style="width:8px;height:8px;border-radius:50%;
+                       flex-shrink:0;display:inline-block;"></span>
+                <span id="ng-cat-locked-m"></span>
+                <span style="font-size:10px;margin-left:auto;background:var(--border);
+                             border-radius:3px;padding:1px 5px;color:var(--text2);">locked</span>
+            </div>
+        </div>
+        <input id="ng-limit-input-m" class="inp amt-input" type="text"
+               inputmode="numeric" placeholder="Enter monthly limit (e.g. 50,000)"
+               style="margin-bottom:4px;"/>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:14px;">
+            Applies only to <span id="ng-month-hint-m"></span>.
+        </div>
+        <button id="btn-ng-save-m" onclick="_noGoalSaveAndContinue()"
+                class="btn-primary" style="width:100%;margin-bottom:10px;">
+            <span class="btn-label">Add Limit &amp; Continue</span>
+            <span class="btn-spinner"></span>
+        </button>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <button onclick="_noGoalCancel()"
+                    style="background:none;border:none;cursor:pointer;
+                           font-size:12px;color:var(--text2);font-family:var(--font);
+                           padding:4px 0;">Cancel</button>
+            <button onclick="_noGoalSkipAndSave()"
+                    style="background:none;border:none;cursor:pointer;
+                           font-size:12px;color:var(--text2);font-family:var(--font);
+                           padding:4px 0;text-decoration:underline;">
+                Skip &amp; save anyway</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ CONFIRM-TRANSACTION MODAL (desktop ≥ 601px) ═══════════════════════ -->
+<div id="confirm-tx-modal" role="dialog" aria-modal="true" aria-label="Confirm Transaction">
+    <div id="confirm-tx-modal-backdrop" onclick="_confirmTxDecline()"></div>
+    <div id="confirm-tx-modal-panel">
+        <div style="text-align:center;padding:20px 20px 0;">
+            <div style="width:48px;height:48px;border-radius:50%;background:rgba(29,158,117,0.12);
+                        display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                     stroke="var(--acc)" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">
+                Spending limit saved!
+            </div>
+            <div id="ctm-limit-confirmation"
+                 style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:20px;"></div>
+        </div>
+        <div style="margin:0 20px 16px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                        text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
+                Your pending transaction
+            </div>
+            <div id="ctm-tx-recap" style="
+                background:var(--bg2);border:0.5px solid var(--border);
+                border-radius:var(--radius);padding:12px 14px;font-size:13px;
+                line-height:1.6;"></div>
+        </div>
+        <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;">
+            <button id="btn-ctm-yes" onclick="_confirmTxProceed()"
+                    class="btn-primary" style="width:100%;">
+                <span class="btn-label">Yes, Add Transaction</span>
+                <span class="btn-spinner"></span>
+            </button>
+            <button onclick="_confirmTxDecline()" class="btn-sm"
+                    style="width:100%;text-align:center;">
+                No, cancel the transaction
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ══ CONFIRM-TRANSACTION SHEET (mobile ≤ 600px) ════════════════════════ -->
+<div id="confirm-tx-sheet">
+    <div id="confirm-tx-sheet-backdrop" onclick="_confirmTxDecline()"></div>
+    <div id="confirm-tx-sheet-panel">
+        <div id="confirm-tx-sheet-handle"></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+            <div style="width:40px;height:40px;border-radius:50%;background:rgba(29,158,117,0.12);
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="var(--acc)" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div>
+                <div style="font-size:14px;font-weight:600;color:var(--text);">
+                    Spending limit saved!
+                </div>
+                <div id="ctm-limit-confirmation-m"
+                     style="font-size:12px;color:var(--text2);line-height:1.4;margin-top:2px;"></div>
+            </div>
+        </div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;
+                    text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
+            Your pending transaction
+        </div>
+        <div id="ctm-tx-recap-m" style="
+            background:var(--bg2);border:0.5px solid var(--border);
+            border-radius:var(--radius);padding:12px 14px;font-size:13px;
+            line-height:1.6;margin-bottom:16px;"></div>
+        <button id="btn-ctm-yes-m" onclick="_confirmTxProceed()"
+                class="btn-primary" style="width:100%;margin-bottom:10px;">
+            <span class="btn-label">Yes, Add Transaction</span>
+            <span class="btn-spinner"></span>
+        </button>
+        <button onclick="_confirmTxDecline()" class="btn-sm"
+                style="width:100%;text-align:center;">
+            No, cancel the transaction
+        </button>
+    </div>
+</div>
+
+
+<!-- ══ SCOPED STYLES ══════════════════════════════════════════════════════ -->
+<style>
+    .ov-section-hdr {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 1.25rem 0 10px;
+    }
+    .btn-add-tx-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--text);
+        color: var(--bg);
+        border: none;
+        border-radius: 20px;
+        padding: 5px 12px 5px 8px;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .btn-add-tx-trigger:hover { opacity: 0.78; }
+    .btn-add-tx-trigger svg { width: 14px; height: 14px; flex-shrink: 0; }
+    @media (max-width: 600px) { #btn-open-add-tx { display: none; } }
+
+    #tx-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 0 2px;
+    }
+    #tx-pagination:empty { display: none; }
+
+    .pg-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--bg2);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 6px 13px;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text2);
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s;
+        white-space: nowrap;
+    }
+    .pg-btn:hover:not(:disabled) { background: var(--border); color: var(--text); }
+    .pg-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .pg-btn svg {
+        width: 13px; height: 13px;
+        stroke: currentColor; fill: none;
+        stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+        flex-shrink: 0;
+    }
+    .pg-label { font-size: 12px; font-weight: 500; color: var(--text2); white-space: nowrap; }
+
+    #add-tx-modal, #no-goal-modal, #confirm-tx-modal {
+        display: none;
+        position: fixed; inset: 0;
+        z-index: 400;
+        align-items: center; justify-content: center;
+        padding: 1rem;
+    }
+    #add-tx-modal.open, #no-goal-modal.open, #confirm-tx-modal.open { display: flex; }
+    #add-tx-modal-backdrop, #no-goal-modal-backdrop, #confirm-tx-modal-backdrop {
+        position: absolute; inset: 0;
+        background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    }
+    #add-tx-modal-panel, #no-goal-modal-panel, #confirm-tx-modal-panel {
+        position: relative;
+        background: var(--bg);
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius-lg);
+        width: 100%; max-width: 440px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        animation: atxModalIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+        overflow: hidden;
+    }
+    @keyframes atxModalIn {
+        from { opacity:0; transform:translateY(10px) scale(0.97); }
+        to   { opacity:1; transform:translateY(0) scale(1); }
+    }
+    .atx-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 16px 18px 14px;
+        border-bottom: 0.5px solid var(--border);
+    }
+    .atx-modal-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .atx-modal-close {
+        display: flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px;
+        background: var(--bg2); border: none; border-radius: 50%;
+        cursor: pointer; color: var(--text2); padding: 0;
+        transition: background 0.12s, color 0.12s; flex-shrink: 0;
+    }
+    .atx-modal-close:hover { background: var(--border); color: var(--text); }
+    .atx-modal-close svg { width: 14px; height: 14px; }
+    .atx-modal-body { padding: 16px 18px 20px; }
+    @media (max-width: 600px) {
+        #add-tx-modal, #no-goal-modal, #confirm-tx-modal { display: none !important; }
+    }
+
+    #fab-add-tx {
+        display: none;
+        position: fixed;
+        bottom: calc(72px + max(12px, env(safe-area-inset-bottom)));
+        right: 20px;
+        z-index: 190;
+        width: 52px; height: 52px;
+        border-radius: 50%;
+        background: var(--text); color: var(--bg);
+        border: none; cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+        align-items: center; justify-content: center;
+        transition: transform 0.15s, box-shadow 0.15s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    #fab-add-tx svg { width: 22px; height: 22px; }
+    #fab-add-tx:active { transform: scale(0.93); }
+    @media (max-width: 600px) { #fab-add-tx.fab-visible { display: flex; } }
+    @media (min-width: 601px) { #fab-add-tx { display: none !important; } }
+
+    #add-tx-sheet, #no-goal-sheet, #confirm-tx-sheet {
+        display: none; position: fixed; inset: 0; z-index: 350;
+    }
+    #add-tx-sheet.open, #no-goal-sheet.open, #confirm-tx-sheet.open { display: block; }
+    #add-tx-sheet-backdrop, #no-goal-sheet-backdrop, #confirm-tx-sheet-backdrop {
+        position: absolute; inset: 0; background: rgba(0,0,0,0.4);
+    }
+    #add-tx-sheet-panel, #no-goal-sheet-panel, #confirm-tx-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 20px max(28px, env(safe-area-inset-bottom));
+        max-height: 92vh; overflow-y: auto;
+        animation: atxSheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    @keyframes atxSheetUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+    }
+    #add-tx-sheet-handle, #no-goal-sheet-handle, #confirm-tx-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2); border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+    #no-goal-sheet    { z-index: 360; }
+    #confirm-tx-sheet { z-index: 370; }
+    @media (min-width: 601px) {
+        #add-tx-sheet, #no-goal-sheet, #confirm-tx-sheet { display: none !important; }
+    }
+</style>
+
+
+<!-- ══ OVERVIEW JAVASCRIPT ════════════════════════════════════════════════ -->
 <script>
-    /**
-     * renderOverview()
-     *
-     * TODO: Called from renderAll() when the Overview tab is active.
-     *
-     * TODO: 1. Get current month stats via getMonthStats(curKey())
-     * TODO: 2. Update metric card values:
-     *            #ov-inc → fmt(stats.inc)
-     *            #ov-exp → fmt(stats.exp)
-     *            #ov-sav → fmt(stats.sav)
-     *            #ov-rem → fmt(stats.bal) — colour green/red based on sign
-     * TODO: 3. Rebuild #tx-list innerHTML from curTxs() (reversed)
-     *            Each row uses the structure described in the HTML comments above
-     * TODO: 4. Populate category selects via populateCategorySelects()
-     */
+
+    var TX_PAGE_SIZE = 10;
+
+    if (typeof AppState !== 'undefined') {
+        if (AppState.txPage   === undefined) AppState.txPage   = 1;
+        if (AppState._txPgKey === undefined) AppState._txPgKey = null;
+    }
+
+    var _noIncomeBannerDismissed = false;
+
+
+    // ─── RENDER ──────────────────────────────────────────────────────────────────
+
     function renderOverview() {
-        // TODO: Implement
+        _syncMetrics();
+        _renderTxPage();
+        _updateFabVisibility();
+        _checkNoIncomeBanner();
+    }
+
+    function _syncMetrics() {
+        var s = getMonthStats(curKey());
+        var upd = function(id, val, col) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = val;
+            if (col) el.style.color = col;
+        };
+        upd('ov-inc', fmt(s.inc), 'var(--acc)');
+        upd('ov-exp', fmt(s.exp), 'var(--red)');
+        upd('ov-sav', fmt(s.sav), 'var(--blue)');
+        upd('ov-rem', fmt(s.bal), s.bal >= 0 ? 'var(--acc)' : 'var(--red)');
+    }
+
+    function _checkNoIncomeBanner() {
+        var bannerEl = document.getElementById('ov-no-income-banner');
+        if (!bannerEl) return;
+        if (_noIncomeBannerDismissed) { bannerEl.style.display = 'none'; return; }
+        var s = getMonthStats(curKey());
+        bannerEl.style.display = s.inc === 0 ? 'block' : 'none';
+    }
+
+    function _dismissNoIncomeBanner() {
+        _noIncomeBannerDismissed = true;
+        var el = document.getElementById('ov-no-income-banner');
+        if (el) el.style.display = 'none';
+    }
+
+    function _renderTxPage() {
+        var listEl = document.getElementById('tx-list');
+        var pgEl   = document.getElementById('tx-pagination');
+        if (!listEl) return;
+
+        var key = curKey();
+        if (AppState._txPgKey !== key) {
+            AppState.txPage   = 1;
+            AppState._txPgKey = key;
+        }
+
+        var txs   = curTxs().slice().reverse();
+        var total = txs.length;
+        var pages = Math.max(1, Math.ceil(total / TX_PAGE_SIZE));
+
+        AppState.txPage = Math.max(1, Math.min(AppState.txPage, pages));
+        var page  = AppState.txPage;
+        var start = (page - 1) * TX_PAGE_SIZE;
+
+        if (total === 0) {
+            listEl.innerHTML = (
+                '<div style="text-align:center;color:var(--text2);' +
+                'padding:2rem 0;font-size:13px;">No transactions this month.</div>'
+            );
+            if (pgEl) pgEl.innerHTML = '';
+            return;
+        }
+
+        var html = '';
+        txs.slice(start, start + TX_PAGE_SIZE).forEach(function(tx) {
+            var dot    = getCategoryColor(tx.category);
+            var prefix = tx.type === 'income' ? '+' : '\u2212';
+            var color  = tx.type === 'income'  ? 'var(--acc)'
+                : tx.type === 'savings' ? 'var(--blue)'
+                    :                         'var(--red)';
+            // Suppress raw 'auto' note — the AUTO badge replaces it visually
+            var noteText = (tx.note && tx.note !== 'auto') ? tx.note : '';
+            var tag      = noteText ? '<span class="tx-tag">' + _esc(noteText) + '</span>' : '';
+
+            // AUTO badge for recurring-applied transactions
+            var autoBadge = (typeof getAutoTransactionBadge === 'function')
+                ? getAutoTransactionBadge(tx) : '';
+
+            html += (
+                '<div class="tx-row">' +
+                '<div class="tx-left">' +
+                '<span class="tx-dot" style="background:' + dot + ';"></span>' +
+                '<div class="tx-meta">' +
+                '<div class="tx-name">' + _esc(tx.name) + autoBadge + tag + '</div>' +
+                '<div class="tx-cat">'  + _esc(tx.category) + '</div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="tx-right">' +
+                '<span class="tx-amount" style="color:' + color + ';">' +
+                prefix + fmt(tx.amount) +
+                '</span>' +
+                '<button class="tx-delete" ' +
+                'onclick="deleteTx(\'' + tx.id + '\',this)" ' +
+                'title="Delete">\xd7</button>' +
+                '</div>' +
+                '</div>'
+            );
+        });
+        listEl.innerHTML = html;
+
+        if (!pgEl) return;
+        if (pages <= 1) { pgEl.innerHTML = ''; return; }
+
+        pgEl.innerHTML = (
+            '<button class="pg-btn" onclick="txGoPage(' + (page-1) + ')"' +
+            (page <= 1 ? ' disabled' : '') + '>' +
+            '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Prev</button>' +
+            '<span class="pg-label">Page\u00a0' + page + '\u00a0of\u00a0' + pages + '</span>' +
+            '<button class="pg-btn" onclick="txGoPage(' + (page+1) + ')"' +
+            (page >= pages ? ' disabled' : '') + '>' +
+            'Next<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>'
+        );
+    }
+
+    function txGoPage(n) {
+        var pages = Math.max(1, Math.ceil(curTxs().length / TX_PAGE_SIZE));
+        AppState.txPage = Math.max(1, Math.min(n, pages));
+        _renderTxPage();
+        var el = document.getElementById('tx-list');
+        if (el) el.scrollIntoView({ behavior:'smooth', block:'nearest' });
     }
 
 
-    /**
-     * addTx()
-     *
-     * TODO: Read form values: name (tx-name), amount (tx-amt), type (tx-type),
-     *       category (tx-cat), note (tx-note)
-     * TODO: Validate: name and amount are required — show toast if missing
-     * TODO: Call server 'addTransaction' with curKey() + form values
-     * TODO: On success:
-     *         1. Push the returned tx into AppState.transactions[curKey()]
-     *         2. If type === 'savings', update the matching savings goal in AppState.savingsGoals
-     *         3. clearInputs('tx-name', 'tx-amt', 'tx-note')
-     *         4. renderAll()
-     *         5. showToast('Transaction added!', 'success')
-     */
-    async function addTx() {
-        // TODO: Implement
+    // ─── TYPE CHANGE HANDLER ──────────────────────────────────────────────────────
+    //
+    // Called from the type <select> onchange in both modal (suffix='d')
+    // and sheet (suffix='m'). Shows/hides the category vs goal selector
+    // and updates the savings nudge / max label.
+
+    function _onTxTypeChange(suffix) {
+        var typeEl = document.getElementById('tx-type-' + suffix);
+        if (!typeEl) return;
+        var type = typeEl.value;
+
+        var catEl      = document.getElementById('tx-cat-'           + suffix);
+        var goalEl     = document.getElementById('tx-goal-'          + suffix);
+        var nudgeEl    = document.getElementById('tx-savings-nudge-' + suffix);
+        var maxEl      = document.getElementById('tx-savings-max-'   + suffix);
+
+        if (type === 'savings') {
+            // Show goal selector, hide category
+            if (catEl)   catEl.style.display  = 'none';
+            if (goalEl)  goalEl.style.display  = '';
+
+            var goals = (AppState.savingsGoals || []).filter(function(g) {
+                return g.percent_complete < 100;
+            });
+
+            if (goals.length === 0) {
+                // No goals — show nudge, disable submit
+                if (nudgeEl) nudgeEl.style.display = 'block';
+                if (goalEl)  goalEl.style.display  = 'none';
+                if (maxEl)   maxEl.style.display   = 'none';
+            } else {
+                if (nudgeEl) nudgeEl.style.display = 'none';
+                // Populate goal dropdown
+                goalEl.innerHTML = '';
+                goals.forEach(function(g) {
+                    var remaining = Math.max(0, g.target_amount - g.saved_amount);
+                    var opt = document.createElement('option');
+                    opt.value = g.id;
+                    opt.textContent = g.name + ' (' + fmt(remaining) + ' remaining)';
+                    goalEl.appendChild(opt);
+                });
+                // Show max label for the first goal
+                _updateSavingsMaxLabel(suffix);
+                goalEl.onchange = function() { _updateSavingsMaxLabel(suffix); };
+            }
+        } else {
+            // Income or expense — show category, hide goal/nudge/max
+            if (catEl)   catEl.style.display  = '';
+            if (goalEl)  goalEl.style.display  = 'none';
+            if (nudgeEl) nudgeEl.style.display = 'none';
+            if (maxEl)   maxEl.style.display   = 'none';
+
+            // Re-fill category for the correct type
+            syncCategoryToType('tx-cat-' + suffix, 'tx-type-' + suffix);
+        }
+    }
+
+    function _updateSavingsMaxLabel(suffix) {
+        var goalEl = document.getElementById('tx-goal-' + suffix);
+        var maxEl  = document.getElementById('tx-savings-max-' + suffix);
+        if (!goalEl || !maxEl) return;
+
+        var goalId  = goalEl.value;
+        var goals   = AppState.savingsGoals || [];
+        var goal    = goals.find(function(g) { return g.id === goalId; });
+        if (!goal) { maxEl.style.display = 'none'; return; }
+
+        var remaining = Math.max(0, (parseFloat(goal.target_amount) || 0) - (parseFloat(goal.saved_amount) || 0));
+        var p = parseFloat(goal.percent_complete) || 0;
+
+        maxEl.style.display = 'block';
+        maxEl.innerHTML = (
+            '<div style="font-size:12px;color:var(--text2);padding:8px 10px;' +
+            'background:var(--bg2);border-radius:var(--radius);' +
+            'border:0.5px solid var(--border);">' +
+            '<strong style="color:var(--text);">' + goal.name + '</strong> · ' +
+            p + '% funded · ' +
+            '<span style="color:var(--blue);">' + fmt(remaining) + ' remaining</span>' +
+            '</div>'
+        );
     }
 
 
+    // ─── DELETE ───────────────────────────────────────────────────────────────────
+
+    async function deleteTx(txId, btnEl) {
+        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.35'; }
+        try {
+            await callServer('deleteTransaction', txId);
+            var key = curKey();
+            if (AppState.transactions[key]) {
+                AppState.transactions[key] = AppState.transactions[key]
+                    .filter(function(tx) { return tx.id !== txId; });
+            }
+            var remaining = (AppState.transactions[key] || []).length;
+            var pages = Math.max(1, Math.ceil(remaining / TX_PAGE_SIZE));
+            if (AppState.txPage > pages) AppState.txPage = pages;
+            renderAll();
+            showToast('Transaction removed.', 'info');
+        } catch(e) {
+            if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = ''; }
+        }
+    }
+
+
+    // ─── NO-GOAL-LIMIT INTERRUPTION (expense only) ────────────────────────────────
+
+    function _expenseNeedsGoalCheck(type, category) {
+        if (type !== 'expense') return false;
+        var goals = (AppState.goals && AppState.goals[curKey()]) || [];
+        return !goals.some(function(g) {
+            return g.category.toLowerCase() === String(category).toLowerCase();
+        });
+    }
+
+
+    // ─── SHARED SUBMIT HELPERS ────────────────────────────────────────────────────
+
+    function _validateTx(name, amtRaw, type) {
+        if (!name) { showToast('Please enter a description.', 'error'); return false; }
+        var cleaned = String(amtRaw || '').replace(/,/g, '');
+        var a = parseFloat(cleaned);
+        if (!cleaned || isNaN(a) || a <= 0) {
+            showToast('Please enter a valid amount greater than zero.', 'error'); return false;
+        }
+        if (!type) { showToast('Please select a transaction type.', 'error'); return false; }
+        return true;
+    }
+
     /**
-     * deleteTx(txId)
+     * _submitTx(name, amount, type, category, note, goalId)
      *
-     * TODO: Call server 'deleteTransaction' with the given transaction id
-     * TODO: On success:
-     *         1. Remove the tx from AppState.transactions[curKey()] by id
-     *         2. renderAll()
-     *         3. showToast('Transaction removed.', 'info')
+     * Routes the submission:
+     *   - type === 'savings' → callServer('topUpSavingsGoal', goalId, ...)
+     *     Updates AppState.savingsGoals and AppState.transactions.
+     *   - type !== 'savings' → callServer('addTransaction', ...)
+     *     Updates AppState.transactions.
      */
-    async function deleteTx(txId) {
-        // TODO: Implement
+    async function _submitTx(name, amount, type, category, note, goalId) {
+        if (type === 'savings') {
+            // Savings deposit — must have a goalId
+            if (!goalId) {
+                showToast('Please select a savings goal.', 'error');
+                return;
+            }
+
+            var result = await callServer('topUpSavingsGoal', goalId, amount, curKey(), note || name);
+
+            // Update AppState.savingsGoals
+            if (result && result.goal) {
+                AppState.savingsGoals = (AppState.savingsGoals || []).map(function(g) {
+                    return g.id === goalId ? result.goal : g;
+                });
+            }
+
+            // Add the transaction to AppState.transactions
+            if (result && result.transaction) {
+                var key = curKey();
+                if (!AppState.transactions[key]) AppState.transactions[key] = [];
+                AppState.transactions[key].push(result.transaction);
+
+                // Add to savingsHistory locally
+                if (!AppState.savingsHistory) AppState.savingsHistory = [];
+                AppState.savingsHistory.unshift({
+                    id:             result.transaction.id + '_hist',
+                    goal_id:        goalId,
+                    transaction_id: result.transaction.id,
+                    month_key:      curKey(),
+                    amount:         amount,
+                    note:           note || name || 'top-up',
+                    recorded_at:    new Date().toISOString()
+                });
+            }
+
+            AppState.txPage = 1;
+            renderAll();
+
+            var goals = AppState.savingsGoals || [];
+            var goal  = goals.find(function(g) { return g.id === goalId; });
+            showToast(
+                fmt(amount) + ' added to ' + (goal ? goal.name : 'goal') + '!',
+                'success'
+            );
+
+        } else {
+            // Income or expense — standard path
+            var newTx = await callServer('addTransaction', curKey(), name, amount, type, category, note);
+            if (!AppState.transactions[curKey()]) AppState.transactions[curKey()] = [];
+            AppState.transactions[curKey()].push(newTx);
+            AppState.txPage = 1;
+            renderAll();
+            showToast('Transaction added!', 'success');
+        }
+    }
+
+
+    // ─── DESKTOP MODAL ────────────────────────────────────────────────────────────
+
+    function openAddTxModal() {
+        // Reset to expense type and populate category
+        var typeEl = document.getElementById('tx-type-d');
+        if (typeEl) typeEl.value = 'expense';
+        _onTxTypeChange('d');
+
+        var m = document.getElementById('add-tx-modal');
+        if (!m) return;
+        m.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+            var el = document.getElementById('tx-name-d');
+            if (el) el.focus();
+        }, 220);
+    }
+
+    function closeAddTxModal() {
+        var m = document.getElementById('add-tx-modal');
+        if (m) { m.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    async function addTxFromModal() {
+        var btn  = document.getElementById('btn-add-tx-d');
+        var name = getVal('tx-name-d');
+        var amt  = getVal('tx-amt-d');
+        var type = getVal('tx-type-d');
+        var cat  = getVal('tx-cat-d');
+        var note = getVal('tx-note-d');
+        var goalId = type === 'savings' ? getVal('tx-goal-d') : null;
+
+        if (!_validateTx(name, amt, type)) return;
+
+        // For savings, validate goal selection
+        if (type === 'savings' && !goalId) {
+            showToast('Please select a savings goal.', 'error'); return;
+        }
+
+        var amtClean = parseFloat(String(amt).replace(/,/g, ''));
+
+        // For savings: client-side cap check
+        if (type === 'savings' && goalId) {
+            var goals     = AppState.savingsGoals || [];
+            var goal      = goals.find(function(g) { return g.id === goalId; });
+            var remaining = goal ? Math.max(0, (parseFloat(goal.target_amount) || 0) - (parseFloat(goal.saved_amount) || 0)) : 0;
+            if (amtClean > remaining) {
+                showToast('Amount exceeds remaining balance. Max: ' + fmt(remaining) + '.', 'error');
+                return;
+            }
+        }
+
+        // For expense: check if spending limit exists (existing flow)
+        if (type === 'expense' && _expenseNeedsGoalCheck(type, cat)) {
+            closeAddTxModal();
+            _openNoGoalInterrupt(name, amtClean, type, cat, note);
+            return;
+        }
+
+        await withButtonLoading(btn, async function() {
+            try {
+                await _submitTx(name, amtClean, type, cat, note, goalId);
+                clearInputs('tx-name-d', 'tx-amt-d', 'tx-note-d');
+                closeAddTxModal();
+            } catch(e) {}
+        });
+    }
+
+
+    // ─── MOBILE SHEET ─────────────────────────────────────────────────────────────
+
+    function openAddTxSheet() {
+        var typeEl = document.getElementById('tx-type-m');
+        if (typeEl) typeEl.value = 'expense';
+        _onTxTypeChange('m');
+
+        var s = document.getElementById('add-tx-sheet');
+        if (!s) return;
+        s.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+            var el = document.getElementById('tx-name-m');
+            if (el) el.focus();
+        }, 300);
+    }
+
+    function closeAddTxSheet() {
+        var s = document.getElementById('add-tx-sheet');
+        if (s) { s.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    async function addTxFromSheet() {
+        var btn    = document.getElementById('btn-add-tx-m');
+        var name   = getVal('tx-name-m');
+        var amt    = getVal('tx-amt-m');
+        var type   = getVal('tx-type-m');
+        var cat    = getVal('tx-cat-m');
+        var note   = getVal('tx-note-m');
+        var goalId = type === 'savings' ? getVal('tx-goal-m') : null;
+
+        if (!_validateTx(name, amt, type)) return;
+
+        if (type === 'savings' && !goalId) {
+            showToast('Please select a savings goal.', 'error'); return;
+        }
+
+        var amtClean = parseFloat(String(amt).replace(/,/g, ''));
+
+        if (type === 'savings' && goalId) {
+            var goals     = AppState.savingsGoals || [];
+            var goal      = goals.find(function(g) { return g.id === goalId; });
+            var remaining = goal ? Math.max(0, (parseFloat(goal.target_amount) || 0) - (parseFloat(goal.saved_amount) || 0)) : 0;
+            if (amtClean > remaining) {
+                showToast('Amount exceeds remaining balance. Max: ' + fmt(remaining) + '.', 'error');
+                return;
+            }
+        }
+
+        if (type === 'expense' && _expenseNeedsGoalCheck(type, cat)) {
+            closeAddTxSheet();
+            _openNoGoalInterrupt(name, amtClean, type, cat, note);
+            return;
+        }
+
+        await withButtonLoading(btn, async function() {
+            try {
+                await _submitTx(name, amtClean, type, cat, note, goalId);
+                clearInputs('tx-name-m', 'tx-amt-m', 'tx-note-m');
+                closeAddTxSheet();
+            } catch(e) {}
+        });
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeAddTxModal();
+            closeAddTxSheet();
+            _closeNoGoalInterrupt();
+            _closeConfirmTxModal();
+            _closeConfirmTxSheet();
+        }
+    });
+
+
+    // ─── FAB ─────────────────────────────────────────────────────────────────────
+
+    function _updateFabVisibility() {
+        var fab = document.getElementById('fab-add-tx');
+        if (fab) fab.classList.toggle('fab-visible', AppState.activeTab === 'overview');
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // NO-GOAL-LIMIT INTERRUPTION FLOW (expense category limits — unchanged)
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    var _pendingTx = null;
+
+    function _openNoGoalInterrupt(name, amount, type, category, note) {
+        _pendingTx = { name: name, amount: amount, type: type, category: category, note: note };
+
+        var curLabel     = monthLabel(AppState.curYear, AppState.curMonth);
+        var catColor     = getCategoryColor(category);
+        var amtFormatted = fmt(amount);
+
+        var summaryHtml = (
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+            'display:inline-block;background:' + catColor + ';"></span>' +
+            '<div>' +
+            '<div style="font-weight:500;">' + _esc(name) + '</div>' +
+            '<div style="font-size:12px;color:var(--text2);">' + _esc(category) +
+            ' &middot; <span style="font-family:var(--mono);color:var(--red);">' + amtFormatted + '</span>' +
+            '</div></div></div>'
+        );
+
+        var isMobile = window.innerWidth <= 600;
+        var el = function(id) { return document.getElementById(id); };
+
+        if (isMobile) {
+            if (el('ng-pending-summary-m'))  el('ng-pending-summary-m').innerHTML  = summaryHtml;
+            if (el('ng-cat-display-m'))      el('ng-cat-display-m').textContent    = category;
+            if (el('ng-month-display-m'))    el('ng-month-display-m').textContent  = curLabel;
+            if (el('ng-cat-label-m'))        el('ng-cat-label-m').textContent      = category;
+            if (el('ng-cat-dot-m'))          el('ng-cat-dot-m').style.background   = catColor;
+            if (el('ng-cat-locked-m'))       el('ng-cat-locked-m').textContent     = category;
+            if (el('ng-month-hint-m'))       el('ng-month-hint-m').textContent     = curLabel;
+            if (el('ng-limit-input-m'))      el('ng-limit-input-m').value          = '';
+            var sheet = el('no-goal-sheet');
+            if (sheet) {
+                sheet.classList.add('open');
+                document.body.style.overflow = 'hidden';
+                setTimeout(function() { if (el('ng-limit-input-m')) el('ng-limit-input-m').focus(); }, 300);
+            }
+        } else {
+            if (el('ng-pending-summary'))   el('ng-pending-summary').innerHTML   = summaryHtml;
+            if (el('ng-cat-display'))       el('ng-cat-display').textContent     = category;
+            if (el('ng-month-display'))     el('ng-month-display').textContent   = curLabel;
+            if (el('ng-cat-label'))         el('ng-cat-label').textContent       = category;
+            if (el('ng-cat-dot'))           el('ng-cat-dot').style.background    = catColor;
+            if (el('ng-cat-locked'))        el('ng-cat-locked').textContent      = category;
+            if (el('ng-month-hint'))        el('ng-month-hint').textContent      = curLabel;
+            if (el('ng-limit-input'))       el('ng-limit-input').value           = '';
+            var modal = el('no-goal-modal');
+            if (modal) {
+                modal.classList.add('open');
+                document.body.style.overflow = 'hidden';
+                setTimeout(function() { if (el('ng-limit-input')) el('ng-limit-input').focus(); }, 220);
+            }
+        }
+    }
+
+    function _closeNoGoalInterrupt() {
+        var modal = document.getElementById('no-goal-modal');
+        var sheet = document.getElementById('no-goal-sheet');
+        if (modal) modal.classList.remove('open');
+        if (sheet) sheet.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    async function _noGoalSaveAndContinue() {
+        if (!_pendingTx) return;
+        var isMobile = window.innerWidth <= 600;
+        var limitRaw = isMobile
+            ? String(getVal('ng-limit-input-m')).replace(/,/g, '')
+            : String(getVal('ng-limit-input')).replace(/,/g, '');
+        var limitVal = parseFloat(limitRaw);
+        if (!limitRaw || isNaN(limitVal) || limitVal <= 0) {
+            showToast('Please enter a valid spending limit.', 'error');
+            var inp = document.getElementById(isMobile ? 'ng-limit-input-m' : 'ng-limit-input');
+            if (inp) inp.focus();
+            return;
+        }
+        var btn = document.getElementById(isMobile ? 'btn-ng-save-m' : 'btn-ng-save');
+        await withButtonLoading(btn, async function() {
+            try {
+                var newGoal = await callServer('addGoal', curKey(), _pendingTx.category, limitVal);
+                if (!AppState.goals) AppState.goals = {};
+                if (!AppState.goals[curKey()]) AppState.goals[curKey()] = [];
+                var alreadyExists = false;
+                AppState.goals[curKey()] = AppState.goals[curKey()].map(function(g) {
+                    if (g.category.toLowerCase() === _pendingTx.category.toLowerCase()) {
+                        alreadyExists = true; return newGoal;
+                    }
+                    return g;
+                });
+                if (!alreadyExists) AppState.goals[curKey()].push(newGoal);
+                _closeNoGoalInterrupt();
+                if (isMobile) _openConfirmTxSheet(limitVal); else _openConfirmTxModal(limitVal);
+            } catch(e) {}
+        });
+    }
+
+    async function _noGoalSkipAndSave() {
+        if (!_pendingTx) return;
+        _closeNoGoalInterrupt();
+        try {
+            await _submitTx(_pendingTx.name, _pendingTx.amount, _pendingTx.type, _pendingTx.category, _pendingTx.note, null);
+        } catch(e) {}
+        _pendingTx = null;
+    }
+
+    function _noGoalCancel() {
+        _closeNoGoalInterrupt();
+        _pendingTx = null;
+        showToast('Transaction cancelled.', 'info');
+    }
+
+
+    // ─── CONFIRM-TX MODAL ─────────────────────────────────────────────────────────
+
+    function _openConfirmTxModal(savedLimit) {
+        if (!_pendingTx) return;
+        _populateConfirmContent(savedLimit, 'ctm-limit-confirmation', 'ctm-tx-recap');
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) { modal.classList.add('open'); document.body.style.overflow = 'hidden'; }
+    }
+
+    function _closeConfirmTxModal() {
+        var modal = document.getElementById('confirm-tx-modal');
+        if (modal) { modal.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    function _openConfirmTxSheet(savedLimit) {
+        if (!_pendingTx) return;
+        _populateConfirmContent(savedLimit, 'ctm-limit-confirmation-m', 'ctm-tx-recap-m');
+        var sheet = document.getElementById('confirm-tx-sheet');
+        if (sheet) { sheet.classList.add('open'); document.body.style.overflow = 'hidden'; }
+    }
+
+    function _closeConfirmTxSheet() {
+        var sheet = document.getElementById('confirm-tx-sheet');
+        if (sheet) { sheet.classList.remove('open'); document.body.style.overflow = ''; }
+    }
+
+    function _populateConfirmContent(savedLimit, limitElId, recapElId) {
+        var curLabel = monthLabel(AppState.curYear, AppState.curMonth);
+        var catColor = getCategoryColor(_pendingTx.category);
+        var limitEl  = document.getElementById(limitElId);
+        var recapEl  = document.getElementById(recapElId);
+        if (limitEl) {
+            limitEl.innerHTML = (
+                'Spending limit of <strong style="color:var(--acc);">' + fmt(savedLimit) +
+                '</strong> set for <strong>' + _esc(_pendingTx.category) +
+                '</strong> in ' + curLabel + '.'
+            );
+        }
+        if (recapEl) {
+            recapEl.innerHTML = (
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;' +
+                'display:inline-block;background:' + catColor + ';"></span>' +
+                '<div style="flex:1;">' +
+                '<div style="font-weight:500;">' + _esc(_pendingTx.name) + '</div>' +
+                '<div style="font-size:12px;color:var(--text2);">' + _esc(_pendingTx.category) + '</div>' +
+                '</div>' +
+                '<div style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--red);">' +
+                fmt(_pendingTx.amount) + '</div>' +
+                '</div>'
+            );
+        }
+    }
+
+    async function _confirmTxProceed() {
+        if (!_pendingTx) { _closeConfirmTxModal(); _closeConfirmTxSheet(); return; }
+        var isMobile = window.innerWidth <= 600;
+        var btn = document.getElementById(isMobile ? 'btn-ctm-yes-m' : 'btn-ctm-yes');
+        var tx  = _pendingTx;
+        _pendingTx = null;
+        await withButtonLoading(btn, async function() {
+            try {
+                await _submitTx(tx.name, tx.amount, tx.type, tx.category, tx.note, null);
+                _closeConfirmTxModal();
+                _closeConfirmTxSheet();
+            } catch(e) {}
+        });
+    }
+
+    function _confirmTxDecline() {
+        _pendingTx = null;
+        _closeConfirmTxModal();
+        _closeConfirmTxSheet();
+        showToast('Transaction cancelled. Spending limit was saved.', 'info');
+        renderAll();
+    }
+
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    function _esc(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 </script>

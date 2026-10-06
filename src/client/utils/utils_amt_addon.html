@@ -1,0 +1,112 @@
+<script>
+    // =============================================================================
+    // amt-input Comma Formatting — Addon to utils.js
+    //
+    // Include this AFTER utils.js in Index.html (it extends, not replaces utils).
+    //
+    // All amount fields that should format with commas use:
+    //   class="amt-input" type="text" inputmode="numeric"
+    //
+    // The MutationObserver auto-wires new inputs added to the DOM
+    // (e.g. when a modal opens), so no manual calls are needed per screen.
+    // =============================================================================
+
+    /**
+     * _formatNumberWithCommas(str)
+     * '100000' → '100,000'  |  '1234567' → '1,234,567'
+     */
+    function _formatNumberWithCommas(str) {
+        var digits = String(str || '').replace(/\D/g, '');
+        if (!digits) return '';
+        return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    /**
+     * _getNumericValue(idOrEl)
+     * Returns the raw float value of an .amt-input (strips commas).
+     */
+    function _getNumericValue(idOrEl) {
+        var el = (typeof idOrEl === 'string')
+            ? document.getElementById(idOrEl)
+            : idOrEl;
+        if (!el) return NaN;
+        var raw = String(el.value || '').replace(/,/g, '').trim();
+        return parseFloat(raw);
+    }
+
+    /**
+     * _onAmtInput(el)
+     * Called on every 'input' event — reformats with commas, preserves caret.
+     */
+    function _onAmtInput(el) {
+        var rawBefore       = el.value;
+        var caretBefore     = el.selectionStart || 0;
+
+        // Count how many digit chars were to the left of the caret
+        var digitsBeforeCaret = rawBefore.slice(0, caretBefore).replace(/\D/g, '').length;
+
+        var digits    = rawBefore.replace(/\D/g, '');
+        var formatted = _formatNumberWithCommas(digits);
+        el.value = formatted;
+
+        // Restore caret position by counting digits in the new string
+        var digitsSeen = 0;
+        var newCaret   = formatted.length; // default: end
+        for (var i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                digitsSeen++;
+                if (digitsSeen === digitsBeforeCaret) {
+                    newCaret = i + 1;
+                    break;
+                }
+            }
+        }
+
+        try { el.setSelectionRange(newCaret, newCaret); } catch(e) {}
+    }
+
+    /**
+     * _onAmtKeydown(el, e)
+     * Blocks non-numeric keys (allows Backspace, Delete, arrows, Ctrl/Cmd, Tab).
+     */
+    function _onAmtKeydown(el, e) {
+        var allowed = [
+            'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight',
+            'ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Home', 'End'
+        ];
+        if (allowed.indexOf(e.key) !== -1) return;
+        if (e.ctrlKey || e.metaKey) return;
+        if (/^\d$/.test(e.key)) return;
+        e.preventDefault();
+    }
+
+    /**
+     * initAmountInputs()
+     * Attaches comma-formatting handlers to all .amt-input elements in the DOM.
+     * Idempotent — each element is wired at most once via the _amtWired flag.
+     * Called from boot and auto-called by MutationObserver on DOM changes.
+     */
+    function initAmountInputs() {
+        document.querySelectorAll('.amt-input').forEach(function(el) {
+            if (el.dataset._amtWired) return;
+            el.dataset._amtWired = '1';
+            el.addEventListener('input',   function()  { _onAmtInput(el); });
+            el.addEventListener('keydown', function(e) { _onAmtKeydown(el, e); });
+            el.addEventListener('focus',   function()  { setTimeout(function() { el.select(); }, 0); });
+        });
+    }
+
+    // Auto-wire any .amt-input added dynamically (modal opens, etc.)
+    (function() {
+        if (typeof MutationObserver === 'undefined') return;
+        var observer = new MutationObserver(function() { initAmountInputs(); });
+        // Start observing once the DOM is ready
+        if (document.body) {
+            observer.observe(document.body, { childList: true, subtree: true });
+        } else {
+            document.addEventListener('DOMContentLoaded', function() {
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+        }
+    })();
+</script>

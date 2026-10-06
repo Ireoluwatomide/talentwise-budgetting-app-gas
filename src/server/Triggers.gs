@@ -1,107 +1,220 @@
 /**
  * Triggers.gs — Time-Based Trigger Setup & Cron Handlers
  *
- * PURPOSE:
- *   Define and register the time-based triggers that automate background tasks:
- *     1. Daily alert check → Notifications.sendDailyAlerts() — checks bills + budget every morning
- *     2. Monthly recurring  → Recurring.applyRecurringToMonth() — applies recurring txs on 1st of month
- *     3. Monthly bill reset → Bills.resetAllBillsPaid() — resets paid status on 1st of month
+ * CHANGE FROM PREVIOUS VERSION:
+ *   dailyAlertHandler() now calls sendSavingsAlerts() after sendDailyAlerts().
+ *   Each is wrapped in its own try/catch so a failure in one does not prevent
+ *   the other from running.
  *
- * HOW TRIGGERS WORK IN APPS SCRIPT:
- *   Triggers are registered programmatically via ScriptApp.newTrigger().
- *   Run installTriggers() once from the Apps Script editor to set them up.
- *   After that they fire automatically on their schedule — no server management required.
+ * TRIGGERS (registered once via installTriggers()):
+ *   1. Daily    → dailyAlertHandler()  — every day at 8 AM WAT
+ *      Sends bills + budget alert email (sendDailyAlerts)
+ *      Sends savings alert email       (sendSavingsAlerts)
  *
- *   ⚠ Do NOT call installTriggers() more than once without first running removeTriggers(),
- *     or duplicate triggers will be created.
+ *   2. Monthly  → monthlyHandler()     — 1st of each month at 6 AM
+ *      Applies recurring transactions
+ *      Resets all bills to unpaid
  *
- * CALLED BY: Developer manually from the Apps Script editor (setup step only)
+ * SETUP:
+ *   Run installTriggers() ONCE from the Apps Script editor after deployment.
+ *   Run removeTriggers() first if re-installing to avoid duplicate triggers.
  */
 
+
+// ─── INSTALL / REMOVE ────────────────────────────────────────────────────────
 
 /**
  * installTriggers()
- *
- * TODO: Register all required time-based triggers for the project.
- *       Call this function ONCE from the Apps Script editor during initial setup.
- *
- * Triggers to install:
- *
- *   1. Daily alert — runs every morning at 8:00 AM Lagos time (WAT / UTC+1)
- *      ScriptApp.newTrigger('dailyAlertHandler')
- *        .timeBased()
- *        .everyDays(1)
- *        .atHour(8)
- *        .create()
- *
- *   2. Monthly 1st-of-month handler — runs at 6:00 AM on day 1 of each month
- *      ScriptApp.newTrigger('monthlyHandler')
- *        .timeBased()
- *        .onMonthDay(1)
- *        .atHour(6)
- *        .create()
- *
- * TODO: Log "Triggers installed successfully" via Logger.log() on completion
+ * Registers both time-based triggers. Call ONCE during initial setup.
+ * Run removeTriggers() first to clear any existing triggers.
  */
 function installTriggers() {
-  // TODO: Implement
-}
+  var existing = ScriptApp.getProjectTriggers();
+  if (existing.length > 0) {
+    Logger.log(
+      'Triggers.gs: WARNING — ' + existing.length + ' trigger(s) already exist. ' +
+      'Run removeTriggers() first to avoid duplicates.'
+    );
+  }
 
+  // Trigger 1: Daily at 8–9 AM
+  ScriptApp.newTrigger('dailyAlertHandler')
+    .timeBased()
+    .everyDays(1)
+    .atHour(8)
+    .create();
+
+  // Trigger 2: 1st of every month at 6–7 AM
+  ScriptApp.newTrigger('monthlyHandler')
+    .timeBased()
+    .onMonthDay(1)
+    .atHour(6)
+    .create();
+
+  Logger.log('Triggers.gs: Installed 2 triggers (dailyAlertHandler, monthlyHandler).');
+  listTriggers();
+}
 
 /**
  * removeTriggers()
- *
- * TODO: Delete ALL existing triggers for this script project.
- *       Use ScriptApp.getProjectTriggers() and loop to delete each.
- *       Call before re-running installTriggers() to avoid duplicates.
- *
- * TODO: Log the number of triggers removed
+ * Deletes ALL existing triggers. Call before re-running installTriggers().
  */
 function removeTriggers() {
-  // TODO: Implement
+  var triggers = ScriptApp.getProjectTriggers();
+  var count    = triggers.length;
+  triggers.forEach(function(trigger) {
+    ScriptApp.deleteTrigger(trigger);
+  });
+  Logger.log('Triggers.gs: Removed ' + count + ' trigger(s).');
 }
-
 
 /**
  * listTriggers()
- *
- * TODO: Log all currently installed triggers to the Apps Script execution log.
- *       Useful for debugging trigger setup.
- * TODO: For each trigger, log: handlerFunction, eventType, schedule
+ * Logs all currently installed triggers to the execution log.
  */
 function listTriggers() {
-  // TODO: Implement
+  var triggers = ScriptApp.getProjectTriggers();
+  if (triggers.length === 0) {
+    Logger.log('Triggers.gs: No triggers installed.');
+    return;
+  }
+  Logger.log('Triggers.gs: ' + triggers.length + ' trigger(s) installed:');
+  triggers.forEach(function(trigger, i) {
+    Logger.log(
+      '  [' + (i + 1) + '] ' +
+      trigger.getHandlerFunction() + ' — ' +
+      trigger.getEventType() + ' — ' +
+      (trigger.getTriggerSourceId ? String(trigger.getTriggerSourceId()) : 'n/a')
+    );
+  });
 }
 
 
-// ─── TRIGGER HANDLERS ─────────────────────────────────────────────────────────
-// These are the functions registered with ScriptApp.newTrigger().
-// Apps Script calls these by name — they must be top-level functions.
-
+// ─── TRIGGER HANDLERS ────────────────────────────────────────────────────────
 
 /**
  * dailyAlertHandler()
  *
- * TODO: Called every morning by the daily trigger.
- * TODO: Call Notifications.sendDailyAlerts()
- * TODO: Wrap in try/catch — log errors but do not rethrow
- *       (a thrown error in a trigger handler sends an error email from Google,
- *        which is noisy; better to handle gracefully)
+ * Fires every morning at 8 AM WAT.
+ * Runs two independent alert functions back-to-back.
+ * Each is wrapped in its own try/catch so a failure in one does not prevent
+ * the other from sending.
+ *
+ * Why two separate calls instead of one combined email?
+ *   - Bills/budget alerts are time-sensitive (due dates, over-budget).
+ *   - Savings alerts are motivational / informational.
+ *   - Keeping them separate lets users filter/label them differently in Gmail.
+ *   - A failure in getSavingsAlertsData() won't block the bills email.
  */
 function dailyAlertHandler() {
-  // TODO: try { Notifications.sendDailyAlerts(); } catch(e) { Logger.log(e); }
-}
+  Logger.log('Triggers.gs: dailyAlertHandler() fired at ' + new Date().toISOString());
 
+  // Step 1 — Bills + budget alerts
+  try {
+    sendDailyAlerts(); // from Notifications.gs
+    Logger.log('Triggers.gs: sendDailyAlerts() completed.');
+  } catch (e) {
+    Logger.log('Triggers.gs: sendDailyAlerts() error — ' + e.message);
+  }
+
+  // Step 2 — Savings alerts
+  try {
+    sendSavingsAlerts(); // from Notifications.gs
+    Logger.log('Triggers.gs: sendSavingsAlerts() completed.');
+  } catch (e) {
+    Logger.log('Triggers.gs: sendSavingsAlerts() error — ' + e.message);
+  }
+
+  // Step 3 — Net Worth alerts
+  try {
+      var nwAlerts = checkNetWorthAlerts(); // from NetWorth.gs
+      if (nwAlerts && nwAlerts.length > 0) {
+        _sendNetWorthAlertEmail(nwAlerts);
+      }
+      Logger.log('Triggers.gs: checkNetWorthAlerts() — ' +
+                 (nwAlerts || []).length + ' alert(s).');
+    } catch (e) {
+      Logger.log('Triggers.gs: checkNetWorthAlerts() error — ' + e.message);
+    }
+
+  Logger.log('Triggers.gs: dailyAlertHandler() finished.');
+}
 
 /**
  * monthlyHandler()
  *
- * TODO: Called on the 1st of each month by the monthly trigger.
- * TODO: 1. Build the current monthKey (YYYY-MM of today)
- * TODO: 2. Call Recurring.applyRecurringToMonth(monthKey) — auto-adds recurring transactions
- * TODO: 3. Call Bills.resetAllBillsPaid() — resets all bills to unpaid for the new month
- * TODO: Wrap each step in try/catch and log independently so one failure doesn't block others
+ * Fires on the 1st of each month at 6 AM WAT.
+ * Two independent steps — failure in step 1 does not prevent step 2.
  */
 function monthlyHandler() {
-  // TODO: Implement
+  var today    = new Date();
+  var monthKey = _triggerMonthKey(today);
+
+  Logger.log('Triggers.gs: monthlyHandler() fired for ' + monthKey);
+
+  // Step 1 — Apply recurring transactions
+  try {
+    var result = applyRecurringToMonth(monthKey); // from Recurring.gs
+    Logger.log(
+      'Triggers.gs: applyRecurringToMonth(' + monthKey + ') — ' +
+      'applied: ' + result.applied + ', skipped: ' + result.skipped
+    );
+  } catch (e) {
+    Logger.log('Triggers.gs: applyRecurringToMonth() error — ' + e.message);
+  }
+
+  // Step 2 — Reset bill paid status
+  try {
+    var reset = resetAllBillsPaid(); // from Bills.gs
+    Logger.log('Triggers.gs: resetAllBillsPaid() — reset: ' + reset.reset);
+  } catch (e) {
+    Logger.log('Triggers.gs: resetAllBillsPaid() error — ' + e.message);
+  }
+
+  Logger.log('Triggers.gs: monthlyHandler() completed for ' + monthKey);
+
+  // Step 3 — Auto-apply recurring debt payments
+  try {
+    var debtResult = applyRecurringDebtPayments(monthKey); // from Debt.gs
+    Logger.log('Triggers.gs: applyRecurringDebtPayments(' + monthKey + ') — applied: ' +
+      debtResult.applied + ', skipped: ' + debtResult.skipped);
+  } catch (e) {
+    Logger.log('Triggers.gs: applyRecurringDebtPayments() error — ' + e.message);
+  }
+
+  // Step 4 — Auto-sync debt balances into Net Worth
+    try {
+      var nwDebtSync = syncDebtsToNetWorth(); // from NetWorth.gs
+      Logger.log(
+        'Triggers.gs: syncDebtsToNetWorth — created: ' + nwDebtSync.created +
+        ', updated: ' + nwDebtSync.updated +
+        ', removed: ' + nwDebtSync.removed
+      );
+    } catch (e) {
+      Logger.log('Triggers.gs: syncDebtsToNetWorth() error — ' + e.message);
+    }
+
+    // Step 5 — Record monthly net worth snapshot (auto)
+    try {
+      var monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+      var snapshotLabel = monthNames[today.getMonth()] + ' ' + today.getFullYear();
+      var snapshot = recordNetWorthSnapshot(snapshotLabel); // from NetWorth.gs
+      Logger.log('Triggers.gs: recordNetWorthSnapshot — NW: ' + snapshot.net_worth);
+    } catch (e) {
+      Logger.log('Triggers.gs: recordNetWorthSnapshot() error — ' + e.message);
+    }
+}
+
+
+// ─── PRIVATE HELPERS ─────────────────────────────────────────────────────────
+
+/**
+ * _triggerMonthKey(date)
+ * Builds the YYYY-MM month key for a given Date object.
+ */
+function _triggerMonthKey(date) {
+  var y = date.getFullYear();
+  var m = date.getMonth() + 1;
+  return y + '-' + (m < 10 ? '0' : '') + m;
 }

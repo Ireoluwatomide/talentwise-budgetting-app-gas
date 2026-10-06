@@ -1,289 +1,926 @@
 <style>
     /*
      * styles.css.html — Budget Tracker Master Stylesheet
-     *
-     * PURPOSE:
-     *   Single source of truth for ALL visual design in the app.
-     *   Included in every page render via <?!= include('src/client/utils/styles.css') ?>
-     *
-     * STRUCTURE:
-     *   1.  CSS Custom Properties (Design Tokens)
-     *   2.  Reset & Base
-     *   3.  Layout
-     *   4.  Typography Scale
-     *   5.  Colour Utilities
-     *   6.  Grid & Spacing Helpers
-     *   7.  Metric Cards
-     *   8.  Tab Navigation
-     *   9.  Transaction Rows
-     *   10. Progress Bars
-     *   11. Alert Banners
-     *   12. Cards
-     *   13. Badges
-     *   14. Form Inputs
-     *   15. Buttons
-     *   16. Tables
-     *   17. Dividers
-     *   18. Dark Mode Overrides
-     *   19. Print Styles (for Report tab PDF)
-     *   20. Responsive Breakpoints
-     *
-     * DESIGN LANGUAGE (carried over from the prototype):
-     *   - Monochrome base with green accent (income), red (expenses), blue (savings)
-     *   - System UI font stack for maximum performance — no web font requests
-     *   - Monospace font for all numbers (consistent column alignment)
-     *   - Minimal chrome — 0.5px borders, subtle backgrounds, generous whitespace
-     *   - Accent green: #1D9E75 (income / positive)
-     *   - Accent red:   #D85A30 (expenses / over budget)
-     *   - Accent blue:  #185FA5 (savings)
-     *   - Accent amber: #BA7517 (warnings / approaching limit)
-     *   - Accent purple:#7F77DD (entertainment category)
+     * Updated: sidebar layout, extra top padding, mobile header cleanup.
      */
 
 
-    /* ─── 1. CSS CUSTOM PROPERTIES ──────────────────────────────────────────────── */
+    /* ─── 1. CSS CUSTOM PROPERTIES ─────────────────────────────────────────────── */
     :root {
-        /* Brand accent colours */
-        --acc:     #1D9E75;  /* income, positive, success */
-        --red:     #D85A30;  /* expenses, over-budget, danger */
-        --blue:    #185FA5;  /* savings */
-        --amber:   #BA7517;  /* warnings, approaching limit */
-        --purple:  #7F77DD;  /* entertainment category */
+        --acc:       #1D9E75;
+        --red:       #D85A30;
+        --blue:      #185FA5;
+        --amber:     #BA7517;
+        --purple:    #7F77DD;
 
-        /* Surfaces */
-        --bg:       #ffffff;
-        --bg2:      #f5f5f3;  /* subtle card background */
+        --bg:        #ffffff;
+        --bg2:       #f5f5f3;
 
-        /* Borders */
-        --border:   rgba(0, 0, 0, 0.12);   /* subtle dividers */
-        --border2:  rgba(0, 0, 0, 0.22);   /* input borders, stronger dividers */
+        --border:    rgba(0, 0, 0, 0.12);
+        --border2:   rgba(0, 0, 0, 0.22);
 
-        /* Text */
-        --text:     #1a1a1a;
-        --text2:    #666;    /* labels, secondary info */
+        --text:      #1a1a1a;
+        --text2:     #555;
 
-        /* Typography */
-        --font:     system-ui, -apple-system, sans-serif;
-        --mono:     'Courier New', monospace;  /* all currency/number display */
+        --font:      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --mono:      'Courier New', Courier, monospace;
 
-        /* Shape */
         --radius:    8px;
         --radius-lg: 12px;
+        --transition: 0.15s ease;
 
-        /* TODO: Add --shadow-sm and --shadow-md tokens for card elevations if needed */
-        /* TODO: Add --transition for consistent animation timing (e.g. 0.15s ease) */
-        /* TODO: Add --max-width token matching the 720px app container */
+        --sidebar-expanded-w: 220px;
+        --sidebar-collapsed-w: 52px;
+
+        --max-width:  1100px;
+        --page-pad:   clamp(1.5rem, 3vw, 2.5rem);
     }
 
 
-    /* ─── 2. RESET & BASE ────────────────────────────────────────────────────────── */
-    /* TODO: Box-sizing reset, margin/padding reset */
-    /* TODO: Set body background to var(--bg), color to var(--text), font to var(--font) */
-    /* TODO: min-height: 100vh on body */
+    /* ─── 2. RESET & BASE ───────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        height: 100%;
+    }
+
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.55;
+        min-height: 100%;
+        -webkit-font-smoothing: antialiased;
+    }
 
 
-    /* ─── 3. LAYOUT ──────────────────────────────────────────────────────────────── */
-    /* .app — the main page container */
-    /* TODO: max-width 720px, margin auto, padding 1.5rem 1rem */
+    /* ─── 3. LAYOUT ROOT ────────────────────────────────────────────────────────── */
 
-    /* .app-header — top bar with month nav + currency + balance */
-    /* TODO: flex, justify-content space-between, align-items flex-end */
-    /* TODO: margin-bottom 1.5rem, padding-bottom 1.25rem, border-bottom */
+    /*
+     * The entire layout lives inside a single centred container.
+     *
+     * #layout-root  — the max-width flex row. Height = 100vh so the sidebar
+     *                 can use position:sticky against it (not the viewport).
+     *                 overflow-y:auto here means scroll happens inside the
+     *                 bounded frame, keeping the sidebar within max-width.
+     *
+     * .sidebar      — sticky left column; width transitions between 220px
+     *                 and 56px. The main content reflows automatically.
+     *
+     * .app          — flex:1 scrollable right column.
+     */
 
+    #layout-root {
+        display: flex;
+        height: 100vh;
+        overflow-y: auto;
+        width: 100%;
+        /*
+         * Total frame is exactly 1100px — the sidebar is a slice WITHIN it.
+         * Collapsing the sidebar just gives more room to .app inside the same
+         * 1100px frame. The outer boundary never changes.
+         */
+        max-width: var(--max-width);
+        margin: 0 auto;
+        background: var(--bg);
+        position: relative;
+    }
 
-    /* ─── 4. TYPOGRAPHY SCALE ────────────────────────────────────────────────────── */
-    /* TODO: h1 — 24px, font-weight 400 (prototype uses light weight headings) */
-    /* TODO: .label-caps — 11px, font-weight 500, letter-spacing 0.08em, uppercase, color var(--text2) */
-    /*        Used for section headings and metric card labels */
-    /* TODO: .mono-value — font-family var(--mono), font-size 15px, font-weight 500 */
-    /*        Used for all currency display */
+    @media (min-width: 1100px) {
+        body { background: var(--bg2); }
+        #layout-root { box-shadow: 0 0 0 0.5px var(--border); }
+    }
 
+    /* App content column — fills whatever width is left after the sidebar */
+    .app {
+        flex: 1;
+        min-width: 0;
+        padding: 2rem var(--page-pad) 1.5rem;
+        min-height: 100%;
+        overflow: visible;
+    }
 
-    /* ─── 5. COLOUR UTILITIES ────────────────────────────────────────────────────── */
-    /* TODO: .text-income     { color: var(--acc); } */
-    /* TODO: .text-expense    { color: var(--red); } */
-    /* TODO: .text-savings    { color: var(--blue); } */
-    /* TODO: .text-warning    { color: var(--amber); } */
-    /* TODO: .text-secondary  { color: var(--text2); } */
-    /* TODO: .text-positive   { color: var(--acc); } — for positive balance */
-    /* TODO: .text-negative   { color: var(--red); } — for negative balance */
+    @media (min-width: 768px) {
+        .app { max-width: none; }
+    }
 
-
-    /* ─── 6. GRID & SPACING HELPERS ──────────────────────────────────────────────── */
-    /* TODO: .row2 — 2-column equal grid, gap 8px, margin-bottom 8px */
-    /* TODO: .row3 — 3-column equal grid, gap 10px, margin-bottom 1.25rem */
-    /* TODO: .row4 — 4-column equal grid, gap 10px, margin-bottom 1.25rem */
-    /* TODO: .sec  — section heading: label-caps + margin 1.25rem 0 10px */
-    /* TODO: All grids should collapse to 2 columns on mobile (see Responsive section) */
-
-
-    /* ─── 7. METRIC CARDS ────────────────────────────────────────────────────────── */
-    /* .metric — used for Income / Expenses / Saved / Remaining cards */
-    /* TODO: background var(--bg2), border-radius var(--radius), padding 12px 14px */
-    /* TODO: .metric .lbl — label-caps styles */
-    /* TODO: .metric .val — mono-value styles */
-
-
-    /* ─── 8. TAB NAVIGATION ──────────────────────────────────────────────────────── */
-    /* .tabs — horizontal tab strip */
-    /* TODO: display flex, gap 0, border-bottom 0.5px solid var(--border) */
-    /* TODO: margin-bottom 1.5rem, overflow-x auto (scrollable on mobile) */
-    /* TODO: Hide scrollbar on WebKit browsers (scrollbar-width: none + ::-webkit-scrollbar { display:none }) */
-
-    /* .tab — individual tab button */
-    /* TODO: background none, border none, border-bottom 2px solid transparent */
-    /* TODO: padding 8px 11px 10px, margin-bottom -1px (overlaps the strip border) */
-    /* TODO: font 11px/400, cursor pointer, color var(--text2), white-space nowrap */
-
-    /* .tab.active */
-    /* TODO: border-bottom-color var(--text), color var(--text), font-weight 500 */
-
-    /* .pane — screen container, hidden by default */
-    /* TODO: display none */
-    /* .pane.active — visible screen */
-    /* TODO: display block */
-
-
-    /* ─── 9. TRANSACTION ROWS ────────────────────────────────────────────────────── */
-    /* .tx-row — a single transaction list item */
-    /* TODO: display flex, justify-content space-between, align-items center */
-    /* TODO: padding 9px 0, border-bottom 0.5px solid var(--border) */
-
-    /* .tx-dot — coloured category indicator dot */
-    /* TODO: width 8px, height 8px, border-radius 50%, flex-shrink 0, display inline-block */
-
-    /* .tx-name — description text */
-    /* TODO: font-size 13px */
-    /* .tx-cat  — category label below name */
-    /* TODO: font-size 11px, color var(--text2) */
-    /* .tx-tag  — hashtag note displayed inline with description */
-    /* TODO: font-size 10px, color var(--text2), margin-left 6px */
-
-    /* .tx-amount — monospace amount, coloured by type */
-    /* TODO: font-family var(--mono), font-size 13px, font-weight 500 */
-
-    /* .tx-delete — × delete button */
-    /* TODO: cursor pointer, color var(--text2), font-size 16px, line-height 1 */
+    /* Mobile: normal block flow, sidebar hidden */
+    @media (max-width: 767px) {
+        #layout-root {
+            height: auto;
+            overflow-y: visible;
+            max-width: 100%;
+        }
+        .app {
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
+        }
+    }
 
 
-    /* ─── 10. PROGRESS BARS ──────────────────────────────────────────────────────── */
-    /* .prog-track — progress bar background track */
-    /* TODO: height 4px, background var(--bg2), border-radius 2px, overflow hidden, margin 5px 0 */
+    /* ─── 4. TYPOGRAPHY SCALE ───────────────────────────────────────────────────── */
+    h1 {
+        font-size: 24px;
+        font-weight: 500;
+    }
 
-    /* .prog-fill — coloured fill, width set inline as a percentage */
-    /* TODO: height 100%, border-radius 2px, transition width 0.5s ease */
+    .label-caps {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin: 1.25rem 0 10px;
+    }
 
-
-    /* ─── 11. ALERT BANNERS ──────────────────────────────────────────────────────── */
-    /* .alert — base alert box */
-    /* TODO: border-radius var(--radius), padding 10px 14px, margin-bottom 1rem, font-size 12px */
-
-    /* .alert-danger  — over budget (red) */
-    /* TODO: background #FCEBEB, border 0.5px solid #F09595, color #501313 */
-
-    /* .alert-warning — approaching limit (amber) */
-    /* TODO: background #FAEEDA, border 0.5px solid #FAC775, color #412402 */
-
-    /* .alert-info    — bills due (amber, same as warning in prototype) */
-    /* TODO: Reuse .alert-warning or create a distinct blue variant if preferred */
-
-
-    /* ─── 12. CARDS ──────────────────────────────────────────────────────────────── */
-    /* .card — content card used in Debt, Insights, Templates tabs */
-    /* TODO: background var(--bg2), border-radius var(--radius-lg), padding 14px 16px, margin-bottom 10px */
+    .mono-value {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+    }
 
 
-    /* ─── 13. BADGES ─────────────────────────────────────────────────────────────── */
-    /* .badge — base inline pill badge */
-    /* TODO: font-size 10px, font-weight 500, padding 2px 6px, border-radius 4px */
-
-    /* .badge-red   — over limit, liability */
-    /* TODO: background #FCEBEB, color #791F1F */
-
-    /* .badge-green — under limit, asset, paid */
-    /* TODO: background #EAF3DE, color #27500A */
-
-    /* .badge-blue  — income type */
-    /* TODO: background #E6F1FB, color #042C53 */
+    /* ─── 5. COLOUR UTILITIES ───────────────────────────────────────────────────── */
+    .text-income   { color: var(--acc);   }
+    .text-expense  { color: var(--red);   }
+    .text-savings  { color: var(--blue);  }
+    .text-warning  { color: var(--amber); }
+    .text-secondary{ color: var(--text2); }
+    .text-positive { color: var(--acc);   }
+    .text-negative { color: var(--red);   }
 
 
-    /* ─── 14. FORM INPUTS ────────────────────────────────────────────────────────── */
-    /* .inp — all text inputs, number inputs, and selects */
-    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
-    /* TODO: padding 8px 10px, font-family var(--font), font-size 13px, color var(--text) */
-    /* TODO: box-sizing border-box, width 100% */
-    /* TODO: :focus — outline none, border-color var(--acc) */
-    /* TODO: Select elements: appearance none on WebKit if custom arrow desired */
+    /* ─── 6. GRID & SPACING HELPERS ─────────────────────────────────────────────── */
+    .row2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .row3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 1.25rem;
+    }
+
+    .row4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 1.25rem;
+    }
+
+    .sec {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin: 1.25rem 0 10px;
+    }
 
 
-    /* ─── 15. BUTTONS ────────────────────────────────────────────────────────────── */
-    /* .btn-primary — filled button (dark background / light text) */
-    /* TODO: background var(--text), color var(--bg), border none, border-radius var(--radius) */
-    /* TODO: padding 9px 16px, font 13px/500, cursor pointer */
-    /* TODO: :hover — opacity 0.85 or slightly lighter background */
+    /* ─── 7. METRIC CARDS ───────────────────────────────────────────────────────── */
+    .metric {
+        background: var(--bg2);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+    }
 
-    /* .btn-sm — small ghost button */
-    /* TODO: background transparent, border 0.5px solid var(--border2), border-radius var(--radius) */
-    /* TODO: padding 5px 10px, font 11px, cursor pointer, color var(--text2) */
-    /* TODO: :hover — border-color var(--text), color var(--text) */
+    .metric .lbl {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text2);
+        margin-bottom: 5px;
+    }
 
-    /* .btn-danger — small destructive button (clear month, etc.) */
-    /* TODO: color var(--red), border-color var(--red) */
-
-
-    /* ─── 16. TABLES ─────────────────────────────────────────────────────────────── */
-    /* Used in Multi-Month and Report tabs */
-    /* TODO: table width 100%, border-collapse collapse, font-size 12px */
-    /* TODO: th — font-size 10px, font-weight 500, uppercase, letter-spacing 0.06em */
-    /*            color var(--text2), border-bottom 0.5px solid var(--border) */
-    /*            text-align: right for all columns except the first (Month name) */
-    /* TODO: td — padding 7px 8px, border-bottom 0.5px solid var(--border) */
-    /*            font-family var(--mono) for numeric columns */
-    /* TODO: .row-active — highlighted row for the current month (background var(--bg2)) */
+    .metric .val {
+        font-family: var(--mono);
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+    }
 
 
-    /* ─── 17. DIVIDERS ───────────────────────────────────────────────────────────── */
-    /* .divider — hr-style separator used in Settings tab */
-    /* TODO: border none, border-top 0.5px solid var(--border), margin 1.25rem 0 */
+    /* ─── 8. TAB NAVIGATION ─────────────────────────────────────────────────────── */
+    /*
+     * The horizontal tab strip is hidden — sidebar replaces it on desktop,
+     * BottomNav replaces it on mobile. The .tabs div still exists in the DOM
+     * so switchTab() can find and toggle #tab-{id} active states.
+     */
+    .tabs {
+        display: none !important; /* hidden on all breakpoints */
+    }
+
+    .tab {
+        background: var(--bg2);
+        border: 0.5px solid transparent;
+        border-radius: 20px;
+        padding: 6px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: var(--font);
+        cursor: pointer;
+        color: var(--text2);
+        white-space: nowrap;
+        transition: background var(--transition), color var(--transition), border-color var(--transition);
+        flex-shrink: 0;
+    }
+
+    .tab:hover {
+        background: rgba(0,0,0,0.06);
+        color: var(--text);
+    }
+
+    .tab.active {
+        background: var(--text);
+        color: var(--bg);
+        border-color: var(--text);
+        font-weight: 600;
+    }
+
+    .pane { display: none; }
+    .pane.active { display: block; }
 
 
-    /* ─── 18. DARK MODE OVERRIDES ────────────────────────────────────────────────── */
-    /* Applied when .dark class is toggled on .app (matches prototype pattern) */
-    /* TODO: .app.dark override all CSS variables:
-         --bg:       #0f0f11;
-         --bg2:      #1a1a1d;
-         --border:   rgba(255, 255, 255, 0.08);
-         --border2:  rgba(255, 255, 255, 0.16);
-         --text:     #e8e6e1;
-         --text2:    #888;
-       Also set background and color on .app.dark directly.
-    */
+    /* ─── 9. TRANSACTION ROWS ───────────────────────────────────────────────────── */
+    .tx-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 0.5px solid var(--border);
+    }
 
-    /* TODO: Dark mode alert banners — desaturate the backgrounds slightly for dark context */
-    /* TODO: Dark mode inputs — ensure readable contrast on --bg2 backgrounds */
+    .tx-row:last-child { border-bottom: none; }
+
+    .tx-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .tx-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .tx-meta { min-width: 0; }
+
+    .tx-name {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tx-cat {
+        font-size: 12px;
+        color: var(--text2);
+        margin-top: 1px;
+    }
+
+    .tx-tag {
+        font-size: 10px;
+        color: var(--text2);
+        margin-left: 6px;
+    }
+
+    .tx-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .tx-amount {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .tx-delete {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text2);
+        font-size: 18px;
+        line-height: 1;
+        padding: 0 2px;
+        transition: color var(--transition);
+    }
+
+    .tx-delete:hover { color: var(--red); }
 
 
-    /* ─── 19. PRINT STYLES ───────────────────────────────────────────────────────── */
-    /* Used when the user clicks "Print / PDF" on the Report tab */
-    /* TODO: @media print {
-         Hide: .tabs, .btn-sm, .btn-primary, #alerts-wrap, the currency selector, dark toggle
-         Show: only #pane-report content
-         Set background to white, text to black (override dark mode for print)
-         Page margins: 1.5cm
-         Avoid page breaks inside .card and .tx-row elements
-       }
-    */
+    /* ─── 10. PROGRESS BARS ─────────────────────────────────────────────────────── */
+    .prog-track {
+        height: 5px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+        margin: 6px 0;
+    }
+
+    .prog-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
 
 
-    /* ─── 20. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────────── */
-    /* TODO: @media (max-width: 480px) {
-         .row4 → grid-template-columns: repeat(2, 1fr)
-         .row3 → grid-template-columns: repeat(2, 1fr) or 1fr 1fr
-         .row2 → grid-template-columns: 1fr  (single column stacking)
-         .app  → padding 1rem 0.75rem
-         Debt add-form grid → stack to 1fr 1fr on two rows
-         Net Worth add-form grid → stack appropriately
-         h1 font-size → 18px
-       }
-    */
+    /* ─── 11. ALERT BANNERS ─────────────────────────────────────────────────────── */
+    .alert {
+        border-radius: var(--radius);
+        padding: 10px 14px;
+        margin-bottom: 0.5rem;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.5;
+    }
+
+    .alert-danger  { background: #FCEBEB; border: 0.5px solid #F09595; color: #501313; }
+    .alert-warning { background: #FAEEDA; border: 0.5px solid #FAC775; color: #412402; }
+    .alert-info    { background: #E6F1FB; border: 0.5px solid #B5D4F4; color: #042C53; }
+
+    #alerts-budget:not(:empty),
+    #alerts-bills:not(:empty) { margin-bottom: 1rem; }
+
+
+    /* ─── 12. CARDS ─────────────────────────────────────────────────────────────── */
+    .card {
+        background: var(--bg2);
+        border-radius: var(--radius-lg);
+        padding: 16px 18px;
+        margin-bottom: 10px;
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+
+
+    /* ─── 13. BADGES ────────────────────────────────────────────────────────────── */
+    .badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 4px;
+    }
+
+    .badge-red   { background: #FCEBEB; color: #791F1F; }
+    .badge-green { background: #EAF3DE; color: #27500A; }
+    .badge-blue  { background: #E6F1FB; color: #042C53; }
+    .badge-amber { background: #FAEEDA; color: #412402; }
+
+
+    /* ─── 14. FORM INPUTS ───────────────────────────────────────────────────────── */
+    .inp {
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 9px 11px;
+        font-family: var(--font);
+        font-size: 15px;
+        font-weight: 400;
+        color: var(--text);
+        box-sizing: border-box;
+        width: 100%;
+        transition: border-color var(--transition);
+    }
+
+    .inp:focus {
+        outline: none;
+        border-color: var(--acc);
+    }
+
+    select.inp {
+        -webkit-appearance: none;
+        appearance: none;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 30px;
+    }
+
+    textarea.inp {
+        resize: vertical;
+        min-height: 60px;
+    }
+
+
+    /* ─── 15. BUTTONS ───────────────────────────────────────────────────────────── */
+    .btn-primary {
+        background: var(--text);
+        color: var(--bg);
+        border: none;
+        border-radius: var(--radius);
+        padding: 10px 18px;
+        font-family: var(--font);
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: opacity var(--transition);
+        position: relative;
+    }
+
+    .btn-primary:hover:not(:disabled):not(.loading) { opacity: 0.82; }
+
+    .btn-primary:disabled,
+    .btn-primary.loading {
+        opacity: 0.55;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    .btn-primary.loading::after {
+        content: '';
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,0.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: btnSpin 0.7s linear infinite;
+    }
+
+    @keyframes btnSpin { to { transform: translateY(-50%) rotate(360deg); } }
+
+    .btn-sm {
+        background: transparent;
+        border: 0.5px solid var(--border2);
+        border-radius: var(--radius);
+        padding: 6px 11px;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--text2);
+        white-space: nowrap;
+        transition: border-color var(--transition), color var(--transition);
+    }
+
+    .btn-sm:hover { border-color: var(--text); color: var(--text); }
+
+    .btn-danger { color: var(--red); border-color: var(--red); }
+    .btn-danger:hover { background: #FCEBEB; color: var(--red); border-color: var(--red); }
+
+
+    /* ─── 16. TABLES ────────────────────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+    th {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text2);
+        border-bottom: 0.5px solid var(--border);
+        padding: 7px 8px;
+        text-align: right;
+    }
+
+    th:first-child { text-align: left; }
+
+    td {
+        padding: 8px 8px;
+        border-bottom: 0.5px solid var(--border);
+        font-family: var(--mono);
+        font-weight: 500;
+        text-align: right;
+    }
+
+    td:first-child {
+        font-family: var(--font);
+        text-align: left;
+        font-weight: 400;
+    }
+
+    tr.row-active td { background: var(--bg2); }
+
+
+    /* ─── 17. DIVIDERS ──────────────────────────────────────────────────────────── */
+    .divider {
+        border: none;
+        border-top: 0.5px solid var(--border);
+        margin: 1.25rem 0;
+    }
+
+
+    /* ─── 18. DARK MODE OVERRIDES ───────────────────────────────────────────────── */
+    .app.dark {
+        --bg:      #0f0f11;
+        --bg2:     #1a1a1d;
+        --border:  rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.16);
+        --text:    #e8e6e1;
+        --text2:   #888;
+
+        background: var(--bg);
+        color: var(--text);
+    }
+
+    .app.dark .alert-danger  { background: rgba(216,90,48,.15);  border-color: rgba(216,90,48,.3);  color: #f0a080; }
+    .app.dark .alert-warning { background: rgba(186,117,23,.15); border-color: rgba(186,117,23,.3); color: #e0b060; }
+    .app.dark .alert-info    { background: rgba(24,95,165,.15);  border-color: rgba(24,95,165,.3);  color: #80b0e0; }
+
+    .app.dark .badge-red   { background: rgba(216,90,48,.2);  color: #f0a080; }
+    .app.dark .badge-green { background: rgba(29,158,117,.2); color: #7dd8a8; }
+    .app.dark .badge-blue  { background: rgba(24,95,165,.2);  color: #80b0e0; }
+    .app.dark .badge-amber { background: rgba(186,117,23,.2); color: #e0b060; }
+
+    .app.dark .inp { color: var(--text); }
+    .app.dark .inp:focus { border-color: var(--acc); }
+
+    /* dark dropdown */
+    .app.dark #avatar-dropdown   { background: #1e1e21; border-color: var(--border2); }
+    .app.dark .dd-item           { color: var(--text); }
+    .app.dark .dd-item:hover     { background: rgba(255,255,255,0.06); }
+    .app.dark #profile-sheet-panel { background: var(--bg); }
+
+    /* dark loading overlay */
+    .app.dark #loading-overlay { background: rgba(15,15,17,0.72); color: var(--text2); }
+
+    /*
+     * Dark mode for sidebar — the sidebar lives outside .app so it doesn't
+     * inherit .app.dark. We scope dark overrides to body.dark instead,
+     * and the boot + toggleDark() both add .dark to body as well as #app.
+     */
+    body.dark .sidebar,
+    body.dark #avatar-dropdown {
+        --bg:      #0f0f11;
+        --bg2:     #1a1a1d;
+        --border:  rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.16);
+        --text:    #e8e6e1;
+        --text2:   #888;
+        background: var(--bg2);
+        color: var(--text);
+    }
+
+    body.dark #avatar-dropdown {
+        background: #1e1e21;
+        border-color: rgba(255, 255, 255, 0.16);
+    }
+
+
+    /* ─── 19. PRINT STYLES ──────────────────────────────────────────────────────── */
+    @media print {
+        .sidebar, .app-header, .tabs,
+        #alerts-budget, #alerts-bills,
+        .pane:not(#pane-report),
+        #bottom-nav { display: none !important; }
+
+        #pane-report { display: block !important; }
+
+        /* FIX 3D.6 + FIX 1.6: full-width print with no side padding */
+        #layout-root {
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+        }
+
+        .app {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
+        body {
+            background: #fff !important;
+            color: #000 !important;
+            font-size: 12px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .metric, .card { background: none; border: 0.5px solid #ccc; }
+
+        .btn-primary, .btn-sm, .tx-delete { display: none !important; }
+
+        .card, .tx-row { page-break-inside: avoid; }
+
+        /* Ensure report sections print clearly */
+        #report-body { overflow: visible !important; }
+        #report-body table { page-break-inside: auto; }
+        #report-body tr    { page-break-inside: avoid; }
+    }
+
+
+    /* ─── 20. RESPONSIVE BREAKPOINTS ────────────────────────────────────────────── */
+
+    /* ── Desktop (≥ 768px): sidebar visible, header month nav hidden ──────── */
+    @media (min-width: 768px) {
+        /* app-header only shows balance + desktop controls on desktop */
+        .app-header {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 0.5px solid var(--border);
+        }
+    }
+
+    /* ── Tablet (≤ 900px) ────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+        :root { --page-pad: 1.25rem; }
+        .row3 { grid-template-columns: 1fr 1fr; }
+        #pane-networth .row3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    /* ── Mobile (≤ 767px) — sidebar hidden, bottom nav visible ─────────── */
+    @media (max-width: 767px) {
+        :root { --page-pad: 1rem; }
+
+        body { font-size: 15px; }
+
+        .app {
+            /* Extra bottom padding so content clears fixed bottom nav */
+            padding: 1.5rem var(--page-pad) calc(1rem + 72px);
+        }
+
+        /* App header adjustments */
+        .app-header {
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 12px;
+            padding-bottom: 1rem;
+            /* Slightly less top margin on mobile since header is more compact */
+            margin-bottom: 1rem;
+        }
+
+        /* Tighter month nav on small screens */
+        .header-month-label {
+            font-size: 15px !important;
+            min-width: 90px !important;
+        }
+
+        .month-nav-btn {
+            width: 32px !important;
+            height: 32px !important;
+        }
+
+        #hd-bal { font-size: 18px !important; }
+
+        /* Grids */
+        .row4 { grid-template-columns: 1fr 1fr; }
+        .row3 { grid-template-columns: 1fr 1fr; }
+        .row2 { grid-template-columns: 1fr; }
+
+        /* Metric cards */
+        .metric { padding: 12px 12px; }
+        .metric .val { font-size: 15px; }
+
+        /* Transaction rows */
+        .tx-name { font-size: 14px; }
+        .tx-amount { white-space: nowrap; font-size: 14px; }
+        .tx-delete { font-size: 18px; min-width: 28px; min-height: 28px; }
+
+        /* Buttons */
+        .btn-sm { min-height: 34px; padding: 6px 12px; }
+        .btn-primary { padding: 12px 18px; font-size: 15px; }
+
+        /* Inputs */
+        .inp { font-size: 15px; padding: 10px 12px; }
+
+        /* Form grids → single column */
+        #pane-debt .row2,
+        #pane-goals [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-savings [style*="grid-template-columns: 1fr 1fr auto"],
+        #pane-recurring .row2 {
+            grid-template-columns: 1fr !important;
+        }
+
+        /* Bills 4-col form */
+        #pane-bills [style*="grid-template-columns: 1fr 1fr 70px auto"] {
+            grid-template-columns: 1fr 1fr auto !important;
+        }
+        #b-name { grid-column: 1 / -1; }
+
+        /* Net worth 4-col form */
+        #pane-networth [style*="grid-template-columns: 1fr 1fr 120px auto"] {
+            grid-template-columns: 1fr 1fr !important;
+        }
+        #nw-name { grid-column: 1 / -1; }
+
+        /* Tables — horizontal scroll */
+        #report-body table, #month-table table { min-width: 480px; }
+        #report-body, #month-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        /* Charts shorter on mobile */
+        #pane-charts [style*="height:200px"]    { height: 170px !important; }
+        #pane-charts [style*="height:240px"]    { height: 200px !important; }
+        #pane-multimonth [style*="height:220px"]{ height: 170px !important; }
+        #pane-forecast [style*="height:220px"]  { height: 170px !important; }
+
+        h1 { font-size: 20px; }
+        .sec { font-size: 10px; }
+    }
+
+    /* ── Very small phones (≤ 390px) ─────────────────────────────────────── */
+    @media (max-width: 390px) {
+        :root { --page-pad: 0.875rem; }
+        .header-month-label { font-size: 14px !important; min-width: 80px !important; }
+        .month-nav-btn { width: 28px !important; height: 28px !important; font-size: 14px !important; }
+        #hd-bal { font-size: 16px !important; }
+        .row4 { grid-template-columns: 1fr 1fr; gap: 8px; }
+    }
+
+
+    /* ─── BOTTOM NAVIGATION BAR (mobile only ≤ 767px) ──────────────────────── */
+    #bottom-nav {
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 200;
+        background: var(--bg);
+        border-top: 0.5px solid var(--border);
+        padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+    }
+
+    .bnav-inner {
+        display: flex;
+        justify-content: space-around;
+        align-items: flex-end;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .bnav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 8px;
+        min-width: 52px;
+        min-height: 48px;
+        justify-content: center;
+        color: var(--text2);
+        font-family: var(--font);
+        -webkit-tap-highlight-color: transparent;
+        transition: color .15s;
+    }
+
+    .bnav-item.active { color: var(--text); }
+
+    .bnav-item svg {
+        width: 24px;
+        height: 24px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .bnav-label {
+        font-size: 10px;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .bnav-item.active .bnav-label { font-weight: 600; }
+
+    /* More tab sheet */
+    #tab-sheet { display: none; position: fixed; inset: 0; z-index: 300; }
+    #tab-sheet.open { display: block; }
+    #tab-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+
+    #tab-sheet-panel {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg);
+        border-radius: 20px 20px 0 0;
+        padding: 12px 16px max(24px, env(safe-area-inset-bottom));
+        max-height: 75vh;
+        overflow-y: auto;
+    }
+
+    #tab-sheet-handle {
+        width: 36px; height: 4px;
+        background: var(--border2);
+        border-radius: 2px;
+        margin: 0 auto 16px;
+    }
+
+    .tab-sheet-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    .tab-sheet-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg2);
+        border: 0.5px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 8px 10px;
+        cursor: pointer;
+        font-family: var(--font);
+        font-size: 11px;
+        color: var(--text2);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .tab-sheet-item.active { color: var(--text); border-color: var(--border2); }
+
+    .tab-sheet-item svg {
+        width: 22px; height: 22px;
+        stroke: currentColor; fill: none;
+        stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    @media (max-width: 767px) {
+        #bottom-nav { display: flex; flex-direction: column; }
+    }
+
+
+    /* ─── LOADING STATES ────────────────────────────────────────────────────── */
+    .spinner {
+        display: inline-block;
+        width: 14px; height: 14px;
+        border: 2px solid var(--border2);
+        border-top-color: var(--text);
+        border-radius: 50%;
+        animation: spinnerR 0.7s linear infinite;
+        vertical-align: middle;
+        margin-left: 6px;
+    }
+    @keyframes spinnerR { to { transform: rotate(360deg); } }
+
+    .shimmer {
+        background: linear-gradient(90deg, var(--bg2) 25%, var(--border) 50%, var(--bg2) 75%);
+        background-size: 200% 100%;
+        animation: shimmerSlide 1.4s infinite;
+        border-radius: var(--radius);
+        height: 44px;
+        margin-bottom: 8px;
+    }
+    @keyframes shimmerSlide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+    #loading-overlay {
+        position: fixed; inset: 0;
+        background: rgba(255,255,255,0.72);
+        backdrop-filter: blur(4px);
+        z-index: 9998;
+        display: none;
+        align-items: center; justify-content: center;
+        flex-direction: column; gap: 12px;
+        font-size: 14px; font-weight: 500; color: var(--text2);
+    }
+    #loading-overlay .loading-spinner-lg {
+        width: 32px; height: 32px;
+        border: 3px solid var(--border2);
+        border-top-color: var(--text);
+        border-radius: 50%;
+        animation: spinnerR 0.8s linear infinite;
+    }
+
+    /* ─── SWIPE HINT ────────────────────────────────────────────────────────── */
+    @keyframes swipeHint {
+        0%   { transform: translateX(0);     opacity: 0; }
+        20%  { transform: translateX(0);     opacity: .7; }
+        60%  { transform: translateX(-18px); opacity: .7; }
+        80%  { transform: translateX(-18px); opacity: 0; }
+        100% { transform: translateX(0);     opacity: 0; }
+    }
 </style>

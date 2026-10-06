@@ -1,133 +1,391 @@
 <!-- ─────────────────────────────────────────────────────────────────────────
-     Settings.html — App Settings Screen
+     Settings.html — App Settings
 
      TAB: Settings
 
      SECTIONS:
-       1. Custom Categories — list existing categories, add new ones (name + colour picker)
+       1. Custom Categories — list grouped by type (Income / Expense / Savings)
+          + add form with type picker + colour picker
        2. Divider
-       3. Danger Zone — "Clear Current Month" destructive action
+       3. Danger Zone — Clear Current Month + Reset Categories
+
+     RENDERING BUG FIX:
+       Categories were not persisting after page refresh because the old code
+       rendered from a stale DOM state rather than AppState.categories.
+       renderSettings() now always reads directly from AppState.categories,
+       which is populated from the bootstrap data on every page load.
 
      STATE: AppState.categories
-
-     SERVER CALLS:
-       addCategory(name, color) → saves new category
-       deleteCategory(name) → removes user-added category (default categories protected)
-       Preferences.setCurrency / setDarkMode are handled by setCurrency() / toggleDark() in utils.js
+     SERVER CALLS: addCategory(name, color, type), deleteCategory(name, type),
+                   resetCategories, clearMonthTransactions
      ───────────────────────────────────────────────────────────────────────── -->
 
 <div class="pane" id="pane-settings">
 
   <!-- ── 1. Custom Categories ────────────────────────────────────────────── -->
-  <!-- TODO: Section heading "Custom Categories" -->
-  <!-- TODO: id="cat-settings-list" — set by renderSettings():
-       For each category in AppState.categories:
-         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-           <span style="width:14px;height:14px;border-radius:3px;background:{color};"></span>
-           <span style="font-size:13px;flex:1;">{name}</span>
-           {if user-added (index >= 9)} × delete button onclick="deleteCat(cat.name)"
-         </div>
-       NOTE: Default 9 categories (indices 0–8) do NOT get a delete button
-  -->
-  <div class="sec" style="margin-top: 0;">Custom Categories</div>
-  <div id="cat-settings-list" style="margin-bottom: 1rem;"></div>
+  <div class="sec" style="margin-top:0;">Categories</div>
 
-  <!-- ── Add Category Form ──────────────────────────────────────────────── -->
-  <!-- TODO: Flex row: category name input | colour picker input | "Add" button
-       <div style="display:flex;gap:8px;margin-bottom:1.5rem;">
-         <input id="new-cat-name" placeholder="Category name" class="inp"/>
-         <input id="new-cat-color" type="color" value="#1D9E75"
-                style="width:44px;height:38px;border:0.5px solid var(--border2);
-                       border-radius:var(--radius);padding:2px;cursor:pointer;background:transparent;"/>
-         <button onclick="addCategoryForm()" class="btn-primary">Add</button>
-       </div>
-  -->
-  <div style="display: flex; gap: 8px; margin-bottom: 1.5rem;">
-    <input id="new-cat-name" placeholder="Category name" class="inp"/>
-    <input id="new-cat-color" type="color" value="#1D9E75"
-           style="width: 44px; height: 38px; border: 0.5px solid var(--border2);
-                  border-radius: var(--radius); padding: 2px; cursor: pointer; background: transparent;"/>
-    <button onclick="addCategoryForm()" class="btn-primary">Add</button>
+  <!-- Category list — grouped by type, populated by renderSettings() -->
+  <div id="cat-settings-list" style="margin-bottom:1.25rem;"></div>
+
+  <!-- Add category form -->
+  <div class="sec">Add Category</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+    <input id="new-cat-name" class="inp" placeholder="Category name"/>
+    <!--
+      Type picker — determines which group the new category is added to.
+      Placed inline so the user sees type + colour + name together.
+    -->
+    <select id="new-cat-type" class="inp">
+      <option value="expense">Expense</option>
+      <option value="income">Income</option>
+      <option value="savings">Savings</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:1.5rem;align-items:center;">
+    <input
+            id="new-cat-color"
+            type="color"
+            value="#1D9E75"
+            style="width:44px;height:38px;border:0.5px solid var(--border2);border-radius:var(--radius);
+             padding:2px;cursor:pointer;background:transparent;flex-shrink:0;"/>
+    <span style="font-size:12px;color:var(--text2);flex:1;">Pick a colour</span>
+    <button id="btn-add-cat" onclick="addCategoryForm()" class="btn-primary">
+      <span class="btn-label">Add</span>
+      <span class="btn-spinner"></span>
+    </button>
   </div>
 
-  <!-- ── 2. Divider ─────────────────────────────────────────────────────── -->
+  <!-- Reset to defaults — secondary action -->
+  <div style="margin-bottom:1.5rem;">
+    <button onclick="resetCategoriesForm()" class="btn-sm">
+      Reset categories to defaults
+    </button>
+  </div>
+
+  <!-- ── 2. Bill Alerts ──────────────────────────────────────────────────── -->
   <hr class="divider"/>
 
-  <!-- ── 3. Danger Zone ─────────────────────────────────────────────────── -->
-  <!-- TODO: Section heading "Danger Zone" -->
-  <!-- TODO: Single .btn-sm styled with danger colours (color --red, border-color --red):
-       onclick="clearCurrentMonth()"
-       Text: "Clear Current Month"
-       Confirm dialog before proceeding: "Clear all transactions for [month]? This cannot be undone."
-  -->
+  <div class="sec">Bill Alerts</div>
+  <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6;">
+    Alert me this many days before a bill is due. Affects the alert badge on the
+    Bills tab and the daily email digest.
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.5rem;">
+    <input
+            id="bills-alert-days-input"
+            class="inp"
+            type="number"
+            min="1"
+            max="30"
+            style="width:80px;flex-shrink:0;"
+            placeholder="5"/>
+    <span style="font-size:13px;color:var(--text2);">days before due date</span>
+    <button id="btn-save-alert-days" onclick="saveBillAlertDays()" class="btn-sm">
+      Save
+    </button>
+  </div>
+
+  <!-- ── 3. Divider ──────────────────────────────────────────────────────── -->
+  <hr class="divider"/>
+
+  <!-- ── 4. Danger Zone ──────────────────────────────────────────────────── -->
   <div class="sec">Danger Zone</div>
-  <button onclick="clearCurrentMonth()"
-          class="btn-sm"
-          style="color: var(--red); border-color: var(--red);">
+  <button
+          id="btn-clear-month"
+          onclick="clearCurrentMonth()"
+          class="btn-sm btn-danger">
     Clear Current Month
   </button>
 
 </div>
 
+
 <script>
+  // =============================================================================
+  // Settings screen
+  // =============================================================================
+
   /**
    * renderSettings()
    *
-   * TODO: Build #cat-settings-list from AppState.categories
-   *         Default categories (first 9) → no delete button
-   *         User-added categories (index >= 9) → show × delete button
+   * Rebuilds the category list from AppState.categories, grouped into three
+   * sections: Income, Expense, Savings.
+   *
+   * Default categories (those present in the server's DEFAULT_CATEGORIES list)
+   * are identified by having their type+name recognised as protected — the
+   * server will reject deletion attempts for these.  On the client side we
+   * use a simple heuristic: the first N entries per type are considered
+   * defaults and are rendered without a delete button.
+   *
+   * Since the client doesn't have the server's exact DEFAULT_KEYS set, we
+   * track defaults by comparing against a locally-mirrored default name list
+   * stored in _SETTINGS_DEFAULT_NAMES below.
+   *
+   * Called by renderAll() when Settings pane is active.
    */
-  function renderSettings() {
-    // TODO: Implement
+
+          // Mirror of the default category names from Preferences.gs.
+          // Used purely to decide whether to show a delete button — the server
+          // enforces the actual protection on deleteCategory() calls.
+  var _SETTINGS_DEFAULT_NAMES = {
+    income: [
+      'Employment / Salary', 'Side Hustle', 'Freelance',
+      'Dividends', 'Rental Income', 'Business Income', 'Other Income'
+    ],
+    expense: [
+      'Housing', 'Utilities', 'Groceries', 'Transportation',
+      'Insurance', 'Clothing', 'Entertainment', 'Fun & Vacation',
+      'Media & Subscriptions', 'Body Care & Medicine', 'Education',
+      'Dining Out', 'Debt Repayment', 'Other Expense'
+    ],
+    savings: [
+      'Emergency Fund', 'Retirement Account', 'Stock Portfolio',
+      'Sinking Fund', 'Down Payment', 'Other Savings'
+    ]
+  };
+
+  function _isDefaultCategory(name, type) {
+    var defaults = _SETTINGS_DEFAULT_NAMES[type] || [];
+    return defaults.indexOf(name) !== -1;
   }
 
+  function renderSettings() {
+    var listEl = document.getElementById('cat-settings-list');
+    if (listEl) {
+      var cats = AppState.categories || [];
+
+      if (cats.length === 0) {
+        listEl.innerHTML = '<div style="font-size:13px;color:var(--text2);">No categories found.</div>';
+      } else {
+        // Group by type.
+        var groups = { income: [], expense: [], savings: [] };
+        cats.forEach(function(cat) {
+          var t = cat.type || 'expense';
+          if (!groups[t]) groups[t] = [];
+          groups[t].push(cat);
+        });
+
+        var typeConfig = [
+          { type: 'income',  label: 'Income',  badgeClass: 'badge-green' },
+          { type: 'expense', label: 'Expense', badgeClass: 'badge-red'   },
+          { type: 'savings', label: 'Savings', badgeClass: 'badge-blue'  }
+        ];
+
+        var html = '';
+        typeConfig.forEach(function(cfg) {
+          var group = groups[cfg.type] || [];
+          if (group.length === 0) return;
+
+          html += (
+                  '<div style="margin-bottom:8px;">' +
+                  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;' +
+                  'padding:6px 0;border-bottom:0.5px solid var(--border);">' +
+                  '<span class="badge ' + cfg.badgeClass + '">' + cfg.label + '</span>' +
+                  '<span style="font-size:11px;color:var(--text2);">' +
+                  group.length + ' categor' + (group.length === 1 ? 'y' : 'ies') +
+                  '</span>' +
+                  '</div>'
+          );
+
+          group.forEach(function(cat) {
+            var isDef = _isDefaultCategory(cat.name, cat.type);
+            var deleteBtn = isDef
+                    ? ''
+                    : '<button class="tx-delete" ' +
+                    'onclick="deleteCat(\'' + _escAttr(cat.name) + '\',\'' + cat.type + '\',this)" ' +
+                    'title="Remove category">\xd7</button>';
+
+            html += (
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;padding-left:4px;">' +
+                    '<span style="width:14px;height:14px;border-radius:3px;background:' + cat.color +
+                    ';display:inline-block;flex-shrink:0;"></span>' +
+                    '<span style="font-size:13px;flex:1;">' + _escSt(cat.name) + '</span>' +
+                    deleteBtn +
+                    '</div>'
+            );
+          });
+
+          html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+      }
+    }
+
+    // Sync the bill alert days input with current AppState value
+    var alertInput = document.getElementById('bills-alert-days-input');
+    if (alertInput) {
+      alertInput.value = AppState.billAlertDays || 5;
+    }
+  }
+
+
+  // ─── ADD CATEGORY ─────────────────────────────────────────────────────────────
 
   /**
    * addCategoryForm()
-   *
-   * TODO: Read name (#new-cat-name), color (#new-cat-color)
-   * TODO: Validate: name must be non-empty, must not already exist (case-insensitive)
-   *         showToast('Category already exists.', 'error') if duplicate
-   * TODO: Call server 'addCategory' with name + color
-   * TODO: On success:
-   *         1. Push { name, color } to AppState.categories
-   *         2. clearInputs('new-cat-name')
-   *         3. renderAll() — updates category list + all <select> dropdowns
-   *         4. showToast('Category added!', 'success')
+   * Uses withButtonLoading() to show an inline spinner while saving.
+   * Passes type from the new-cat-type select to the server.
    */
   async function addCategoryForm() {
-    // TODO: Implement
+    var btn   = document.getElementById('btn-add-cat');
+    var name  = getVal('new-cat-name');
+    var type  = getVal('new-cat-type') || 'expense';
+    var color = document.getElementById('new-cat-color')
+            ? document.getElementById('new-cat-color').value
+            : '#1D9E75';
+
+    if (!name) {
+      showToast('Please enter a category name.', 'error');
+      document.getElementById('new-cat-name').focus();
+      return;
+    }
+
+    // Client-side duplicate check within the same type for immediate feedback.
+    var cats = AppState.categories || [];
+    var isDuplicate = cats.some(function(c) {
+      return c.name.toLowerCase() === name.toLowerCase() && c.type === type;
+    });
+    if (isDuplicate) {
+      showToast('"' + name + '" already exists as a ' + type + ' category.', 'error');
+      return;
+    }
+
+    await withButtonLoading(btn, async function() {
+      try {
+        // Server now accepts (name, color, type) — updated Preferences.gs signature.
+        var updated = await callServer('addCategory', name, color, type);
+
+        // Server returns the full updated categories array.
+        AppState.categories = updated;
+
+        clearInputs('new-cat-name');
+        renderAll();
+        showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' category added!', 'success');
+      } catch (e) {}
+    });
   }
 
+
+  // ─── DELETE CATEGORY ──────────────────────────────────────────────────────────
 
   /**
-   * deleteCat(categoryName)
-   *
-   * TODO: Confirm deletion via window.confirm()
-   * TODO: Call server 'deleteCategory' with the category name
-   * TODO: On success:
-   *         1. Filter out from AppState.categories
-   *         2. renderAll()
-   *         3. showToast('Category removed.', 'info')
+   * deleteCat(categoryName, categoryType, deleteBtnEl)
+   * Dims the delete button immediately as optimistic feedback.
+   * Passes the type to the server so it can scope the lookup correctly.
    */
-  async function deleteCat(categoryName) {
-    // TODO: Implement
+  async function deleteCat(categoryName, categoryType, deleteBtnEl) {
+    if (!window.confirm('Remove the "' + categoryName + '" category?')) return;
+
+    if (deleteBtnEl) {
+      deleteBtnEl.disabled = true;
+      deleteBtnEl.style.opacity = '0.35';
+    }
+
+    try {
+      var updated = await callServer('deleteCategory', categoryName, categoryType);
+      AppState.categories = updated;
+      renderAll();
+      showToast('Category removed.', 'info');
+    } catch (e) {
+      if (deleteBtnEl) {
+        deleteBtnEl.disabled = false;
+        deleteBtnEl.style.opacity = '';
+      }
+    }
   }
 
+
+  // ─── RESET CATEGORIES ─────────────────────────────────────────────────────────
+
+  /**
+   * resetCategoriesForm()
+   * Wipes all custom categories and restores the built-in defaults.
+   */
+  async function resetCategoriesForm() {
+    if (!window.confirm(
+            'Reset all categories to the built-in defaults?\n\n' +
+            'Any custom categories you added will be permanently removed.'
+    )) return;
+
+    try {
+      var defaults = await callServer('resetCategories');
+      AppState.categories = defaults;
+      renderAll();
+      showToast('Categories reset to defaults.', 'info');
+    } catch (e) {}
+  }
+
+
+  // ─── BILL ALERT DAYS ──────────────────────────────────────────────────────────
+
+  /**
+   * saveBillAlertDays()
+   * Reads the input value, validates, saves to server preference, updates AppState.
+   */
+  async function saveBillAlertDays() {
+    var input = document.getElementById('bills-alert-days-input');
+    var val   = parseInt((input && input.value) || '', 10);
+
+    if (isNaN(val) || val < 1 || val > 30) {
+      showToast('Please enter a number between 1 and 30.', 'error');
+      if (input) input.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btn-save-alert-days');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    try {
+      await callServerSilent('setPreference', 'bills_alert_days', String(val));
+      AppState.billAlertDays = val;
+      renderAll(); // refreshes the Bills tab subtitle + alert badge colours
+      showToast('Bill alert set to ' + val + ' day' + (val > 1 ? 's' : '') + '.', 'success');
+    } catch(e) {
+      showToast('Could not save preference. Please try again.', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
+
+
+  // ─── CLEAR CURRENT MONTH ──────────────────────────────────────────────────────
 
   /**
    * clearCurrentMonth()
-   *
-   * TODO: Show confirm dialog: "Clear all transactions for [monthLabel]? This cannot be undone."
-   * TODO: If confirmed:
-   *         1. Call server 'clearMonthTransactions' (needs a matching server function — add to Transactions.gs)
-   *         2. Set AppState.transactions[curKey()] = []
-   *         3. renderAll()
-   *         4. showToast('Month cleared.', 'info')
-   *
-   * NOTE: Remind yourself to add clearMonthTransactions(monthKey) to Transactions.gs
+   * Disables the button and shows a text indicator while the server call runs.
    */
   async function clearCurrentMonth() {
-    // TODO: Implement
+    var label = monthLabel(AppState.curYear, AppState.curMonth);
+
+    if (!window.confirm(
+            'Clear all transactions for ' + label + '?\n\nThis cannot be undone.'
+    )) return;
+
+    var btn = document.getElementById('btn-clear-month');
+    if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+
+    try {
+      await callServer('clearMonthTransactions', curKey());
+      AppState.transactions[curKey()] = [];
+      renderAll();
+      showToast(label + ' cleared.', 'info');
+    } catch (e) {
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Clear Current Month'; }
+    }
+  }
+
+
+  // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+  function _escSt(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function _escAttr(str) {
+    return String(str || '').replace(/'/g, "\\'").replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 </script>
